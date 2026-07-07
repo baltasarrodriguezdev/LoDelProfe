@@ -23,6 +23,7 @@ after(async () => new Promise<void>((resolve, reject) => server.close(error => e
 
 test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   const passwordHash = await bcrypt.hash('clave-segura', 4);
+  db.user.findFirst = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true });
   db.user.findUnique = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true });
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
@@ -66,7 +67,7 @@ test('registro envía SMS y crea la cuenta solo después de verificar el código
   const passwordHash = await bcrypt.hash('clave-segura', 4);
   let pending: any;
   let sentTo = '';
-  db.user.findUnique = async () => null;
+  db.user.findFirst = async () => null;
   db.pendingRegistration = {
     upsert: async ({ create }: any) => { pending = { id: 1, ...create, passwordHash }; return pending; },
     deleteMany: async () => ({ count: 1 }),
@@ -84,7 +85,7 @@ test('registro envía SMS y crea la cuenta solo después de verificar el código
   assert.equal(sentTo, '+5493515551234');
 
   db.$transaction = async (work: any) => work({
-    user: { findUnique: async () => null, create: async ({ data }: any) => ({ id: 12, role: 'CLIENT', active: true, ...data }) },
+    user: { findFirst: async () => null, create: async ({ data }: any) => ({ id: 12, role: 'CLIENT', active: true, ...data }) },
     pendingRegistration: { delete: async () => pending }
   });
   const verify = await fetch(`${baseUrl}/api/auth/register/verify`, {
