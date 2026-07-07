@@ -1,0 +1,1 @@
+import{app}from'./app.js';import{config}from'./config.js';import{prisma}from'./prisma/client.js';const server=app.listen(config.port,()=>console.log(`API lista en http://localhost:${config.port}`));const stop=async()=>{server.close();await prisma.$disconnect();process.exit()};process.on('SIGINT',stop);process.on('SIGTERM',stop);

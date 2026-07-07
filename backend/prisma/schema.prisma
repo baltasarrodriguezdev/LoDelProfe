@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  CLIENT
+  ADMIN
+  SUPERADMIN
+}
+enum BookingStatus {
+  CONFIRMED
+  PLAYED
+  CANCELLED
+  NO_SHOW
+  BLOCKED
+}
+enum BookingOrigin {
+  WEB
+  WHATSAPP
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIAL
+}
+enum CashType {
+  INCOME
+  EXPENSE
+}
+enum CashCategory {
+  TURNO
+  BEBIDAS
+  COMIDA
+  PELOTAS
+  LUZ
+  AGUA
+  MANTENIMIENTO
+  LIMPIEZA
+  OTRO
+}
+model User {
+  id Int @id @default(autoincrement())
+  firstName String
+  lastName String
+  phone String @unique
+  passwordHash String
+  role Role @default(CLIENT)
+  active Boolean @default(true)
+  bookings Booking[]
+  recurring RecurringBooking[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("users")
+}
+model Court {
+  id Int @id @default(autoincrement())
+  name String
+  description String? @db.Text
+  active Boolean @default(true)
+  bookings Booking[]
+  recurring RecurringBooking[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("courts")
+}
+model Price {
+  id Int @id @default(autoincrement())
+  durationMinutes Int @unique
+  price Decimal @db.Decimal(10,2)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("prices")
+}
+model BusinessHour {
+  id Int @id @default(autoincrement())
+  dayOfWeek Int @unique
+  openTime String @db.VarChar(5)
+  closeTime String @db.VarChar(5)
+  active Boolean @default(true)
+  @@map("business_hours")
+}
+model Booking {
+  id Int @id @default(autoincrement())
+  courtId Int
+  court Court @relation(fields:[courtId],references:[id])
+  userId Int?
+  user User? @relation(fields:[userId],references:[id])
+  recurringId Int?
+  recurring RecurringBooking? @relation(fields:[recurringId],references:[id])
+  clientName String
+  clientPhone String
+  startTime DateTime
+  endTime DateTime
+  durationMinutes Int
+  playersCount Int @default(4)
+  priceTotal Decimal @db.Decimal(10,2)
+  status BookingStatus @default(CONFIRMED)
+  origin BookingOrigin @default(WEB)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMethod String?
+  notes String? @db.Text
+  createdBy Int
+  cashMovements CashMovement[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([courtId,startTime,endTime])
+  @@index([userId,startTime])
+  @@map("bookings")
+}
+model RecurringBooking {
+  id Int @id @default(autoincrement())
+  courtId Int
+  court Court @relation(fields:[courtId],references:[id])
+  userId Int?
+  user User? @relation(fields:[userId],references:[id])
+  clientName String
+  clientPhone String
+  dayOfWeek Int
+  startTime String @db.VarChar(5)
+  durationMinutes Int
+  priceTotal Decimal @db.Decimal(10,2)
+  startDate DateTime @db.Date
+  endDate DateTime @db.Date
+  active Boolean @default(true)
+  notes String? @db.Text
+  createdBy Int
+  bookings Booking[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("recurring_bookings")
+}
+model CashMovement {
+  id Int @id @default(autoincrement())
+  type CashType
+  category CashCategory
+  amount Decimal @db.Decimal(10,2)
+  description String
+  bookingId Int?
+  booking Booking? @relation(fields:[bookingId],references:[id])
+  createdBy Int
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@map("cash_movements")
+}
+

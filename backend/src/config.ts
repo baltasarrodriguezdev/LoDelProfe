@@ -1,0 +1,2 @@
+import 'dotenv/config';
+export const config={port:Number(process.env.PORT??3000),jwtSecret:process.env.JWT_SECRET??'dev-only-secret-change-me',jwtExpiresIn:process.env.JWT_EXPIRES_IN??'7d',frontendUrls:(process.env.FRONTEND_URL??'http://localhost:4200').split(',').map(url=>url.trim()).filter(Boolean),timezone:process.env.APP_TIMEZONE??'America/Argentina/Buenos_Aires',booking:{slotStepMinutes:30,minBookableMinutes:60,avoidDeadGaps:true,allowAdminOverride:true}};

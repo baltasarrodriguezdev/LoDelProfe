@@ -1,0 +1,204 @@
+import { BookingOrigin, BookingStatus, Prisma } from '@prisma/client';
+import { DateTime } from 'luxon';
+import { prisma } from '../prisma/client.js';
+import { businessIntervals, dayOfWeek, localDateTime } from '../utils/time.js';
+import { HttpError } from '../utils/http-error.js';
+import { config } from '../config.js';
+import { hasBookingOverlap } from '../domain/booking-rules.js';
+
+export type BookingInput = {
+  courtId: number; userId?: number | null; clientName: string; clientPhone: string;
+  date: string; startTime: string; durationMinutes: number; playersCount?: number;
+  notes?: string; status?: BookingStatus; origin?: BookingOrigin; priceTotal?: number; adminOverride?: boolean;
+};
+
+const occupied: BookingStatus[] = ['CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
+const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
+
+function leavesDeadGap(start: DateTime, end: DateTime, open: DateTime, close: DateTime, bookings: { startTime: Date; endTime: Date }[]) {
+  const before = bookings.filter(b => b.endTime <= start.toJSDate()).sort((a, b) => b.endTime.getTime() - a.endTime.getTime())[0];
+  const after = bookings.filter(b => b.startTime >= end.toJSDate()).sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0];
+  const previousEnd = before ? DateTime.fromJSDate(before.endTime, { zone: config.timezone }) : open;
+  const nextStart = after ? DateTime.fromJSDate(after.startTime, { zone: config.timezone }) : close;
+  return gapIsDead(start.diff(previousEnd, 'minutes').minutes) || gapIsDead(nextStart.diff(end, 'minutes').minutes);
+}
+
+async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignoreId?: number) {
+  const start = localDateTime(input.date, input.startTime);
+  const end = start.plus({ minutes: input.durationMinutes });
+  const [court, price, hours] = await Promise.all([
+    tx.court.findFirst({ where: { id: input.courtId, active: true } }),
+    tx.price.findFirst({ where: { durationMinutes: input.durationMinutes, active: true } }),
+    tx.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(input.date) } })
+  ]);
+  if (!court) throw new HttpError(404, 'Cancha no encontrada');
+  if (!price) throw new HttpError(400, 'Duración sin precio activo');
+  if (!hours?.active) throw new HttpError(400, 'La cancha está cerrada ese día');
+
+  if (start <= DateTime.now().setZone(config.timezone)) throw new HttpError(400, 'No se puede reservar un horario pasado');
+  const schedules = businessIntervals(input.date, hours.openTime, hours.closeTime);
+  const schedule = schedules.find(item => start >= item.open && end <= item.close);
+  if (!schedule) throw new HttpError(400, 'El turno queda fuera del horario de apertura');
+
+  const bookings = await tx.booking.findMany({
+    where: {
+      id: ignoreId ? { not: ignoreId } : undefined,
+      courtId: input.courtId,
+      status: { in: occupied },
+      startTime: { lt: schedule.close.toJSDate() },
+      endTime: { gt: schedule.open.toJSDate() }
+    },
+    select: { startTime: true, endTime: true }
+  });
+  if (hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, bookings.map(b => ({ start: b.startTime, end: b.endTime })))) {
+    throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.');
+  }
+  if (config.booking.avoidDeadGaps && leavesDeadGap(start, end, schedule.open, schedule.close, bookings)
+    && !(config.booking.allowAdminOverride && input.adminOverride)) {
+    throw new HttpError(409, deadGapWarning, 'DEAD_GAP');
+  }
+  return { start, end, price };
+}
+
+export async function createBooking(input: BookingInput, createdBy: number, recurringId?: number) {
+  return prisma.$transaction(async tx => {
+    const { start, end, price } = await validate(tx, input);
+    return tx.booking.create({
+      data: {
+        courtId: input.courtId, userId: input.userId, recurringId,
+        clientName: input.clientName, clientPhone: input.clientPhone.replace(/\D/g, ''),
+        startTime: start.toJSDate(), endTime: end.toJSDate(), durationMinutes: input.durationMinutes,
+        playersCount: input.playersCount ?? 4, priceTotal: input.priceTotal ?? price.price, notes: input.notes,
+        status: input.status ?? 'CONFIRMED', origin: input.origin ?? 'WEB', createdBy
+      },
+      include: { court: true }
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function availability(date: string, durationMinutes: number, courtId: number) {
+  const [hours, price] = await Promise.all([
+    prisma.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(date) } }),
+    prisma.price.findFirst({ where: { durationMinutes, active: true } })
+  ]);
+  if (!hours?.active || !price) return { date, durationMinutes, price: price ? Number(price.price) : null, slots: [] };
+
+  const schedules = businessIntervals(date, hours.openTime, hours.closeTime);
+  const rangeOpen = schedules[0].open;
+  const rangeClose = schedules[schedules.length - 1].close;
+  const bookings = await prisma.booking.findMany({
+    where: { courtId, status: { in: occupied }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
+    select: { startTime: true, endTime: true }
+  });
+
+  const slots = [];
+  for (const { open, close } of schedules) {
+    const intervalBookings = bookings.filter(b => b.startTime < close.toJSDate() && b.endTime > open.toJSDate());
+    for (let start = open; start.plus({ minutes: durationMinutes }) <= close; start = start.plus({ minutes: config.booking.slotStepMinutes })) {
+      const end = start.plus({ minutes: durationMinutes });
+      const past = start <= DateTime.now().setZone(config.timezone);
+      const overlaps = hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, intervalBookings.map(b => ({ start: b.startTime, end: b.endTime })));
+      const deadGap = !past && !overlaps && config.booking.avoidDeadGaps && leavesDeadGap(start, end, open, close, intervalBookings);
+      slots.push({
+        startTime: start.toFormat('HH:mm'), endTime: end.toFormat('HH:mm'),
+        available: !past && !overlaps && !deadGap,
+        reason: past ? 'PAST' : overlaps ? 'OCCUPIED' : deadGap ? 'DEAD_GAP' : null,
+        message: past ? 'El horario ya pasó' : deadGap ? 'No disponible para esta duración' : null
+      });
+    }
+  }
+  return { date, durationMinutes, price: Number(price.price), config: config.booking, slots };
+}
+
+const durationLabel = (minutes: number) => {
+  const hours = Math.floor(minutes / 60), rest = minutes % 60;
+  return `${hours ? `${hours}h` : ''}${hours && rest ? ' ' : ''}${rest ? `${rest}m` : ''}`;
+};
+
+export async function freeAvailability(date: string, courtId: number) {
+  const [court, hours, prices] = await Promise.all([
+    prisma.court.findFirst({ where: { id: courtId, active: true } }),
+    prisma.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(date) } }),
+    prisma.price.findMany({ where: { active: true, durationMinutes: { gte: config.booking.minBookableMinutes } }, orderBy: { durationMinutes: 'asc' } })
+  ]);
+  if (!court) throw new HttpError(404, 'Cancha no encontrada');
+  if (!hours?.active || !prices.length) return [];
+
+  const schedules = businessIntervals(date, hours.openTime, hours.closeTime);
+  const rangeOpen = schedules[0].open;
+  const rangeClose = schedules[schedules.length - 1].close;
+  const bookings = await prisma.booking.findMany({
+    where: { courtId, status: { in: occupied }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
+    select: { startTime: true, endTime: true },
+    orderBy: { startTime: 'asc' }
+  });
+
+  return schedules.flatMap(({ open, close }) => {
+    const merged = bookings
+      .filter(b => b.startTime < close.toJSDate() && b.endTime > open.toJSDate())
+      .map(b => ({
+        start: DateTime.max(open, DateTime.fromJSDate(b.startTime, { zone: config.timezone })),
+        end: DateTime.min(close, DateTime.fromJSDate(b.endTime, { zone: config.timezone }))
+      }))
+      .reduce<{ start: DateTime; end: DateTime }[]>((items, current) => {
+        const last = items.at(-1);
+        if (last && current.start <= last.end) {
+          if (current.end > last.end) last.end = current.end;
+        } else items.push(current);
+        return items;
+      }, []);
+
+    const gaps: { start: DateTime; end: DateTime }[] = [];
+    let cursor = open;
+    for (const interval of merged) {
+      if (interval.start > cursor) gaps.push({ start: cursor, end: interval.start });
+      if (interval.end > cursor) cursor = interval.end;
+    }
+    if (cursor < close) gaps.push({ start: cursor, end: close });
+
+    return gaps.map(gap => {
+      const totalFreeMinutes = Math.round(gap.end.diff(gap.start, 'minutes').minutes);
+      const availableDurations = prices.filter(price => {
+        const remainder = totalFreeMinutes - price.durationMinutes;
+        return remainder === 0 || remainder >= config.booking.minBookableMinutes;
+      }).map(price => ({
+        durationMinutes: price.durationMinutes, label: durationLabel(price.durationMinutes),
+        startTime: gap.start.toFormat('HH:mm'),
+        endTime: gap.start.plus({ minutes: price.durationMinutes }).toFormat('HH:mm'),
+        priceTotal: Number(price.price)
+      }));
+      return {
+        freeStart: gap.start.toFormat('HH:mm'), freeEnd: gap.end.toFormat('HH:mm'),
+        totalFreeMinutes, availableDurations
+      };
+    }).filter(gap => gap.availableDurations.length > 0);
+  });
+}
+
+export async function updateBooking(id: number, data: Partial<BookingInput>) {
+  const old = await prisma.booking.findUnique({ where: { id } });
+  if (!old) throw new HttpError(404, 'Turno no encontrado');
+  const input: BookingInput = {
+    courtId: data.courtId ?? old.courtId, userId: data.userId ?? old.userId,
+    clientName: data.clientName ?? old.clientName, clientPhone: data.clientPhone ?? old.clientPhone,
+    date: data.date ?? DateTime.fromJSDate(old.startTime).toISODate()!,
+    startTime: data.startTime ?? DateTime.fromJSDate(old.startTime).toFormat('HH:mm'),
+    durationMinutes: data.durationMinutes ?? old.durationMinutes,
+    playersCount: data.playersCount ?? old.playersCount, notes: data.notes ?? old.notes ?? undefined,
+    status: data.status ?? old.status, origin: data.origin ?? old.origin,
+    priceTotal: data.priceTotal ?? Number(old.priceTotal)
+  };
+  return prisma.$transaction(async tx => {
+    const { start, end, price } = await validate(tx, input, id);
+    return tx.booking.update({
+      where: { id },
+      data: {
+        courtId: input.courtId, userId: input.userId, clientName: input.clientName,
+        clientPhone: input.clientPhone, startTime: start.toJSDate(), endTime: end.toJSDate(),
+        durationMinutes: input.durationMinutes, playersCount: input.playersCount, notes: input.notes,
+        status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price
+      }
+    });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
