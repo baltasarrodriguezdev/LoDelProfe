@@ -10,6 +10,7 @@ let server: ReturnType<typeof app.listen>;
 let baseUrl = '';
 let created: any[] = [];
 let queriedWhere: any = null;
+let transactionOptions: any = null;
 
 const token = (userId: number, role: 'CLIENT' | 'ADMIN' | 'SUPERADMIN' = 'CLIENT') =>
   jwt.sign({ userId, role }, config.jwtSecret);
@@ -46,8 +47,9 @@ after(async () => new Promise<void>((resolve, reject) => server.close(error => e
 beforeEach(() => {
   created = [];
   queriedWhere = null;
+  transactionOptions = null;
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT' });
-  db.$transaction = async (work: any) => typeof work === 'function' ? work(transactionClient()) : Promise.all(work);
+  db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, priceTotal: 20000 });
   db.booking.update = async ({ where, data }: any) => ({ id: where.id, ...data });
@@ -72,6 +74,7 @@ test('un usuario autenticado crea una reserva asociada a su cuenta', async () =>
   assert.equal(created[0].userId, 17);
   assert.equal(created[0].origin, 'WEB');
   assert.equal(created[0].status, 'CONFIRMED');
+  assert.equal(transactionOptions?.isolationLevel, 'RepeatableRead');
 });
 
 test('rechaza una duración sin precio activo', async () => {

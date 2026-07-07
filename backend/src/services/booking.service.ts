@@ -74,7 +74,7 @@ export async function createBooking(input: BookingInput, createdBy: number, recu
       },
       include: { court: true }
     });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
 export async function availability(date: string, durationMinutes: number, courtId: number) {
@@ -200,5 +200,5 @@ export async function updateBooking(id: number, data: Partial<BookingInput>) {
         status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price
       }
     });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
