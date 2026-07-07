@@ -44,7 +44,7 @@ MVP de gestión de turnos para una cancha de pádel. Incluye portal de clientes,
    npm start
    ```
 
-4. Abrir `http://localhost:4200`. La API responde en `http://localhost:3000`; su estado se comprueba en `GET /health`.
+4. Abrir `http://localhost:4200`. En desarrollo, Angular redirige `/api` a la API local mediante `frontend/proxy.conf.json`; su estado directo se comprueba en `http://localhost:3000/health`.
 
 ## Acceso inicial
 
@@ -101,3 +101,5 @@ frontend/
 ## Producción
 
 Configurar HTTPS, una clave JWT larga, credenciales MySQL exclusivas, backups automáticos y el origen CORS real. El número destino de WhatsApp puede incorporarse cuando el negocio lo defina; actualmente el botón abre el selector de contacto con el mensaje ya preparado.
+
+El frontend usa `/api` como ruta relativa. El hosting o reverse proxy debe publicar el backend bajo el mismo dominio y eliminar ese prefijo al reenviar la solicitud. Por ejemplo, `https://lodelprofe.com.ar/api/auth/login` debe llegar internamente a `http://backend:3000/auth/login`. Configurá `FRONTEND_URL=https://lodelprofe.com.ar` en el backend. Esta topología mantiene la cookie HttpOnly como first-party y es compatible con `SameSite=Lax`; no se debe reemplazar `/api` por una URL de otro sitio registrable.

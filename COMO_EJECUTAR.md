@@ -67,6 +67,10 @@ npm start
 - Backend: `http://localhost:3000`
 - Estado de la API: `http://localhost:3000/health`
 
+El frontend siempre llama a la ruta relativa `/api`. Durante `npm start`, Angular usa `frontend/proxy.conf.json` para reenviar esas solicitudes a `http://localhost:3000` y quitar el prefijo `/api`.
+
+En producción, el reverse proxy debe aplicar la misma regla sobre el mismo dominio público: `/api/*` hacia el backend, eliminando `/api` antes de entregar la solicitud. Por ejemplo, `https://lodelprofe.com.ar/api/bookings` debe llegar al backend como `/bookings`.
+
 ## Arranque diario
 
 Después de completar la primera instalación, no hace falta reinstalar dependencias ni ejecutar el seed cada vez.

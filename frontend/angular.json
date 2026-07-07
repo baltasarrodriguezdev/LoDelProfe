@@ -1,1 +1,42 @@
-{"$schema":"./node_modules/@angular/cli/lib/config/schema.json","version":1,"projects":{"frontend":{"projectType":"application","root":"","sourceRoot":"src","architect":{"build":{"builder":"@angular-devkit/build-angular:application","options":{"outputPath":"dist/frontend","browser":"src/main.ts","index":"src/index.html","tsConfig":"tsconfig.app.json","assets":[{"glob":"**/*","input":"src/assets","output":"assets"}],"styles":["src/styles.css","src/brand.css","src/typography-brand.css","src/responsive.css"]},"configurations":{"production":{"outputHashing":"all","budgets":[{"type":"initial","maximumWarning":"750kB","maximumError":"1MB"}]},"development":{"optimization":false,"sourceMap":true,"extractLicenses":false}},"defaultConfiguration":"production"},"serve":{"builder":"@angular-devkit/build-angular:dev-server","configurations":{"production":{"buildTarget":"frontend:build:production"},"development":{"buildTarget":"frontend:build:development"}},"defaultConfiguration":"development"}}}},"cli":{"analytics":false}}
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "projects": {
+    "frontend": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "architect": {
+        "build": {
+          "builder": "@angular-devkit/build-angular:application",
+          "options": {
+            "outputPath": "dist/frontend",
+            "browser": "src/main.ts",
+            "index": "src/index.html",
+            "tsConfig": "tsconfig.app.json",
+            "assets": [{ "glob": "**/*", "input": "src/assets", "output": "assets" }],
+            "styles": ["src/styles.css", "src/brand.css", "src/typography-brand.css", "src/responsive.css"]
+          },
+          "configurations": {
+            "production": {
+              "outputHashing": "all",
+              "budgets": [{ "type": "initial", "maximumWarning": "750kB", "maximumError": "1MB" }]
+            },
+            "development": { "optimization": false, "sourceMap": true, "extractLicenses": false }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-devkit/build-angular:dev-server",
+          "options": { "proxyConfig": "proxy.conf.json" },
+          "configurations": {
+            "production": { "buildTarget": "frontend:build:production" },
+            "development": { "buildTarget": "frontend:build:development" }
+          },
+          "defaultConfiguration": "development"
+        }
+      }
+    }
+  },
+  "cli": { "analytics": false }
+}
