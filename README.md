@@ -102,4 +102,19 @@ frontend/
 
 Configurar HTTPS, una clave JWT larga, credenciales MySQL exclusivas, backups automáticos y el origen CORS real. El número destino de WhatsApp puede incorporarse cuando el negocio lo defina; actualmente el botón abre el selector de contacto con el mensaje ya preparado.
 
-El frontend usa `/api` como ruta relativa. El hosting o reverse proxy debe publicar el backend bajo el mismo dominio y eliminar ese prefijo al reenviar la solicitud. Por ejemplo, `https://lodelprofe.com.ar/api/auth/login` debe llegar internamente a `http://backend:3000/auth/login`. Configurá `FRONTEND_URL=https://lodelprofe.com.ar` en el backend. Esta topología mantiene la cookie HttpOnly como first-party y es compatible con `SameSite=Lax`; no se debe reemplazar `/api` por una URL de otro sitio registrable.
+El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` envía `/api/*` al servicio Express conservando la ruta original, y el backend acepta tanto ese prefijo como las rutas sin prefijo usadas localmente. Configurá `FRONTEND_URL=https://lodelprofe.com.ar` en el backend. Esta topología mantiene la cookie HttpOnly como first-party y es compatible con `SameSite=Lax`; no se debe reemplazar `/api` por una URL de otro sitio registrable.
+
+### Vercel Services
+
+En la configuración del proyecto de Vercel, seleccioná **Services** como framework y cargá estas variables para Production:
+
+- `NODE_ENV=production`
+- `DATABASE_URL`: conexión MySQL remota, preferentemente mediante un endpoint con pooling compatible con funciones serverless.
+- `JWT_SECRET`: valor largo, aleatorio y exclusivo de producción.
+- `FRONTEND_URL=https://lodelprofe.com.ar` (o el dominio final asignado al proyecto).
+- `AUTH_COOKIE_NAME=padel_session`
+- `AUTH_COOKIE_MAX_AGE_MS=604800000`
+- `JWT_EXPIRES_IN=7d`
+- `APP_TIMEZONE=America/Argentina/Buenos_Aires`
+
+`VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.

@@ -23,7 +23,7 @@ after(async () => new Promise<void>((resolve, reject) => server.close(error => e
 test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   const passwordHash = await bcrypt.hash('clave-segura', 4);
   db.user.findUnique = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true });
-  const response = await fetch(`${baseUrl}/auth/login`, {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
     body: JSON.stringify({ phone: '3510000000', password: 'clave-segura' })
@@ -37,12 +37,20 @@ test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   assert.equal(body.token, undefined);
   assert.equal(body.user.id, 7);
 
-  const me = await fetch(`${baseUrl}/auth/me`, { headers: { cookie: cookie.split(';')[0] } });
+  const me = await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: cookie.split(';')[0] } });
   assert.equal(me.status, 200);
 });
 
 test('rechaza operaciones mutables desde un origen no autorizado', async () => {
-  const response = await fetch(`${baseUrl}/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
+  const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { message: 'Origen no autorizado' });
+});
+
+test('expone health tanto bajo /api como en desarrollo sin prefijo', async () => {
+  for (const path of ['/api/health', '/health']) {
+    const response = await fetch(`${baseUrl}${path}`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { status: 'ok' });
+  }
 });

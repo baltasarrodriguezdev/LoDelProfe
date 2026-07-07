@@ -69,7 +69,7 @@ npm start
 
 El frontend siempre llama a la ruta relativa `/api`. Durante `npm start`, Angular usa `frontend/proxy.conf.json` para reenviar esas solicitudes a `http://localhost:3000` y quitar el prefijo `/api`.
 
-En producción, el reverse proxy debe aplicar la misma regla sobre el mismo dominio público: `/api/*` hacia el backend, eliminando `/api` antes de entregar la solicitud. Por ejemplo, `https://lodelprofe.com.ar/api/bookings` debe llegar al backend como `/bookings`.
+En Vercel Services, `/api/*` se entrega al backend conservando el prefijo y Express lo acepta directamente. En otros proveedores, el reverse proxy puede eliminar `/api` antes de reenviar porque el backend también conserva las rutas locales sin prefijo.
 
 ## Arranque diario
 

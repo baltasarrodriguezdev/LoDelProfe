@@ -2,4 +2,7 @@ import express from'express';import cors from'cors';import{config}from'./config.
 export const app=express();
 app.use(cors({origin:config.frontendUrls,credentials:true}),express.json());
 app.use((req,_res,next)=>{const unsafe=!['GET','HEAD','OPTIONS'].includes(req.method),origin=req.headers.origin;if(unsafe&&origin&&!config.frontendUrls.includes(origin))return next(new HttpError(403,'Origen no autorizado'));next()});
-app.get('/health',(_,p)=>p.json({status:'ok'}));app.use('/auth',auth);app.use(pub);app.use('/bookings',bookings);app.use('/admin',dashboard);app.use('/admin',admin);app.use(notFound);app.use(errorHandler);
+const routes=express.Router();
+routes.get('/health',(_,p)=>p.json({status:'ok'}));routes.use('/auth',auth);routes.use(pub);routes.use('/bookings',bookings);routes.use('/admin',dashboard);routes.use('/admin',admin);
+app.use('/api',routes);app.use(routes);app.use(notFound);app.use(errorHandler);
+export default app;
