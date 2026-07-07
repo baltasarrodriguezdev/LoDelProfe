@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { app } from '../src/app.js';
 import { prisma } from '../src/prisma/client.js';
 import { smsVerification } from '../src/services/sms-verification.service.js';
+import { HttpError } from '../src/utils/http-error.js';
 
 const db = prisma as any;
 let server: ReturnType<typeof app.listen>;
@@ -97,6 +98,37 @@ test('registro envía SMS y crea la cuenta solo después de verificar el código
   const body = await verify.json() as any;
   assert.equal(body.user.phone, '5493515551234');
   assert.equal(body.token, undefined);
+});
+
+test('registro existente responde 409 y no intenta enviar SMS', async () => {
+  let smsCalls = 0;
+  db.user.findFirst = async () => ({ id: 20, phone: '5493576524440' });
+  smsVerification.send = async () => { smsCalls += 1; };
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { message: 'Ya existe una cuenta con ese teléfono.' });
+  assert.equal(smsCalls, 0);
+});
+
+test('una falla de Twilio responde 502 controlado y limpia el registro pendiente', async () => {
+  let deleted = false;
+  db.user.findFirst = async () => null;
+  db.pendingRegistration = {
+    findUnique: async () => null,
+    upsert: async ({ create }: any) => create,
+    deleteMany: async () => { deleted = true; return { count: 1 }; }
+  };
+  smsVerification.send = async () => { throw new HttpError(502, 'No pudimos enviar el SMS. Intentá nuevamente más tarde.'); };
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
+  });
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { message: 'No pudimos enviar el SMS. Intentá nuevamente más tarde.' });
+  assert.equal(deleted, true);
 });
 
 test('expone health tanto bajo /api como en desarrollo sin prefijo', async () => {

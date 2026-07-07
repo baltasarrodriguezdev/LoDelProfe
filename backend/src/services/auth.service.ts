@@ -21,7 +21,7 @@ export async function startRegistration(data: { firstName: string; lastName: str
   const e164 = canonicalPhone(data.phone);
   const phone = storedPhone(e164);
   if (await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164) } } })) {
-    throw new HttpError(409, 'Ese teléfono ya está registrado');
+    throw new HttpError(409, 'Ya existe una cuenta con ese teléfono.');
   }
   const previous = await prisma.pendingRegistration.findUnique({ where: { phone } });
   if (previous && previous.updatedAt > new Date(Date.now() - 60_000)) {
@@ -30,8 +30,8 @@ export async function startRegistration(data: { firstName: string; lastName: str
   const passwordHash = await bcrypt.hash(data.password, 12);
   await prisma.pendingRegistration.upsert({
     where: { phone },
-    update: { firstName: data.firstName, lastName: data.lastName, passwordHash, expiresAt: new Date(Date.now() + 15 * 60_000), attempts: 0 },
-    create: { firstName: data.firstName, lastName: data.lastName, phone, passwordHash, expiresAt: new Date(Date.now() + 15 * 60_000) }
+    update: { firstName: data.firstName, lastName: data.lastName, passwordHash, expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 },
+    create: { firstName: data.firstName, lastName: data.lastName, phone, passwordHash, expiresAt: new Date(Date.now() + 10 * 60_000) }
   });
   try {
     await smsVerification.send(e164);
@@ -55,7 +55,7 @@ export async function completeRegistration(input: string, code: string) {
   }
   return prisma.$transaction(async transaction => {
     if (await transaction.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164) } } })) {
-      throw new HttpError(409, 'Ese teléfono ya está registrado');
+      throw new HttpError(409, 'Ya existe una cuenta con ese teléfono.');
     }
     const user = await transaction.user.create({ data: { firstName: pending.firstName, lastName: pending.lastName, phone, passwordHash: pending.passwordHash } });
     await transaction.pendingRegistration.delete({ where: { phone } });

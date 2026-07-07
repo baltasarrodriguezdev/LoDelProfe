@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnDestroy, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api';
@@ -10,6 +10,8 @@ import { Auth } from '../../core/api';
     .phone-control { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; }
     .phone-country { display: flex; align-items: center; gap: .45rem; padding: 0 .85rem; border: 1px solid var(--line, #d8d8d8); border-right: 0; border-radius: .65rem 0 0 .65rem; white-space: nowrap; background: #f5f2ed; font-weight: 700; }
     .phone-control input { min-width: 0; border-radius: 0 .65rem .65rem 0; }
+    .code-meta { display: flex; justify-content: space-between; gap: 1rem; margin: -.25rem 0 .5rem; font-size: .88rem; }
+    .code-expired { color: var(--danger, #a52a2a); font-weight: 700; }
     @media (max-width: 420px) { .phone-country__name { display: none; } }
   `],
   template: `
@@ -31,7 +33,12 @@ import { Auth } from '../../core/api';
           @if (authMessage) { <p class="auth-message">{{ authMessage }}</p> }
           @if (verificationStep) {
             <p>Enviamos un código por SMS a <strong>{{ normalizedPhone }}</strong>.</p>
-            <label>Código de verificación<input required inputmode="numeric" autocomplete="one-time-code" [(ngModel)]="verificationCode" name="verificationCode" placeholder="Código SMS">@if (fieldErrors.code) { <small class="field-error">{{ fieldErrors.code }}</small> }</label>
+            <label>Código de verificación<input required inputmode="numeric" autocomplete="one-time-code" [ngModel]="verificationCode" (ngModelChange)="onCodeInput($event)" name="verificationCode" placeholder="Código SMS" maxlength="10">@if (fieldErrors.code) { <small class="field-error">{{ fieldErrors.code }}</small> }</label>
+            <div class="code-meta" aria-live="polite">
+              @if (codeSeconds > 0) { <span>El código vence en {{ codeTime }}</span> }
+              @else { <span class="code-expired">El código venció.</span> }
+              @if (resendSeconds > 0) { <span>Reenviar en {{ resendSeconds }} s</span> }
+            </div>
           } @else if (registerMode) {
             <div class="two">
               <label>Nombre<input required minlength="2" [(ngModel)]="form.firstName" name="firstName">@if (fieldErrors.firstName) { <small class="field-error">{{ fieldErrors.firstName }}</small> }</label>
@@ -50,8 +57,8 @@ import { Auth } from '../../core/api';
             <label>Contraseña<input required minlength="8" type="password" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
           }
           @if (error) { <p class="error">{{ error }}</p> }
-          <button class="btn primary full" [disabled]="loading">{{ loading ? 'Procesando...' : verificationStep ? 'Verificar código' : registerMode ? 'Enviar código por SMS' : 'Ingresar' }}</button>
-          @if (verificationStep) { <button type="button" class="btn ghost full" [disabled]="loading" (click)="resendCode()">Reenviar código</button> }
+          <button class="btn primary full" [disabled]="loading || (verificationStep && codeSeconds === 0)">{{ loading ? 'Procesando...' : verificationStep ? 'Verificar código' : registerMode ? 'Enviar código por SMS' : 'Ingresar' }}</button>
+          @if (verificationStep) { <button type="button" class="btn ghost full" [disabled]="loading || resendSeconds > 0" (click)="resendCode()">Reenviar código por SMS</button> }
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -61,7 +68,7 @@ import { Auth } from '../../core/api';
     </section>
   `
 })
-export class AuthPage {
+export class AuthPage implements OnDestroy {
   private auth = inject(Auth);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -75,8 +82,14 @@ export class AuthPage {
   verificationStep = false;
   verificationCode = '';
   normalizedPhone = '';
+  codeSeconds = 0;
+  resendSeconds = 0;
+  private timer?: ReturnType<typeof setInterval>;
+
+  get codeTime() { return `${Math.floor(this.codeSeconds / 60)}:${String(this.codeSeconds % 60).padStart(2, '0')}`; }
 
   onPhoneInput(value: string) { this.form.phone = String(value ?? '').replace(/\D/g, ''); }
+  onCodeInput(value: string) { this.verificationCode = String(value ?? '').replace(/\D/g, ''); }
 
   submit() {
     this.loading = true;
@@ -90,14 +103,14 @@ export class AuthPage {
     const call = this.registerMode ? this.auth.register(payload) : this.auth.login(payload);
     call.subscribe({
       next: value => {
-        if (this.registerMode) { this.verificationStep = true; this.loading = false; return; }
+        if (this.registerMode) { this.verificationStep = true; this.startCodeTimer(); this.loading = false; return; }
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
       },
       error: response => {
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;
         this.fieldErrors = Object.fromEntries(Object.entries(fields ?? {}).map(([field, messages]) => [field, messages?.[0] ?? 'Dato inválido'])) as typeof this.fieldErrors;
-        this.error = Object.keys(this.fieldErrors).length ? '' : response.error?.message ?? 'No pudimos continuar';
+        this.error = Object.keys(this.fieldErrors).length ? '' : this.registrationError(response);
         this.loading = false;
       }
     });
@@ -115,13 +128,18 @@ export class AuthPage {
   }
 
   private verifyCode() {
+    if (this.codeSeconds === 0) {
+      this.error = 'El código venció. Solicitá uno nuevo.';
+      this.loading = false;
+      return;
+    }
     if (!/^\d{4,10}$/.test(this.verificationCode.trim())) {
       this.fieldErrors.code = 'Ingresá el código numérico que recibiste por SMS.';
       this.loading = false;
       return;
     }
     this.auth.verifyRegistration({ phone: this.normalizedPhone, code: this.verificationCode.trim() }).subscribe({
-      next: () => this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') || '/reservar'),
+      next: () => { this.stopTimer(); this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') || '/reservar'); },
       error: response => {
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;
         this.fieldErrors.code = fields?.['code']?.[0];
@@ -137,10 +155,35 @@ export class AuthPage {
     this.fieldErrors = {};
     this.verificationCode = '';
     this.auth.register({ ...this.form, phone: this.normalizedPhone }).subscribe({
-      next: () => { this.authMessage = 'Te enviamos un nuevo código por SMS.'; this.loading = false; },
-      error: response => { this.error = response.error?.message ?? 'No pudimos reenviar el código.'; this.loading = false; }
+      next: () => { this.authMessage = 'Te enviamos un nuevo código por SMS.'; this.startCodeTimer(); this.loading = false; },
+      error: response => { this.error = this.registrationError(response); this.loading = false; }
     });
   }
+
+  private registrationError(response: any) {
+    if (response.status === 409) return 'Ya existe una cuenta con ese teléfono. Iniciá sesión.';
+    if (response.status === 400) return response.error?.message ?? 'Revisá los datos ingresados.';
+    if (response.status === 502) return 'No pudimos enviar el SMS. Intentá nuevamente más tarde.';
+    return response.error?.message ?? 'No pudimos continuar.';
+  }
+
+  private startCodeTimer() {
+    this.stopTimer();
+    this.codeSeconds = 10 * 60;
+    this.resendSeconds = 60;
+    this.timer = setInterval(() => {
+      if (this.codeSeconds > 0) this.codeSeconds -= 1;
+      if (this.resendSeconds > 0) this.resendSeconds -= 1;
+      if (this.codeSeconds === 0 && this.resendSeconds === 0) this.stopTimer();
+    }, 1000);
+  }
+
+  private stopTimer() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  ngOnDestroy() { this.stopTimer(); }
 }
 
 function normalizeArgentinaPhone(input: unknown): string | null {
