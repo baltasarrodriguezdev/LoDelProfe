@@ -1,31 +1,24 @@
 import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { Auth } from './core/api';
 import { VENUE } from './shared/venue';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink],
   template: `
     @if (!isAuthPage()) {
       <header class="site-header">
         <div class="site-header__inner">
           <a class="brand brand-logo" routerLink="/" aria-label="Lo del Profe, inicio"><img src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe"></a>
-          <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" aria-label="Abrir menú" (click)="mobileMenuOpen = !mobileMenuOpen"><span></span><span></span><span></span></button>
-          <nav [class.open]="mobileMenuOpen" (click)="closeMobileMenu()">
-            @if (!auth.user()) {
-              <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Inicio</a>
-              <a routerLink="/reservar" routerLinkActive="active">Reservar</a>
-              <a routerLink="/" fragment="ubicacion">Cómo llegar</a>
-              <a routerLink="/ingresar">Ingresar</a>
-              <a class="nav-cta" routerLink="/registro">Registrarse</a>
-            } @else {
-              <a routerLink="/reservar" routerLinkActive="active">Reservar</a>
-              <a routerLink="/mis-turnos" routerLinkActive="active">Mis turnos</a>
-              <a routerLink="/" fragment="ubicacion">Cómo llegar</a>
-              @if (auth.isAdmin()) { <a routerLink="/admin" routerLinkActive="active">Admin</a> }
-              <button class="link" (click)="auth.logout()">Salir</button>
+          <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'" aria-controls="primary-navigation" (click)="mobileMenuOpen = !mobileMenuOpen"><span></span><span></span><span></span></button>
+          <nav id="primary-navigation" aria-label="Navegación principal" [class.open]="mobileMenuOpen">
+            @for (item of navigationItems(); track item.label) {
+              <a [routerLink]="item.route" [fragment]="item.fragment" [class.active]="isNavigationActive(item)" [class.nav-cta]="item.cta" (click)="closeMobileMenu()">{{ item.label }}</a>
+            }
+            @if (auth.user()) {
+              <button type="button" class="link" (click)="logout()">Salir</button>
             }
           </nav>
         </div>
@@ -52,7 +45,7 @@ import { VENUE } from './shared/venue';
                 <a class="footer__link" routerLink="/">Inicio</a>
                 <a class="footer__link" routerLink="/ingresar">Ingresar</a>
               }
-              <a class="footer__link" routerLink="/" fragment="ubicacion">Cómo llegar</a>
+              <a class="footer__link" routerLink="/" fragment="como-llegar">Cómo llegar</a>
             </div>
           </nav>
           <section class="footer__contact">
@@ -75,7 +68,38 @@ export class AppComponent {
   venue = VENUE;
   mobileMenuOpen = false;
 
+  constructor() { this.auth.refreshSession(); }
+
+  navigationItems() {
+    const items = [
+      { label: 'Reservar', route: '/reservar' },
+      ...(this.auth.user() ? [{ label: 'Mis turnos', route: '/mis-turnos' }] : []),
+      { label: 'Cómo llegar', route: '/', fragment: 'como-llegar' },
+      ...(this.auth.isAdmin() ? [{ label: 'Admin', route: '/admin' }] : []),
+      ...(!this.auth.user() ? [
+        { label: 'Ingresar', route: '/ingresar' },
+        { label: 'Registrarse', route: '/registro', cta: true }
+      ] : [])
+    ];
+    return items;
+  }
+
   closeMobileMenu() { this.mobileMenuOpen = false; }
+
+  isNavigationActive(item: { label: string; route: string; fragment?: string }) {
+    const [pathWithQuery, fragment = ''] = this.router.url.split('#');
+    const path = pathWithQuery.split('?')[0] || '/';
+    if (item.label === 'Reservar') return path === '/reservar';
+    if (item.label === 'Mis turnos') return path === '/mis-turnos';
+    if (item.label === 'Admin') return path === '/admin' || path.startsWith('/admin/');
+    if (item.label === 'Cómo llegar') return path === '/como-llegar' || (path === '/' && fragment === 'como-llegar');
+    return path === item.route;
+  }
+
+  logout() {
+    this.closeMobileMenu();
+    this.auth.logout();
+  }
 
   isAuthPage() {
     return ['/ingresar', '/login', '/registro'].some(path => this.router.url.startsWith(path));

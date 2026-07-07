@@ -11,7 +11,7 @@
       "root": "backend",
       "framework": "express",
       "entrypoint": "src/app.ts",
-      "buildCommand": "npm run build"
+      "buildCommand": "npm run prisma:deploy && npm run build"
     }
   },
   "rewrites": [

@@ -57,6 +57,18 @@ model User {
   updatedAt DateTime @updatedAt
   @@map("users")
 }
+model PendingRegistration {
+  id Int @id @default(autoincrement())
+  firstName String
+  lastName String
+  phone String @unique
+  passwordHash String
+  expiresAt DateTime
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("pending_registrations")
+}
 model Court {
   id Int @id @default(autoincrement())
   name String

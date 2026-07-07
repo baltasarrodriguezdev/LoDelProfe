@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import bcrypt from 'bcrypt';
 import { app } from '../src/app.js';
 import { prisma } from '../src/prisma/client.js';
+import { smsVerification } from '../src/services/sms-verification.service.js';
 
 const db = prisma as any;
 let server: ReturnType<typeof app.listen>;
@@ -45,6 +46,56 @@ test('rechaza operaciones mutables desde un origen no autorizado', async () => {
   const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { message: 'Origen no autorizado' });
+});
+
+test('registro informa errores concretos por campo', async () => {
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ firstName: 'A', lastName: '', phone: '123', password: 'corta' })
+  });
+  assert.equal(response.status, 400);
+  const body = await response.json() as any;
+  assert.match(body.errors.firstName[0], /nombre/i);
+  assert.match(body.errors.lastName[0], /apellido/i);
+  assert.match(body.errors.phone[0], /teléfono/i);
+  assert.match(body.errors.password[0], /contraseña/i);
+});
+
+test('registro envía SMS y crea la cuenta solo después de verificar el código', async () => {
+  const passwordHash = await bcrypt.hash('clave-segura', 4);
+  let pending: any;
+  let sentTo = '';
+  db.user.findUnique = async () => null;
+  db.pendingRegistration = {
+    upsert: async ({ create }: any) => { pending = { id: 1, ...create, passwordHash }; return pending; },
+    deleteMany: async () => ({ count: 1 }),
+    findUnique: async () => pending,
+    update: async () => pending
+  };
+  smsVerification.send = async phone => { sentTo = phone; };
+  smsVerification.check = async () => true;
+
+  const start = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '+5493515551234', password: 'clave-segura' })
+  });
+  assert.equal(start.status, 202);
+  assert.equal(sentTo, '+5493515551234');
+
+  db.$transaction = async (work: any) => work({
+    user: { findUnique: async () => null, create: async ({ data }: any) => ({ id: 12, role: 'CLIENT', active: true, ...data }) },
+    pendingRegistration: { delete: async () => pending }
+  });
+  const verify = await fetch(`${baseUrl}/api/auth/register/verify`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ phone: '+5493515551234', code: '123456' })
+  });
+  assert.equal(verify.status, 201);
+  assert.match(verify.headers.get('set-cookie') ?? '', /HttpOnly/i);
+  const body = await verify.json() as any;
+  assert.equal(body.user.phone, '5493515551234');
+  assert.equal(body.token, undefined);
 });
 
 test('expone health tanto bajo /api como en desarrollo sin prefijo', async () => {

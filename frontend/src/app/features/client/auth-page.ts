@@ -19,20 +19,26 @@ import { Auth } from '../../core/api';
       </div>
 
       <div class="auth-form-side">
-        <form class="panel auth-card" (ngSubmit)="submit()">
+        <form class="panel auth-card" novalidate (ngSubmit)="submit()">
           <span class="eyebrow">LO DEL PROFE</span>
-          <h2>{{ registerMode ? 'Crear cuenta' : 'Ingresar' }}</h2>
+          <h2>{{ verificationStep ? 'Verificá tu teléfono' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</h2>
           @if (authMessage) { <p class="auth-message">{{ authMessage }}</p> }
-          @if (registerMode) {
+          @if (verificationStep) {
+            <p>Enviamos un código por SMS a <strong>{{ form.phone }}</strong>.</p>
+            <label>Código de verificación<input required inputmode="numeric" autocomplete="one-time-code" [(ngModel)]="verificationCode" name="verificationCode" placeholder="Código SMS">@if (fieldErrors.code) { <small class="field-error">{{ fieldErrors.code }}</small> }</label>
+          } @else if (registerMode) {
             <div class="two">
-              <label>Nombre<input required [(ngModel)]="form.firstName" name="firstName"></label>
-              <label>Apellido<input required [(ngModel)]="form.lastName" name="lastName"></label>
+              <label>Nombre<input required minlength="2" [(ngModel)]="form.firstName" name="firstName">@if (fieldErrors.firstName) { <small class="field-error">{{ fieldErrors.firstName }}</small> }</label>
+              <label>Apellido<input required minlength="2" [(ngModel)]="form.lastName" name="lastName">@if (fieldErrors.lastName) { <small class="field-error">{{ fieldErrors.lastName }}</small> }</label>
             </div>
           }
-          <label>Teléfono<input required inputmode="tel" [(ngModel)]="form.phone" name="phone" placeholder="Ej. 351 555 1234"></label>
-          <label>Contraseña<input required minlength="8" type="password" [(ngModel)]="form.password" name="password"></label>
+          @if (!verificationStep) {
+            <label>Teléfono<input required inputmode="tel" autocomplete="tel" [(ngModel)]="form.phone" name="phone" placeholder="Ej. +5493515551234"><small>Usá formato internacional: +54, código de área y número.</small>@if (fieldErrors.phone) { <small class="field-error">{{ fieldErrors.phone }}</small> }</label>
+            <label>Contraseña<input required minlength="8" type="password" autocomplete="current-password" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
+          }
           @if (error) { <p class="error">{{ error }}</p> }
-          <button class="btn primary full" [disabled]="loading">{{ loading ? 'Procesando...' : registerMode ? 'Registrarme' : 'Ingresar' }}</button>
+          <button class="btn primary full" [disabled]="loading">{{ loading ? 'Procesando...' : verificationStep ? 'Verificar código' : registerMode ? 'Enviar código por SMS' : 'Ingresar' }}</button>
+          @if (verificationStep) { <button type="button" class="btn ghost full" [disabled]="loading" (click)="resendCode()">Reenviar código</button> }
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -53,14 +59,25 @@ export class AuthPage {
     : '';
   form: any = {};
   error = '';
+  fieldErrors: { firstName?: string; lastName?: string; phone?: string; password?: string; code?: string } = {};
   loading = false;
+  verificationStep = false;
+  verificationCode = '';
 
   submit() {
     this.loading = true;
     this.error = '';
+    this.fieldErrors = {};
+    if (this.verificationStep) { this.verifyCode(); return; }
+    if (!this.validateForm()) { this.loading = false; return; }
     const call = this.registerMode ? this.auth.register(this.form) : this.auth.login(this.form);
     call.subscribe({
       next: value => {
+        if (this.registerMode) {
+          this.verificationStep = true;
+          this.loading = false;
+          return;
+        }
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         const destination = ['ADMIN', 'SUPERADMIN'].includes(value.user.role)
           ? '/admin'
@@ -68,7 +85,58 @@ export class AuthPage {
         this.router.navigateByUrl(destination);
       },
       error: error => {
-        this.error = error.error?.message ?? 'No pudimos continuar';
+        const fields = error.error?.errors as Record<string, string[] | undefined> | undefined;
+        this.fieldErrors = Object.fromEntries(Object.entries(fields ?? {}).map(([field, messages]) => [field, messages?.[0] ?? 'Dato inválido'])) as typeof this.fieldErrors;
+        this.error = Object.keys(this.fieldErrors).length ? '' : error.error?.message ?? 'No pudimos continuar';
+        this.loading = false;
+      }
+    });
+  }
+
+  private validateForm() {
+    const phone = String(this.form.phone ?? '').trim();
+    const phoneDigits = phone.replace(/\D/g, '');
+    if (this.registerMode) {
+      if (String(this.form.firstName ?? '').trim().length < 2) this.fieldErrors.firstName = 'El nombre debe tener al menos 2 caracteres.';
+      if (String(this.form.lastName ?? '').trim().length < 2) this.fieldErrors.lastName = 'El apellido debe tener al menos 2 caracteres.';
+      if (!/^\+[1-9]\d{9,14}$/.test(phone)) this.fieldErrors.phone = 'Ingresá el teléfono en formato internacional, por ejemplo +5493515551234.';
+      if (String(this.form.password ?? '').length < 8) this.fieldErrors.password = 'La contraseña debe tener al menos 8 caracteres.';
+    } else {
+      if (!phoneDigits) this.fieldErrors.phone = 'Ingresá tu teléfono.';
+      if (!this.form.password) this.fieldErrors.password = 'Ingresá tu contraseña.';
+    }
+    return Object.keys(this.fieldErrors).length === 0;
+  }
+
+  private verifyCode() {
+    if (!/^\d{4,10}$/.test(this.verificationCode.trim())) {
+      this.fieldErrors.code = 'Ingresá el código numérico que recibiste por SMS.';
+      this.loading = false;
+      return;
+    }
+    this.auth.verifyRegistration({ phone: this.form.phone, code: this.verificationCode.trim() }).subscribe({
+      next: () => this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') || '/reservar'),
+      error: response => {
+        const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;
+        this.fieldErrors.code = fields?.['code']?.[0];
+        this.error = this.fieldErrors.code ? '' : response.error?.message ?? 'No pudimos verificar el código.';
+        this.loading = false;
+      }
+    });
+  }
+
+  resendCode() {
+    this.loading = true;
+    this.error = '';
+    this.fieldErrors = {};
+    this.verificationCode = '';
+    this.auth.register(this.form).subscribe({
+      next: () => {
+        this.authMessage = 'Te enviamos un nuevo código por SMS.';
+        this.loading = false;
+      },
+      error: response => {
+        this.error = response.error?.message ?? 'No pudimos reenviar el código.';
         this.loading = false;
       }
     });

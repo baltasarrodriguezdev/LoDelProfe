@@ -116,5 +116,10 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 - `AUTH_COOKIE_MAX_AGE_MS=604800000`
 - `JWT_EXPIRES_IN=7d`
 - `APP_TIMEZONE=America/Argentina/Buenos_Aires`
+- `TWILIO_ACCOUNT_SID`: identificador de la cuenta de Twilio.
+- `TWILIO_AUTH_TOKEN`: secreto de Twilio; cargar únicamente como variable protegida.
+- `TWILIO_VERIFY_SERVICE_SID`: servicio de Verify usado para enviar códigos SMS.
 
 `VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.
+
+El build del servicio backend ejecuta `prisma migrate deploy` antes de compilar, por lo que el primer deploy con verificación SMS crea `pending_registrations` automáticamente. El registro solicita un número internacional en formato E.164, envía el código con Twilio Verify y crea la cuenta únicamente después de que Twilio lo aprueba.

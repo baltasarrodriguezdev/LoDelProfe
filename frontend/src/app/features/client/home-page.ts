@@ -25,7 +25,7 @@ import { VENUE } from '../../shared/venue';
       </div>
     </section>
 
-    <section class="location-section" id="ubicacion">
+    <section class="location-section" id="como-llegar">
       <div class="location-copy">
         <span class="eyebrow">CÓMO LLEGAR</span>
         <h2>Llegá fácil a la cancha.</h2>
