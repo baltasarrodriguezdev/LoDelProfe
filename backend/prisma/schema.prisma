@@ -11,6 +11,7 @@ enum Role {
   SUPERADMIN
 }
 enum BookingStatus {
+  PENDING_CONFIRMATION
   CONFIRMED
   PLAYED
   CANCELLED
@@ -51,23 +52,13 @@ model User {
   passwordHash String
   role Role @default(CLIENT)
   active Boolean @default(true)
+  phoneVerified Boolean @default(false)
+  isBlocked Boolean @default(false)
   bookings Booking[]
   recurring RecurringBooking[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("users")
-}
-model PendingRegistration {
-  id Int @id @default(autoincrement())
-  firstName String
-  lastName String
-  phone String @unique
-  passwordHash String
-  expiresAt DateTime
-  attempts Int @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  @@map("pending_registrations")
 }
 model Court {
   id Int @id @default(autoincrement())
@@ -117,6 +108,8 @@ model Booking {
   paymentStatus PaymentStatus @default(PENDING)
   paymentMethod String?
   notes String? @db.Text
+  cancelledAt DateTime?
+  cancellationReason String? @db.Text
   createdBy Int
   cashMovements CashMovement[]
   createdAt DateTime @default(now())

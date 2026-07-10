@@ -1,10 +1,8 @@
-import test, { after, before } from 'node:test';
+﻿import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcrypt';
 import { app } from '../src/app.js';
 import { prisma } from '../src/prisma/client.js';
-import { smsVerification } from '../src/services/sms-verification.service.js';
-import { HttpError } from '../src/utils/http-error.js';
 
 const db = prisma as any;
 let server: ReturnType<typeof app.listen>;
@@ -24,8 +22,8 @@ after(async () => new Promise<void>((resolve, reject) => server.close(error => e
 
 test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   const passwordHash = await bcrypt.hash('clave-segura', 4);
-  db.user.findFirst = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true });
-  db.user.findUnique = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true });
+  db.user.findFirst = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.user.findUnique = async () => ({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
@@ -44,6 +42,17 @@ test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   assert.equal(me.status, 200);
 });
 
+test('rechaza login de usuario bloqueado', async () => {
+  const passwordHash = await bcrypt.hash('clave-segura', 4);
+  db.user.findFirst = async () => ({ id: 8, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', passwordHash, role: 'CLIENT', active: true, phoneVerified: false, isBlocked: true });
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
+    body: JSON.stringify({ phone: '3510000000', password: 'clave-segura' })
+  });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { message: 'Tu cuenta está bloqueada. Comunicate con la cancha.' });
+});
+
 test('rechaza operaciones mutables desde un origen no autorizado', async () => {
   const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
@@ -60,75 +69,39 @@ test('registro informa errores concretos por campo', async () => {
   const body = await response.json() as any;
   assert.match(body.errors.firstName[0], /nombre/i);
   assert.match(body.errors.lastName[0], /apellido/i);
-  assert.match(body.errors.phone[0], /teléfono/i);
-  assert.match(body.errors.password[0], /contraseña/i);
+  assert.match(body.errors.phone[0], /tel.fono/i);
+  assert.match(body.errors.password[0], /contrase.a/i);
 });
 
-test('registro envía SMS y crea la cuenta solo después de verificar el código', async () => {
-  const passwordHash = await bcrypt.hash('clave-segura', 4);
-  let pending: any;
-  let sentTo = '';
+test('registro crea usuario no verificado e inicia sesión', async () => {
+  let created: any;
   db.user.findFirst = async () => null;
-  db.pendingRegistration = {
-    upsert: async ({ create }: any) => { pending = { id: 1, ...create, passwordHash }; return pending; },
-    deleteMany: async () => ({ count: 1 }),
-    findUnique: async () => pending,
-    update: async () => pending
+  db.user.create = async ({ data }: any) => {
+    created = { id: 12, role: 'CLIENT', active: true, createdAt: new Date(), updatedAt: new Date(), ...data };
+    return created;
   };
-  smsVerification.send = async phone => { sentTo = phone; };
-  smsVerification.check = async () => true;
-
-  const start = await fetch(`${baseUrl}/api/auth/register`, {
+  const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '+5493515551234', password: 'clave-segura' })
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
   });
-  assert.equal(start.status, 202);
-  assert.equal(sentTo, '+5493515551234');
-
-  db.$transaction = async (work: any) => work({
-    user: { findFirst: async () => null, create: async ({ data }: any) => ({ id: 12, role: 'CLIENT', active: true, ...data }) },
-    pendingRegistration: { delete: async () => pending }
-  });
-  const verify = await fetch(`${baseUrl}/api/auth/register/verify`, {
-    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ phone: '+5493515551234', code: '123456' })
-  });
-  assert.equal(verify.status, 201);
-  assert.match(verify.headers.get('set-cookie') ?? '', /HttpOnly/i);
-  const body = await verify.json() as any;
-  assert.equal(body.user.phone, '5493515551234');
-  assert.equal(body.token, undefined);
+  assert.equal(response.status, 201);
+  assert.match(response.headers.get('set-cookie') ?? '', /HttpOnly/i);
+  const body = await response.json() as any;
+  assert.equal(created.phone, '3576524440');
+  assert.equal(created.phoneVerified, false);
+  assert.equal(created.isBlocked, false);
+  assert.equal(body.user.passwordHash, undefined);
+  assert.equal(body.user.phoneVerified, false);
 });
 
-test('registro existente responde 409 y no intenta enviar SMS', async () => {
-  let smsCalls = 0;
-  db.user.findFirst = async () => ({ id: 20, phone: '5493576524440' });
-  smsVerification.send = async () => { smsCalls += 1; };
+test('registro existente responde 409', async () => {
+  db.user.findFirst = async () => ({ id: 20, phone: '3576524440' });
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
     body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
   });
   assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), { message: 'Ya existe una cuenta con ese teléfono.' });
-  assert.equal(smsCalls, 0);
-});
-
-test('una falla de Twilio responde 502 controlado y limpia el registro pendiente', async () => {
-  let deleted = false;
-  db.user.findFirst = async () => null;
-  db.pendingRegistration = {
-    findUnique: async () => null,
-    upsert: async ({ create }: any) => create,
-    deleteMany: async () => { deleted = true; return { count: 1 }; }
-  };
-  smsVerification.send = async () => { throw new HttpError(502, 'No pudimos enviar el SMS. Intentá nuevamente más tarde.'); };
-  const response = await fetch(`${baseUrl}/api/auth/register`, {
-    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
-  });
-  assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { message: 'No pudimos enviar el SMS. Intentá nuevamente más tarde.' });
-  assert.equal(deleted, true);
+  assert.deepEqual(await response.json(), { message: 'Ese teléfono ya está registrado' });
 });
 
 test('expone health tanto bajo /api como en desarrollo sin prefijo', async () => {

@@ -15,12 +15,18 @@ export function normalizeArgentinaPhone(input: string): string | null {
     if (candidates.length === 1) digits = candidates[0];
   }
 
-  return /^\d{10}$/.test(digits) ? `+549${digits}` : null;
+  return /^\d{10}$/.test(digits) ? `+54${digits}` : null;
 }
 
 export const ARGENTINA_PHONE_ERROR = ERROR_MESSAGE;
 
+export function localArgentinaPhone(e164Phone: string) {
+  return e164Phone.replace(/^\+?549?/, '');
+}
+
 export function storedPhoneCandidates(e164Phone: string) {
-  const local = e164Phone.slice(4);
-  return [e164Phone, e164Phone.slice(1), local];
+  const local = localArgentinaPhone(e164Phone);
+  const current = `54${local}`;
+  const legacyMobile = `549${local}`;
+  return Array.from(new Set([local, `+${current}`, current, `+${legacyMobile}`, legacyMobile]));
 }

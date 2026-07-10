@@ -1,4 +1,4 @@
-import { CommonModule } from '@angular/common';
+﻿import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -18,22 +18,22 @@ type PendingBooking = { date: string; duration: number; startTime: string };
   template: `
     <section class="page-head availability-head">
       <span class="eyebrow">RESERVAS</span>
-      <h1>Encontrá tu próximo partido.</h1>
-      <p>Elegí la duración y te mostramos directamente los mejores horarios disponibles.</p>
+      <h1>EncontrÃ¡ tu prÃ³ximo partido.</h1>
+      <p>ElegÃ­ la duraciÃ³n y te mostramos directamente los mejores horarios disponibles.</p>
     </section>
 
     <section class="turn-grid-layout">
       <aside class="panel turn-filters">
         <div class="filter-step"><span>01</span><label>Fecha<input type="date" [min]="today" [(ngModel)]="date" (change)="search()"></label></div>
-        <div class="filter-step duration-step"><span>02</span><div><label>Duración del turno</label><div class="duration-options">@for (price of prices; track price.id) { <button type="button" [class.selected]="duration === price.durationMinutes" (click)="selectDuration(price.durationMinutes)"><b>{{ durationLabel(price.durationMinutes) }}</b><small>{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small></button> }</div></div></div>
+        <div class="filter-step duration-step"><span>02</span><div><label>DuraciÃ³n del turno</label><div class="duration-options">@for (price of prices; track price.id) { <button type="button" [class.selected]="duration === price.durationMinutes" (click)="selectDuration(price.durationMinutes)"><b>{{ durationLabel(price.durationMinutes) }}</b><small>{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small></button> }</div></div></div>
       </aside>
 
       <div class="turn-results" aria-live="polite">
-        <div class="result-title turn-results-title"><div><span class="eyebrow">HORARIOS DEL DÍA</span><h2>Elegí cuándo jugar</h2><p>{{ formattedDate }} · {{ durationLabel(duration) }}</p></div>@if (result?.price) { <strong>{{ result!.price | currency:'ARS':'symbol':'1.0-0' }}</strong> }</div>
+        <div class="result-title turn-results-title"><div><span class="eyebrow">HORARIOS DEL DÃA</span><h2>ElegÃ­ cuÃ¡ndo jugar</h2><p>{{ formattedDate }} Â· {{ durationLabel(duration) }}</p></div>@if (result?.price) { <strong>{{ result!.price | currency:'ARS':'symbol':'1.0-0' }}</strong> }</div>
         @if (loading) {
           <div class="empty turn-empty">Buscando horarios...</div>
         } @else if (!availableSlots.length) {
-          <div class="empty turn-empty"><strong>No hay turnos disponibles para este día.</strong><span>Probá con otra fecha o duración.</span></div>
+          <div class="empty turn-empty"><strong>No hay turnos disponibles para este dÃ­a.</strong><span>ProbÃ¡ con otra fecha o duraciÃ³n.</span></div>
         } @else {
           <div class="start-time-grid">
             @for (slot of availableSlots; track slot.startTime) {
@@ -41,7 +41,7 @@ type PendingBooking = { date: string; duration: number; startTime: string };
             }
           </div>
         }
-        @if (message) { <p class="notice error-notice">{{ message }}</p> }
+        @if (message) { <p class="notice" [class.error-notice]="messageIsError">{{ message }}</p> }
       </div>
     </section>
 
@@ -49,17 +49,17 @@ type PendingBooking = { date: string; duration: number; startTime: string };
       <div class="modal-backdrop" (click)="closeModal()">
         <section class="booking-modal" [class.guest-booking-modal]="!auth.user()" role="dialog" aria-modal="true" aria-labelledby="confirm-title" (click)="$event.stopPropagation()">
           @if (!confirmedBooking) {
-            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeModal()">×</button>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeModal()">Ã—</button>
 
             @if (!auth.user()) {
-              <span class="eyebrow">ÚLTIMO PASO</span>
-              <h2 id="confirm-title">Ya casi tenés tu turno</h2>
-              <p>Para confirmar desde la web, ingresá o creá tu cuenta. Si preferís hacerlo como siempre, también podés pedirlo por WhatsApp.</p>
+              <span class="eyebrow">ÃšLTIMO PASO</span>
+              <h2 id="confirm-title">Ya casi tenÃ©s tu turno</h2>
+              <p>Para confirmar desde la web, ingresÃ¡ o creÃ¡ tu cuenta. Si preferÃ­s hacerlo como siempre, tambiÃ©n podÃ©s pedirlo por WhatsApp.</p>
 
               <div class="booking-summary guest-booking-summary">
-                <div><span>Día</span><strong>{{ formattedDate }}</strong></div>
-                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
-                <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
+                <div><span>DÃ­a</span><strong>{{ formattedDate }}</strong></div>
+                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} â€” {{ selectedSlot.endTime }}</strong></div>
+                <div><span>DuraciÃ³n</span><strong>{{ durationLabel(duration) }}</strong></div>
                 <div><span>Precio</span><strong>{{ result?.price | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
               </div>
 
@@ -75,12 +75,12 @@ type PendingBooking = { date: string; duration: number; startTime: string };
                   <label>Apellido<input [(ngModel)]="guestLastName" autocomplete="family-name" placeholder="Tu apellido"></label>
                 </div>
                 @if (modalError) { <p class="notice error-notice">{{ modalError }}</p> }
-                <button type="button" class="btn guest-whatsapp full" (click)="reserveByWhatsapp()">Reservar por WhatsApp <span>↗</span></button>
-                <p class="guest-confirmation-note">El turno por WhatsApp queda sujeto a confirmación del club.</p>
+                <button type="button" class="btn guest-whatsapp full" (click)="reserveByWhatsapp()">Reservar por WhatsApp <span>â†—</span></button>
+                <p class="guest-confirmation-note">El turno por WhatsApp queda sujeto a confirmaciÃ³n del club.</p>
                 <button type="button" class="link cancel-modal" (click)="closeModal()">Elegir otro horario</button>
               } @else {
                 <div class="whatsapp-opened">
-                  <span class="success-check">✓</span>
+                  <span class="success-check">âœ“</span>
                   <h3>Te abrimos WhatsApp</h3>
                   <p>El mensaje ya tiene los datos del turno. El horario no queda reservado hasta que el club lo confirme.</p>
                   <button type="button" class="btn guest-register full" (click)="closeModal()">Volver a horarios</button>
@@ -88,11 +88,11 @@ type PendingBooking = { date: string; duration: number; startTime: string };
                 </div>
               }
             } @else {
-              <span class="eyebrow">ÚLTIMO PASO</span><h2 id="confirm-title">Confirmá tu turno</h2><p>Revisá los datos antes de guardar la reserva.</p>
+              <span class="eyebrow">ÃšLTIMO PASO</span><h2 id="confirm-title">ConfirmÃ¡ tu turno</h2><p>RevisÃ¡ los datos antes de guardar la reserva.</p>
               <div class="booking-summary">
                 <div><span>Fecha</span><strong>{{ formattedDate }}</strong></div>
-                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
-                <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
+                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} â€” {{ selectedSlot.endTime }}</strong></div>
+                <div><span>DuraciÃ³n</span><strong>{{ durationLabel(duration) }}</strong></div>
                 <div><span>Jugadores</span><strong>{{ players }}</strong></div>
                 <div><span>Precio total</span><strong>{{ result?.price | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
               </div>
@@ -105,7 +105,25 @@ type PendingBooking = { date: string; duration: number; startTime: string };
               <button type="button" class="link cancel-modal" [disabled]="submitting" (click)="closeModal()">Elegir otro horario</button>
             }
           } @else {
-            <div class="booking-success"><span class="success-check">✓</span><span class="eyebrow">RESERVA CONFIRMADA</span><h2>La cancha es tuya.</h2><p>Tu turno quedó guardado para las {{ selectedSlot.startTime }}.</p><div class="success-location"><small>DÓNDE JUGAMOS</small><strong>{{ venue.address }}</strong><a [href]="venue.mapsUrl" target="_blank" rel="noopener noreferrer">Cómo llegar ↗</a></div><a class="btn primary full" routerLink="/mis-turnos">Ver mis turnos</a><button type="button" class="link cancel-modal" (click)="closeModal()">Cerrar</button></div>
+            <div class="booking-success">
+              @if (confirmedBooking.requiresWhatsappConfirmation) {
+                <span class="eyebrow">CONFIRMACIÓN PENDIENTE</span>
+                <h2>Confirmá tu primer turno por WhatsApp</h2>
+                <p>Para evitar reservas falsas, necesitamos confirmar tu identidad una sola vez. Tocá el botón de WhatsApp y envianos el mensaje ya armado. Cuando lo aprobemos, tu cuenta quedará verificada.</p>
+                <div class="booking-summary">
+                  <div><span>Día</span><strong>{{ formattedDate }}</strong></div>
+                  <div><span>Horario</span><strong>{{ selectedSlot.startTime }} - {{ selectedSlot.endTime }}</strong></div>
+                  <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
+                  <div><span>Estado</span><strong>Pendiente de confirmación</strong></div>
+                </div>
+                @if (confirmedBooking.whatsappUrl) { <a class="btn primary full" [href]="confirmedBooking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp</a> }
+                @else { <p class="notice error-notice">La reserva quedó pendiente, pero falta configurar el WhatsApp de la cancha.</p> }
+                <a class="btn ghost full" routerLink="/mis-turnos">Ver mis turnos</a>
+                <button type="button" class="link cancel-modal" (click)="closeModal()">Cerrar</button>
+              } @else {
+                <span class="success-check">✓</span><span class="eyebrow">RESERVA CONFIRMADA</span><h2>La cancha es tuya.</h2><p>Turno confirmado para las {{ selectedSlot.startTime }}.</p><div class="success-location"><small>DÓNDE JUGAMOS</small><strong>{{ venue.address }}</strong><a [href]="venue.mapsUrl" target="_blank" rel="noopener noreferrer">Cómo llegar</a></div><a class="btn primary full" routerLink="/mis-turnos">Ver mis turnos</a><button type="button" class="link cancel-modal" (click)="closeModal()">Cerrar</button>
+              }
+            </div>
           }
         </section>
       </div>
@@ -134,6 +152,7 @@ export class AvailabilityPage implements OnInit {
   loading = false;
   submitting = false;
   message = '';
+  messageIsError = true;
   modalError = '';
   whatsappOpened = false;
   private pendingBooking: PendingBooking | null = null;
@@ -224,7 +243,7 @@ export class AvailabilityPage implements OnInit {
     const firstName = this.guestFirstName.trim();
     const lastName = this.guestLastName.trim();
     if (!firstName || !lastName) {
-      this.modalError = 'Ingresá tu nombre y apellido para continuar por WhatsApp.';
+      this.modalError = 'IngresÃ¡ tu nombre y apellido para continuar por WhatsApp.';
       return;
     }
     this.modalError = '';
@@ -256,7 +275,7 @@ export class AvailabilityPage implements OnInit {
       playersCount: this.players,
       notes: this.notes.trim() || undefined
     }).subscribe({
-      next: booking => {
+      next: (booking: any) => {
         this.confirmedBooking = booking;
         this.submitting = false;
         sessionStorage.removeItem(this.pendingKey);
@@ -297,7 +316,7 @@ export class AvailabilityPage implements OnInit {
     if (slot) {
       this.openConfirmation(slot);
     } else {
-      this.message = 'Ese horario ya no está disponible. Elegí otro turno.';
+      this.message = 'Ese horario ya no estÃ¡ disponible. ElegÃ­ otro turno.';
     }
   }
 }

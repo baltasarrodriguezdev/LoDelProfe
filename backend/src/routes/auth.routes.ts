@@ -27,10 +27,9 @@ const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'la
 const establish = (res: Response, result: { token: string; user: unknown }, status = 200) =>
   res.status(status).cookie(config.authCookieName, result.token, cookieOptions).json({ user: result.user });
 
-router.post('/register', asyncHandler(async (req, res) => res.status(202).json(await auth.startRegistration(registrationSchema.parse(req.body)))));
-router.post('/register/verify', asyncHandler(async (req, res) => {
-  const data = z.object({ phone: phoneSchema, code: z.string().regex(/^\d{4,10}$/, 'Ingresá el código numérico recibido por SMS') }).parse(req.body);
-  establish(res, await auth.completeRegistration(data.phone, data.code), 201);
+router.post('/register', asyncHandler(async (req, res) => {
+  const data = registrationSchema.parse(req.body);
+  establish(res, await auth.register(data), 201);
 }));
 router.post('/login', asyncHandler(async (req, res) => {
   const data = z.object({ phone: phoneSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).parse(req.body);

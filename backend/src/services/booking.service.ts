@@ -1,4 +1,4 @@
-import { BookingOrigin, BookingStatus, Prisma } from '@prisma/client';
+﻿import { BookingOrigin, BookingStatus, Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { prisma } from '../prisma/client.js';
 import { businessIntervals, dayOfWeek, localDateTime } from '../utils/time.js';
@@ -12,7 +12,7 @@ export type BookingInput = {
   notes?: string; status?: BookingStatus; origin?: BookingOrigin; priceTotal?: number; adminOverride?: boolean;
 };
 
-const occupied: BookingStatus[] = ['CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+export const occupiedBookingStatuses: BookingStatus[] = ['PENDING_CONFIRMATION', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
 const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
 const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
 
@@ -33,8 +33,8 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
     tx.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(input.date) } })
   ]);
   if (!court) throw new HttpError(404, 'Cancha no encontrada');
-  if (!price) throw new HttpError(400, 'Duración sin precio activo');
-  if (!hours?.active) throw new HttpError(400, 'La cancha está cerrada ese día');
+  if (!price) throw new HttpError(400, 'DuraciÃ³n sin precio activo');
+  if (!hours?.active) throw new HttpError(400, 'La cancha estÃ¡ cerrada ese dÃ­a');
 
   if (start <= DateTime.now().setZone(config.timezone)) throw new HttpError(400, 'No se puede reservar un horario pasado');
   const schedules = businessIntervals(input.date, hours.openTime, hours.closeTime);
@@ -45,14 +45,14 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
     where: {
       id: ignoreId ? { not: ignoreId } : undefined,
       courtId: input.courtId,
-      status: { in: occupied },
+      status: { in: occupiedBookingStatuses },
       startTime: { lt: schedule.close.toJSDate() },
       endTime: { gt: schedule.open.toJSDate() }
     },
     select: { startTime: true, endTime: true }
   });
   if (hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, bookings.map(b => ({ start: b.startTime, end: b.endTime })))) {
-    throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.');
+    throw new HttpError(409, 'Ese horario ya no estÃ¡ disponible. ElegÃ­ otro turno.');
   }
   if (config.booking.avoidDeadGaps && leavesDeadGap(start, end, schedule.open, schedule.close, bookings)
     && !(config.booking.allowAdminOverride && input.adminOverride)) {
@@ -88,7 +88,7 @@ export async function availability(date: string, durationMinutes: number, courtI
   const rangeOpen = schedules[0].open;
   const rangeClose = schedules[schedules.length - 1].close;
   const bookings = await prisma.booking.findMany({
-    where: { courtId, status: { in: occupied }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
+    where: { courtId, status: { in: occupiedBookingStatuses }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
     select: { startTime: true, endTime: true }
   });
 
@@ -104,7 +104,7 @@ export async function availability(date: string, durationMinutes: number, courtI
         startTime: start.toFormat('HH:mm'), endTime: end.toFormat('HH:mm'),
         available: !past && !overlaps && !deadGap,
         reason: past ? 'PAST' : overlaps ? 'OCCUPIED' : deadGap ? 'DEAD_GAP' : null,
-        message: past ? 'El horario ya pasó' : deadGap ? 'No disponible para esta duración' : null
+        message: past ? 'El horario ya pasÃ³' : deadGap ? 'No disponible para esta duraciÃ³n' : null
       });
     }
   }
@@ -129,7 +129,7 @@ export async function freeAvailability(date: string, courtId: number) {
   const rangeOpen = schedules[0].open;
   const rangeClose = schedules[schedules.length - 1].close;
   const bookings = await prisma.booking.findMany({
-    where: { courtId, status: { in: occupied }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
+    where: { courtId, status: { in: occupiedBookingStatuses }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
     select: { startTime: true, endTime: true },
     orderBy: { startTime: 'asc' }
   });
