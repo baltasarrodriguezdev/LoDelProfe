@@ -118,7 +118,20 @@ type PendingBooking = { date: string; duration: number; startTime: string };
                   <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
                   <div><span>Estado</span><strong>Pendiente de confirmación</strong></div>
                 </div>
-                @if (confirmedBooking.whatsappUrl) { <a class="btn primary full" [href]="confirmedBooking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp</a> }
+                @if (confirmedBooking.whatsappUrl) {
+                  @if (!whatsappOpened) {
+                    <button type="button" class="btn primary full" (click)="openPendingWhatsapp()">Enviar WhatsApp</button>
+                    <p class="guest-confirmation-note">El turno queda pendiente hasta que la cancha lo confirme.</p>
+                  } @else {
+                    <div class="whatsapp-opened">
+                      <span class="success-check">✓</span>
+                      <h3>WhatsApp abierto</h3>
+                      <p>Si ya enviaste el mensaje, podés cerrar este paso. Tu turno quedó pendiente hasta que la cancha lo confirme.</p>
+                      <button type="button" class="btn primary full" (click)="finishPendingWhatsapp()">Ya envié el WhatsApp</button>
+                      <button type="button" class="btn guest-register full" (click)="openPendingWhatsapp()">Enviar WhatsApp de nuevo</button>
+                    </div>
+                  }
+                }
                 @else { <p class="notice error-notice">La reserva quedó pendiente, pero falta configurar el WhatsApp de la cancha.</p> }
                 <a class="btn ghost full" routerLink="/mis-turnos">Ver mis turnos</a>
                 <button type="button" class="link cancel-modal" (click)="closeModal()">Cerrar</button>
@@ -287,6 +300,18 @@ export class AvailabilityPage implements OnInit {
     });
     window.open(url, '_blank', 'noopener,noreferrer');
     this.whatsappOpened = true;
+  }
+
+  openPendingWhatsapp() {
+    const url = this.confirmedBooking?.whatsappUrl;
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    this.whatsappOpened = true;
+  }
+
+  finishPendingWhatsapp() {
+    this.closeModal();
+    this.router.navigate(['/mis-turnos']);
   }
 
   confirmBooking() {
