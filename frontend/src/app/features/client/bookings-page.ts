@@ -17,9 +17,18 @@ import { Api } from '../../core/api';
       @for (booking of bookings; track booking.id) {
         <article class="booking-card">
           <div class="date-block"><b>{{ booking.startTime | date:'dd' }}</b><span>{{ booking.startTime | date:'MMM' }}</span></div>
-          <div><span class="tag">{{ statusLabel(booking.status) }}</span><h2>{{ booking.startTime | date:'HH:mm' }} · {{ booking.durationMinutes }} min</h2><p>{{ booking.playersCount }} jugadores</p>@if (booking.status === 'PENDING_CONFIRMATION') { <p>Pendiente de confirmación por WhatsApp</p> }</div>
+          <div>
+            <span class="tag">{{ statusLabel(booking.status) }}</span>
+            <h2>{{ booking.startTime | date:'HH:mm' }} · {{ booking.durationMinutes }} min</h2>
+            <p>{{ booking.playersCount }} jugadores</p>
+            @if (booking.status === 'PENDING_CONFIRMATION') {
+              <p>Pendiente de confirmación por WhatsApp</p>
+              <p>Ya generamos tu solicitud. Si todavía no enviaste el WhatsApp, tocá el botón.</p>
+            }
+          </div>
           <strong>{{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong>
-          @if (!history && booking.status === 'PENDING_CONFIRMATION' && booking.whatsappUrl) { <a class="btn primary" [href]="booking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp de confirmación</a> } @if (!history) { <button type="button" class="btn danger" (click)="openCancelModal(booking)">Cancelar</button> }
+          @if (!history && booking.status === 'PENDING_CONFIRMATION' && booking.whatsappUrl) { <a class="btn primary" [href]="booking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp de nuevo</a> }
+          @if (!history) { <button type="button" class="btn danger" (click)="openCancelModal(booking)">Cancelar</button> }
         </article>
       } @empty {
         <div class="empty">Todavía no hay turnos para mostrar.</div>

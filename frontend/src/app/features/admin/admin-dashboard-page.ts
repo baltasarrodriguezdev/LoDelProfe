@@ -21,6 +21,7 @@ type Booking = {
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
+  user?: { firstName: string; lastName: string; phone: string; phoneVerified: boolean } | null;
 };
 
 @Component({
@@ -66,6 +67,30 @@ type Booking = {
       @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
       <section class="operations-agenda">
+        <div class="section-heading"><div><span class="eyebrow">WHATSAPP</span><h2>Turnos pendientes de WhatsApp</h2></div></div>
+        <div class="operations-bookings">
+          @for (booking of pendingReservations; track booking.id) {
+            <article class="operations-booking">
+              <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>{{ booking.startTime | date:'dd/MM' }}</small></time>
+              <div class="operations-booking__main">
+                <div class="operations-booking__labels">
+                  <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
+                  @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
+                </div>
+                <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
+                <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }}</p>
+              </div>
+              <div class="operations-booking__actions">
+                <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
+                <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar y verificar usuario</button>
+                <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
+              </div>
+            </article>
+          } @empty { <div class="empty">No hay turnos pendientes de WhatsApp.</div> }
+        </div>
+      </section>
+
+      <section class="operations-agenda">
         <div class="section-heading"><div><span class="eyebrow">VALIDACIONES</span><h2>Usuarios pendientes de verificar</h2></div></div>
         <div class="operations-bookings">
           @for (user of pendingUsers; track user.id) {
@@ -109,16 +134,15 @@ type Booking = {
                     {{ booking.durationMinutes }} min
                     @if (booking.status !== 'BLOCKED') { <span> · {{ booking.playersCount }} jugadores · {{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</span> }
                   </p>
-
                 </div>
-                <div class="operations-booking__actions">                  <button type="button" class="small-action detail-action" (click)="openDetail(booking)">Ver detalle</button>
-
+                <div class="operations-booking__actions">
+                  <button type="button" class="small-action detail-action" (click)="openDetail(booking)">Ver detalle</button>
                   @if (booking.status !== 'BLOCKED' && booking.clientPhone) {
                     <a class="small-action whatsapp-action" [href]="whatsappUrl(booking.clientPhone)" target="_blank" rel="noopener noreferrer">WhatsApp</a>
                   }
                   @if (booking.status === 'PENDING_CONFIRMATION') {
-                    <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar turno</button>
-                    <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar y verificar</button>
+                    <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
+                    <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar y verificar usuario</button>
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>
@@ -199,7 +223,6 @@ type Booking = {
         </section>
       </div>
     }
-
   `
 })
 export class AdminDashboardPage implements OnInit {
@@ -210,6 +233,7 @@ export class AdminDashboardPage implements OnInit {
   selectedDate = this.dateInput(new Date());
   availabilityDuration = 90;
   bookings: Booking[] = [];
+  pendingReservations: Booking[] = [];
   availability: any;
   pendingUsers: any[] = [];
   loading = false;
@@ -235,6 +259,8 @@ export class AdminDashboardPage implements OnInit {
 
   loadAll() {
     this.loadBookings();
+    this.loadPendingReservations();
+    this.loadPendingUsers();
     this.loadAvailability();
   }
 
@@ -246,6 +272,13 @@ export class AdminDashboardPage implements OnInit {
     this.api.get<Booking[]>('/admin/bookings', { from: from.toISOString(), to: to.toISOString() }).subscribe({
       next: bookings => { this.bookings = bookings; this.loading = false; },
       error: error => { this.showNotice(error.error?.message ?? 'No se pudo cargar la agenda.', true); this.loading = false; }
+    });
+  }
+
+  loadPendingReservations() {
+    this.api.get<Booking[]>('/admin/reservations', { status: 'PENDING_CONFIRMATION' }).subscribe({
+      next: bookings => this.pendingReservations = bookings,
+      error: error => this.showNotice(error.error?.message ?? 'No se pudieron cargar turnos pendientes.', true)
     });
   }
 
@@ -284,7 +317,7 @@ export class AdminDashboardPage implements OnInit {
         this.showNotice(status === 'CANCELLED'
           ? (booking.clientName === 'Bloqueo' ? 'Horario liberado correctamente.' : 'Turno cancelado correctamente.')
           : 'Turno reactivado correctamente.');
-        this.loadAvailability();
+        this.reloadOperationalViews();
       },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo actualizar el turno.', true)
     });
@@ -304,14 +337,20 @@ export class AdminDashboardPage implements OnInit {
   }
   confirmPending(booking: Booking) {
     this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm', {}).subscribe({
-      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Turno confirmado.'); this.loadAvailability(); },
+      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Turno confirmado.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar el turno.', true)
     });
   }
   confirmAndVerify(booking: Booking) {
     this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm-and-verify-user', {}).subscribe({
-      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Turno confirmado y usuario verificado.'); this.loadPendingUsers(); this.loadAvailability(); },
+      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Turno confirmado y usuario verificado.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar y verificar.', true)
+    });
+  }
+  cancelPendingReservation(booking: Booking) {
+    this.api.patch<any>('/admin/reservations/' + booking.id + '/cancel', {}).subscribe({
+      next: () => { booking.status = 'CANCELLED'; this.showNotice('Turno cancelado.'); this.reloadOperationalViews(); },
+      error: error => this.showNotice(error.error?.message ?? 'No se pudo cancelar el turno.', true)
     });
   }
 
@@ -387,6 +426,13 @@ export class AdminDashboardPage implements OnInit {
 
   paymentLabel(status: string) {
     return ({ PENDING: 'Pago pendiente', PAID: 'Pagado', PARTIAL: 'Seña pagada' } as Record<string, string>)[status] ?? 'Pago pendiente';
+  }
+
+  private reloadOperationalViews() {
+    this.loadBookings();
+    this.loadPendingReservations();
+    this.loadPendingUsers();
+    this.loadAvailability();
   }
 
   private bookingAt(time: string) {

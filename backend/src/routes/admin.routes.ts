@@ -1,15 +1,398 @@
-import{Router}from'express';import{BookingOrigin,BookingStatus,CashCategory,CashType,PaymentStatus,Role}from'@prisma/client';import{z}from'zod';import{authenticate,authorize}from'../middlewares/auth.js';import{asyncHandler}from'../utils/async-handler.js';import{prisma}from'../prisma/client.js';import{createBooking,updateBooking}from'../services/booking.service.js';import{DateTime}from'luxon';import{config}from'../config.js';import{HttpError}from'../utils/http-error.js';const r=Router();r.use(authenticate,authorize(Role.ADMIN,Role.SUPERADMIN));const bs=z.object({courtId:z.number(),userId:z.number().nullable().optional(),clientName:z.string().min(2),clientPhone:z.string().min(6),date:z.string().date(),startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),durationMinutes:z.number(),playersCount:z.number().default(4),notes:z.string().optional(),status:z.nativeEnum(BookingStatus).optional(),origin:z.nativeEnum(BookingOrigin).optional(),priceTotal:z.number().positive().optional()});
-r.get('/users',asyncHandler(async(q,p)=>{const x=String(q.query.search??'');p.json(await prisma.user.findMany({where:x?{OR:[{firstName:{contains:x}},{lastName:{contains:x}},{phone:{contains:x}}]}:{},omit:{passwordHash:true}}))}));
-r.get('/users/pending-verification',asyncHandler(async(_q,p)=>p.json(await prisma.user.findMany({where:{phoneVerified:false,isBlocked:false},omit:{passwordHash:true},include:{_count:{select:{bookings:{where:{status:'PENDING_CONFIRMATION'}}}}},orderBy:{createdAt:'asc'}}))));
-r.get('/users/:id',asyncHandler(async(q,p)=>p.json(await prisma.user.findUnique({where:{id:+q.params.id},omit:{passwordHash:true}}))));
-r.patch('/users/:id/verify',asyncHandler(async(q,p)=>p.json(await prisma.user.update({where:{id:+q.params.id},data:{phoneVerified:true},omit:{passwordHash:true}}))));
-r.patch('/users/:id',asyncHandler(async(q,p)=>{const data=z.object({firstName:z.string().optional(),lastName:z.string().optional(),active:z.boolean().optional(),phoneVerified:z.boolean().optional(),isBlocked:z.boolean().optional(),role:z.nativeEnum(Role).optional()}).parse(q.body);if(data.role&&q.auth!.role!==Role.SUPERADMIN)throw new HttpError(403,'Solo SUPERADMIN puede cambiar roles');p.json(await prisma.user.update({where:{id:+q.params.id},data,omit:{passwordHash:true}}))}));
-r.post('/courts',authorize(Role.SUPERADMIN),asyncHandler(async(q,p)=>p.status(201).json(await prisma.court.create({data:z.object({name:z.string(),description:z.string().optional(),active:z.boolean().default(true)}).parse(q.body)}))));r.patch('/courts/:id',authorize(Role.SUPERADMIN),asyncHandler(async(q,p)=>p.json(await prisma.court.update({where:{id:+q.params.id},data:q.body}))));
-r.post('/prices',authorize(Role.SUPERADMIN),asyncHandler(async(q,p)=>p.status(201).json(await prisma.price.create({data:z.object({durationMinutes:z.number(),price:z.number(),active:z.boolean().default(true)}).parse(q.body)}))));r.patch('/prices/:id',authorize(Role.SUPERADMIN),asyncHandler(async(q,p)=>p.json(await prisma.price.update({where:{id:+q.params.id},data:q.body}))));r.put('/business-hours',authorize(Role.SUPERADMIN),asyncHandler(async(q,p)=>{const rows=z.array(z.object({dayOfWeek:z.number(),openTime:z.string(),closeTime:z.string(),active:z.boolean()})).parse(q.body);await prisma.$transaction(rows.map(x=>prisma.businessHour.upsert({where:{dayOfWeek:x.dayOfWeek},update:x,create:x})));p.json(rows)}));
-r.get('/bookings',asyncHandler(async(q,p)=>{const status=q.query.status?z.nativeEnum(BookingStatus).parse(q.query.status):undefined;p.json(await prisma.booking.findMany({where:{status,startTime:{gte:q.query.from?new Date(String(q.query.from)):undefined,lte:q.query.to?new Date(String(q.query.to)):undefined}},include:{court:true,user:{omit:{passwordHash:true}}},orderBy:{startTime:'asc'}}))}));r.get('/bookings/:id',asyncHandler(async(q,p)=>{const booking=await prisma.booking.findUnique({where:{id:+q.params.id},include:{court:true,user:{omit:{passwordHash:true}}}});if(!booking)throw new HttpError(404,'Turno no encontrado');const creator=await prisma.user.findUnique({where:{id:booking.createdBy},select:{id:true,firstName:true,lastName:true,role:true}});p.json({...booking,creator})}));r.post('/bookings',asyncHandler(async(q,p)=>p.status(201).json(await createBooking(bs.extend({adminOverride:z.boolean().optional()}).parse(q.body),q.auth!.userId))));r.post('/blocks',asyncHandler(async(q,p)=>{const d=z.object({date:z.string().date(),startTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),durationMinutes:z.number(),notes:z.string().optional()}).parse(q.body);p.status(201).json(await createBooking({courtId:1,clientName:'Bloqueo',clientPhone:'',date:d.date,startTime:d.startTime,durationMinutes:d.durationMinutes,playersCount:0,notes:d.notes,status:'BLOCKED',origin:'MANUAL',priceTotal:0,adminOverride:true},q.auth!.userId))}));r.patch('/bookings/:id',asyncHandler(async(q,p)=>p.json(await updateBooking(+q.params.id,bs.partial().extend({adminOverride:z.boolean().optional()}).parse(q.body)))));r.patch('/bookings/:id/status',asyncHandler(async(q,p)=>{const id=+q.params.id,status=z.nativeEnum(BookingStatus).parse(q.body.status),booking=await prisma.booking.findUnique({where:{id}});if(!booking)throw new HttpError(404,'Turno no encontrado');if(booking.status==='CANCELLED'&&['CONFIRMED','BLOCKED'].includes(status))return p.json(await updateBooking(id,{status}));p.json(await prisma.booking.update({where:{id},data:{status,cancelledAt:status==='CANCELLED'?new Date():undefined}}))}));
-r.patch('/reservations/:id/confirm',asyncHandler(async(q,p)=>{const id=+q.params.id;p.json(await prisma.booking.update({where:{id},data:{status:'CONFIRMED'}}))}));
-r.patch('/reservations/:id/cancel',asyncHandler(async(q,p)=>{const id=+q.params.id,d=z.object({cancellationReason:z.string().max(1000).optional()}).parse(q.body??{});p.json(await prisma.booking.update({where:{id},data:{status:'CANCELLED',cancelledAt:new Date(),cancellationReason:d.cancellationReason}}))}));
-r.patch('/reservations/:id/confirm-and-verify-user',asyncHandler(async(q,p)=>{const id=+q.params.id;const booking=await prisma.booking.findUnique({where:{id}});if(!booking)throw new HttpError(404,'Turno no encontrado');const result=await prisma.$transaction(async tx=>{const updated=await tx.booking.update({where:{id},data:{status:'CONFIRMED'}});if(updated.userId)await tx.user.update({where:{id:updated.userId},data:{phoneVerified:true}});return updated});p.json(result)}));r.delete('/bookings/:id',asyncHandler(async(q,p)=>p.json(await prisma.booking.update({where:{id:+q.params.id},data:{status:'CANCELLED',cancelledAt:new Date()}}))));r.delete('/bookings/:id/permanent',asyncHandler(async(q,p)=>{const id=+q.params.id,booking=await prisma.booking.findUnique({where:{id}});if(!booking)throw new HttpError(404,'Turno no encontrado');if(booking.status!=='CANCELLED')throw new HttpError(409,'Solo se pueden eliminar turnos cancelados');await prisma.$transaction([prisma.cashMovement.updateMany({where:{bookingId:id},data:{bookingId:null}}),prisma.booking.delete({where:{id}})]);p.json({message:'Turno eliminado del historial'})}));
-r.patch('/bookings/:id/payment',asyncHandler(async(q,p)=>{const id=+q.params.id,d=z.object({paymentStatus:z.nativeEnum(PaymentStatus),paymentMethod:z.string().optional(),createCashMovement:z.boolean().default(false)}).parse(q.body);const b=await prisma.$transaction(async tx=>{const x=await tx.booking.update({where:{id},data:{paymentStatus:d.paymentStatus,paymentMethod:d.paymentMethod}});if(d.paymentStatus==='PAID'&&d.createCashMovement&&!await tx.cashMovement.findFirst({where:{bookingId:id,category:'TURNO'}}))await tx.cashMovement.create({data:{type:'INCOME',category:'TURNO',amount:x.priceTotal,description:`Pago turno #${id}`,bookingId:id,createdBy:q.auth!.userId}});return x});p.json(b)}));
-const rs=z.object({courtId:z.number(),userId:z.number().nullable().optional(),clientName:z.string(),clientPhone:z.string(),dayOfWeek:z.number(),startTime:z.string(),durationMinutes:z.number(),startDate:z.string(),endDate:z.string(),notes:z.string().optional()});r.get('/recurring-bookings',asyncHandler(async(_,p)=>p.json(await prisma.recurringBooking.findMany({include:{court:true,_count:{select:{bookings:true}}}}))));r.post('/recurring-bookings',asyncHandler(async(q,p)=>{const d=rs.parse(q.body),price=await prisma.price.findFirst({where:{durationMinutes:d.durationMinutes,active:true}});if(!price)throw new HttpError(400,'Duración sin precio');let c=DateTime.fromISO(d.startDate,{zone:config.timezone}),end=DateTime.fromISO(d.endDate,{zone:config.timezone});while(c.weekday%7!==d.dayOfWeek)c=c.plus({days:1});const dates:string[]=[];while(c<=end){dates.push(c.toISODate()!);c=c.plus({weeks:1})}const recurring=await prisma.recurringBooking.create({data:{...d,startDate:new Date(d.startDate),endDate:new Date(d.endDate),priceTotal:price.price,createdBy:q.auth!.userId}});try{for(const date of dates)await createBooking({...d,date,status:'CONFIRMED',origin:'MANUAL'},q.auth!.userId,recurring.id)}catch(e){await prisma.booking.deleteMany({where:{recurringId:recurring.id}});await prisma.recurringBooking.delete({where:{id:recurring.id}});throw e}p.status(201).json(recurring)}));r.patch('/recurring-bookings/:id',asyncHandler(async(q,p)=>p.json(await prisma.recurringBooking.update({where:{id:+q.params.id},data:q.body}))));r.patch('/recurring-bookings/:id/deactivate',asyncHandler(async(q,p)=>{const id=+q.params.id,recurring=await prisma.recurringBooking.findUnique({where:{id}});if(!recurring)throw new HttpError(404,'Turno fijo no encontrado');if(!recurring.active)return p.json({message:'El turno fijo ya estaba desactivado',cancelledBookings:0});const[,cancelled]=await prisma.$transaction([prisma.recurringBooking.update({where:{id},data:{active:false}}),prisma.booking.updateMany({where:{recurringId:id,startTime:{gte:new Date()},status:{in:['CONFIRMED']}},data:{status:'CANCELLED'}})]);p.json({message:'Turno fijo desactivado correctamente',cancelledBookings:cancelled.count})}));
-r.get('/cash-movements',asyncHandler(async(_,p)=>p.json(await prisma.cashMovement.findMany({orderBy:{createdAt:'desc'}}))));r.post('/cash-movements',asyncHandler(async(q,p)=>{const d=z.object({type:z.nativeEnum(CashType),category:z.nativeEnum(CashCategory),amount:z.number().positive(),description:z.string(),bookingId:z.number().nullable().optional()}).parse(q.body);p.status(201).json(await prisma.cashMovement.create({data:{...d,createdBy:q.auth!.userId}}))}));for(const period of['daily','weekly','monthly']as const)r.get(`/reports/${period}`,asyncHandler(async(_,p)=>{const now=DateTime.now().setZone(config.timezone),start=period==='daily'?now.startOf('day'):period==='weekly'?now.startOf('week'):now.startOf('month'),end=period==='daily'?now.endOf('day'):period==='weekly'?now.endOf('week'):now.endOf('month'),rows=await prisma.cashMovement.findMany({where:{createdAt:{gte:start.toJSDate(),lte:end.toJSDate()}}}),income=rows.filter(x=>x.type==='INCOME').reduce((a,x)=>a+Number(x.amount),0),expense=rows.filter(x=>x.type==='EXPENSE').reduce((a,x)=>a+Number(x.amount),0);p.json({period,income,expense,balance:income-expense})}));export default r;
+import { Router } from 'express';
+import {
+  BookingOrigin,
+  BookingStatus,
+  CashCategory,
+  CashType,
+  PaymentStatus,
+  Role
+} from '@prisma/client';
+import { z } from 'zod';
+import { DateTime } from 'luxon';
+import { authenticate, authorize } from '../middlewares/auth.js';
+import { asyncHandler } from '../utils/async-handler.js';
+import { prisma } from '../prisma/client.js';
+import { createBooking, updateBooking } from '../services/booking.service.js';
+import { config } from '../config.js';
+import { HttpError } from '../utils/http-error.js';
+
+const r = Router();
+r.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
+
+const bookingSchema = z.object({
+  courtId: z.number(),
+  userId: z.number().nullable().optional(),
+  clientName: z.string().min(2),
+  clientPhone: z.string().min(6),
+  date: z.string().date(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  durationMinutes: z.number(),
+  playersCount: z.number().default(4),
+  notes: z.string().optional(),
+  status: z.nativeEnum(BookingStatus).optional(),
+  origin: z.nativeEnum(BookingOrigin).optional(),
+  priceTotal: z.number().positive().optional()
+});
+
+function reservationInclude() {
+  return {
+    court: true,
+    user: { omit: { passwordHash: true } }
+  } as const;
+}
+
+async function findReservation(id: number) {
+  const booking = await prisma.booking.findUnique({
+    where: { id },
+    include: reservationInclude()
+  });
+  if (!booking) throw new HttpError(404, 'Turno no encontrado');
+  return booking;
+}
+
+function assertPendingReservation(status: BookingStatus) {
+  if (status !== 'PENDING_CONFIRMATION') {
+    throw new HttpError(409, 'Solo se pueden confirmar turnos pendientes de WhatsApp.');
+  }
+}
+
+r.get('/users', asyncHandler(async (req, res) => {
+  const search = String(req.query.search ?? '');
+  res.json(await prisma.user.findMany({
+    where: search ? { OR: [{ firstName: { contains: search } }, { lastName: { contains: search } }, { phone: { contains: search } }] } : {},
+    omit: { passwordHash: true }
+  }));
+}));
+
+r.get('/users/pending-verification', asyncHandler(async (_req, res) => {
+  res.json(await prisma.user.findMany({
+    where: { phoneVerified: false, isBlocked: false },
+    omit: { passwordHash: true },
+    include: { _count: { select: { bookings: { where: { status: 'PENDING_CONFIRMATION' } } } } },
+    orderBy: { createdAt: 'asc' }
+  }));
+}));
+
+r.get('/users/:id', asyncHandler(async (req, res) => {
+  res.json(await prisma.user.findUnique({ where: { id: +req.params.id }, omit: { passwordHash: true } }));
+}));
+
+r.patch('/users/:id/verify', asyncHandler(async (req, res) => {
+  res.json(await prisma.user.update({
+    where: { id: +req.params.id },
+    data: { phoneVerified: true },
+    omit: { passwordHash: true }
+  }));
+}));
+
+r.patch('/users/:id', asyncHandler(async (req, res) => {
+  const data = z.object({
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    active: z.boolean().optional(),
+    phoneVerified: z.boolean().optional(),
+    isBlocked: z.boolean().optional(),
+    role: z.nativeEnum(Role).optional()
+  }).parse(req.body);
+  if (data.role && req.auth!.role !== Role.SUPERADMIN) throw new HttpError(403, 'Solo SUPERADMIN puede cambiar roles');
+  res.json(await prisma.user.update({ where: { id: +req.params.id }, data, omit: { passwordHash: true } }));
+}));
+
+r.post('/courts', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  const data = z.object({ name: z.string(), description: z.string().optional(), active: z.boolean().default(true) }).parse(req.body);
+  res.status(201).json(await prisma.court.create({ data }));
+}));
+
+r.patch('/courts/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  res.json(await prisma.court.update({ where: { id: +req.params.id }, data: req.body }));
+}));
+
+r.post('/prices', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  const data = z.object({ durationMinutes: z.number(), price: z.number(), active: z.boolean().default(true) }).parse(req.body);
+  res.status(201).json(await prisma.price.create({ data }));
+}));
+
+r.patch('/prices/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  res.json(await prisma.price.update({ where: { id: +req.params.id }, data: req.body }));
+}));
+
+r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  const rows = z.array(z.object({
+    dayOfWeek: z.number(),
+    openTime: z.string(),
+    closeTime: z.string(),
+    active: z.boolean()
+  })).parse(req.body);
+  await prisma.$transaction(rows.map(item => prisma.businessHour.upsert({
+    where: { dayOfWeek: item.dayOfWeek },
+    update: item,
+    create: item
+  })));
+  res.json(rows);
+}));
+
+r.get('/bookings', asyncHandler(async (req, res) => {
+  const status = req.query.status ? z.nativeEnum(BookingStatus).parse(req.query.status) : undefined;
+  res.json(await prisma.booking.findMany({
+    where: {
+      status,
+      startTime: {
+        gte: req.query.from ? new Date(String(req.query.from)) : undefined,
+        lte: req.query.to ? new Date(String(req.query.to)) : undefined
+      }
+    },
+    include: reservationInclude(),
+    orderBy: { startTime: 'asc' }
+  }));
+}));
+
+r.get('/reservations', asyncHandler(async (req, res) => {
+  const status = req.query.status ? z.nativeEnum(BookingStatus).parse(req.query.status) : undefined;
+  res.json(await prisma.booking.findMany({
+    where: { status },
+    include: reservationInclude(),
+    orderBy: { createdAt: 'asc' }
+  }));
+}));
+
+r.get('/bookings/:id', asyncHandler(async (req, res) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id: +req.params.id },
+    include: reservationInclude()
+  });
+  if (!booking) throw new HttpError(404, 'Turno no encontrado');
+  const creator = await prisma.user.findUnique({
+    where: { id: booking.createdBy },
+    select: { id: true, firstName: true, lastName: true, role: true }
+  });
+  res.json({ ...booking, creator });
+}));
+
+r.post('/bookings', asyncHandler(async (req, res) => {
+  res.status(201).json(await createBooking(bookingSchema.extend({ adminOverride: z.boolean().optional() }).parse(req.body), req.auth!.userId));
+}));
+
+r.post('/blocks', asyncHandler(async (req, res) => {
+  const data = z.object({
+    date: z.string().date(),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    durationMinutes: z.number(),
+    notes: z.string().optional()
+  }).parse(req.body);
+  res.status(201).json(await createBooking({
+    courtId: 1,
+    clientName: 'Bloqueo',
+    clientPhone: '',
+    date: data.date,
+    startTime: data.startTime,
+    durationMinutes: data.durationMinutes,
+    playersCount: 0,
+    notes: data.notes,
+    status: 'BLOCKED',
+    origin: 'MANUAL',
+    priceTotal: 0,
+    adminOverride: true
+  }, req.auth!.userId));
+}));
+
+r.patch('/bookings/:id', asyncHandler(async (req, res) => {
+  res.json(await updateBooking(+req.params.id, bookingSchema.partial().extend({ adminOverride: z.boolean().optional() }).parse(req.body)));
+}));
+
+r.patch('/bookings/:id/status', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const status = z.nativeEnum(BookingStatus).parse(req.body.status);
+  const booking = await prisma.booking.findUnique({ where: { id } });
+  if (!booking) throw new HttpError(404, 'Turno no encontrado');
+  if (booking.status === 'CANCELLED' && ['CONFIRMED', 'BLOCKED'].includes(status)) return res.json(await updateBooking(id, { status }));
+  res.json(await prisma.booking.update({
+    where: { id },
+    data: { status, cancelledAt: status === 'CANCELLED' ? new Date() : undefined }
+  }));
+}));
+
+r.patch('/reservations/:id/confirm', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const booking = await findReservation(id);
+  assertPendingReservation(booking.status);
+  res.json(await prisma.booking.update({
+    where: { id },
+    data: { status: 'CONFIRMED' },
+    include: reservationInclude()
+  }));
+}));
+
+r.patch('/reservations/:id/confirm-and-verify-user', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const booking = await findReservation(id);
+  assertPendingReservation(booking.status);
+  if (!booking.userId) throw new HttpError(409, 'El turno no tiene un usuario asociado para verificar.');
+
+  const result = await prisma.$transaction(async tx => {
+    const reservation = await tx.booking.update({
+      where: { id },
+      data: { status: 'CONFIRMED' },
+      include: reservationInclude()
+    });
+    const user = await tx.user.update({
+      where: { id: booking.userId! },
+      data: { phoneVerified: true },
+      omit: { passwordHash: true }
+    });
+    return { reservation, user };
+  });
+  res.json(result);
+}));
+
+r.patch('/reservations/:id/cancel', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const data = z.object({ cancellationReason: z.string().max(1000).optional() }).parse(req.body ?? {});
+  const booking = await findReservation(id);
+  if (!['PENDING_CONFIRMATION', 'CONFIRMED'].includes(booking.status)) {
+    throw new HttpError(409, 'Solo se pueden cancelar turnos pendientes o confirmados.');
+  }
+  res.json(await prisma.booking.update({
+    where: { id },
+    data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: data.cancellationReason },
+    include: reservationInclude()
+  }));
+}));
+
+r.delete('/bookings/:id', asyncHandler(async (req, res) => {
+  res.json(await prisma.booking.update({
+    where: { id: +req.params.id },
+    data: { status: 'CANCELLED', cancelledAt: new Date() }
+  }));
+}));
+
+r.delete('/bookings/:id/permanent', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const booking = await prisma.booking.findUnique({ where: { id } });
+  if (!booking) throw new HttpError(404, 'Turno no encontrado');
+  if (booking.status !== 'CANCELLED') throw new HttpError(409, 'Solo se pueden eliminar turnos cancelados');
+  await prisma.$transaction([
+    prisma.cashMovement.updateMany({ where: { bookingId: id }, data: { bookingId: null } }),
+    prisma.booking.delete({ where: { id } })
+  ]);
+  res.json({ message: 'Turno eliminado del historial' });
+}));
+
+r.patch('/bookings/:id/payment', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const data = z.object({
+    paymentStatus: z.nativeEnum(PaymentStatus),
+    paymentMethod: z.string().optional(),
+    createCashMovement: z.boolean().default(false)
+  }).parse(req.body);
+  const booking = await prisma.$transaction(async tx => {
+    const updated = await tx.booking.update({
+      where: { id },
+      data: { paymentStatus: data.paymentStatus, paymentMethod: data.paymentMethod }
+    });
+    if (data.paymentStatus === 'PAID' && data.createCashMovement && !await tx.cashMovement.findFirst({ where: { bookingId: id, category: 'TURNO' } })) {
+      await tx.cashMovement.create({
+        data: {
+          type: 'INCOME',
+          category: 'TURNO',
+          amount: updated.priceTotal,
+          description: `Pago turno #${id}`,
+          bookingId: id,
+          createdBy: req.auth!.userId
+        }
+      });
+    }
+    return updated;
+  });
+  res.json(booking);
+}));
+
+const recurringSchema = z.object({
+  courtId: z.number(),
+  userId: z.number().nullable().optional(),
+  clientName: z.string(),
+  clientPhone: z.string(),
+  dayOfWeek: z.number(),
+  startTime: z.string(),
+  durationMinutes: z.number(),
+  startDate: z.string(),
+  endDate: z.string(),
+  notes: z.string().optional()
+});
+
+r.get('/recurring-bookings', asyncHandler(async (_req, res) => {
+  res.json(await prisma.recurringBooking.findMany({ include: { court: true, _count: { select: { bookings: true } } } }));
+}));
+
+r.post('/recurring-bookings', asyncHandler(async (req, res) => {
+  const data = recurringSchema.parse(req.body);
+  const price = await prisma.price.findFirst({ where: { durationMinutes: data.durationMinutes, active: true } });
+  if (!price) throw new HttpError(400, 'Duración sin precio');
+
+  let cursor = DateTime.fromISO(data.startDate, { zone: config.timezone });
+  const end = DateTime.fromISO(data.endDate, { zone: config.timezone });
+  while (cursor.weekday % 7 !== data.dayOfWeek) cursor = cursor.plus({ days: 1 });
+  const dates: string[] = [];
+  while (cursor <= end) {
+    dates.push(cursor.toISODate()!);
+    cursor = cursor.plus({ weeks: 1 });
+  }
+
+  const recurring = await prisma.recurringBooking.create({
+    data: { ...data, startDate: new Date(data.startDate), endDate: new Date(data.endDate), priceTotal: price.price, createdBy: req.auth!.userId }
+  });
+
+  try {
+    for (const date of dates) await createBooking({ ...data, date, status: 'CONFIRMED', origin: 'MANUAL' }, req.auth!.userId, recurring.id);
+  } catch (error) {
+    await prisma.booking.deleteMany({ where: { recurringId: recurring.id } });
+    await prisma.recurringBooking.delete({ where: { id: recurring.id } });
+    throw error;
+  }
+
+  res.status(201).json(recurring);
+}));
+
+r.patch('/recurring-bookings/:id', asyncHandler(async (req, res) => {
+  res.json(await prisma.recurringBooking.update({ where: { id: +req.params.id }, data: req.body }));
+}));
+
+r.patch('/recurring-bookings/:id/deactivate', asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const recurring = await prisma.recurringBooking.findUnique({ where: { id } });
+  if (!recurring) throw new HttpError(404, 'Turno fijo no encontrado');
+  if (!recurring.active) return res.json({ message: 'El turno fijo ya estaba desactivado', cancelledBookings: 0 });
+  const [, cancelled] = await prisma.$transaction([
+    prisma.recurringBooking.update({ where: { id }, data: { active: false } }),
+    prisma.booking.updateMany({ where: { recurringId: id, startTime: { gte: new Date() }, status: { in: ['CONFIRMED'] } }, data: { status: 'CANCELLED' } })
+  ]);
+  res.json({ message: 'Turno fijo desactivado correctamente', cancelledBookings: cancelled.count });
+}));
+
+r.get('/cash-movements', asyncHandler(async (_req, res) => {
+  res.json(await prisma.cashMovement.findMany({ orderBy: { createdAt: 'desc' } }));
+}));
+
+r.post('/cash-movements', asyncHandler(async (req, res) => {
+  const data = z.object({
+    type: z.nativeEnum(CashType),
+    category: z.nativeEnum(CashCategory),
+    amount: z.number().positive(),
+    description: z.string(),
+    bookingId: z.number().nullable().optional()
+  }).parse(req.body);
+  res.status(201).json(await prisma.cashMovement.create({ data: { ...data, createdBy: req.auth!.userId } }));
+}));
+
+for (const period of ['daily', 'weekly', 'monthly'] as const) {
+  r.get(`/reports/${period}`, asyncHandler(async (_req, res) => {
+    const now = DateTime.now().setZone(config.timezone);
+    const start = period === 'daily' ? now.startOf('day') : period === 'weekly' ? now.startOf('week') : now.startOf('month');
+    const end = period === 'daily' ? now.endOf('day') : period === 'weekly' ? now.endOf('week') : now.endOf('month');
+    const rows = await prisma.cashMovement.findMany({ where: { createdAt: { gte: start.toJSDate(), lte: end.toJSDate() } } });
+    const income = rows.filter(item => item.type === 'INCOME').reduce((total, item) => total + Number(item.amount), 0);
+    const expense = rows.filter(item => item.type === 'EXPENSE').reduce((total, item) => total + Number(item.amount), 0);
+    res.json({ period, income, expense, balance: income - expense });
+  }));
+}
+
+export default r;
