@@ -1,4 +1,4 @@
-﻿import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -19,8 +19,8 @@ async function main() {
     }
   });
   await prisma.court.upsert({
-    where: { id: 1 }, update: { name: 'Lo del Profe', description: 'Cancha de pÃ¡del' },
-    create: { id: 1, name: 'Lo del Profe', description: 'Cancha de pÃ¡del' }
+    where: { id: 1 }, update: { name: 'Lo del Profe', description: 'Cancha de pádel' },
+    create: { id: 1, name: 'Lo del Profe', description: 'Cancha de pádel' }
   });
   for (const [durationMinutes, price] of [[60, 16000], [90, 20000], [120, 24000]] as const) {
     await prisma.price.upsert({ where: { durationMinutes }, update: { price }, create: { durationMinutes, price } });

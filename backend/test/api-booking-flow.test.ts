@@ -1,4 +1,4 @@
-﻿import test, { after, before, beforeEach } from 'node:test';
+import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { app } from '../src/app.js';
@@ -48,7 +48,7 @@ beforeEach(() => {
   created = [];
   queriedWhere = null;
   transactionOptions = null;
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'RodrÃ­guez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
   db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, priceTotal: 20000 });
@@ -104,7 +104,7 @@ test('usuario no verificado no puede tener dos reservas pendientes', async () =>
   assert.deepEqual(await response.json(), { message: 'Ya tenés una reserva pendiente de confirmación por WhatsApp.' });
   assert.equal(created.length, 0);
 });
-test('rechaza una duraciÃ³n sin precio activo', async () => {
+test('rechaza una duración sin precio activo', async () => {
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(17)),
     body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 75, playersCount: 4 })
@@ -126,7 +126,7 @@ test('rechaza una reserva que se superpone y devuelve un mensaje claro', async (
   assert.equal(created.length, 0);
 });
 
-test('disponibilidad marca la superposiciÃ³n 20:30â€“22:00 y libera las 22:00', async () => {
+test('disponibilidad marca la superposición 20:30–22:00 y libera las 22:00', async () => {
   db.businessHour.findUnique = async () => ({ active: true, openTime: '15:00', closeTime: '00:00' });
   db.price.findFirst = async () => ({ price: 16000 });
   db.booking.findMany = async () => [{
@@ -160,7 +160,7 @@ test('Mis turnos filtra exclusivamente por el usuario autenticado', async () => 
   assert.equal(queriedWhere.userId, 44);
 });
 
-test('un usuario comÃºn no puede acceder al admin por URL directa', async () => {
+test('un usuario común no puede acceder al admin por URL directa', async () => {
   const response = await fetch(`${baseUrl}/admin/bookings`, { headers: headers(token(1, 'CLIENT')) });
   assert.equal(response.status, 403);
 });
@@ -168,7 +168,7 @@ test('un usuario comÃºn no puede acceder al admin por URL directa', async () =
 test('un admin puede cargar un turno confirmado con origen WhatsApp', async () => {
   const response = await fetch(`${baseUrl}/admin/bookings`, {
     method: 'POST', headers: headers(token(2, 'ADMIN')),
-    body: JSON.stringify({ courtId: 1, clientName: 'Ana PÃ©rez', clientPhone: '3576111111', date: futureDate, startTime: '18:00', durationMinutes: 90, playersCount: 4, origin: 'WHATSAPP' })
+    body: JSON.stringify({ courtId: 1, clientName: 'Ana Pérez', clientPhone: '3576111111', date: futureDate, startTime: '18:00', durationMinutes: 90, playersCount: 4, origin: 'WHATSAPP' })
   });
   assert.equal(response.status, 201);
   assert.equal(created[0].origin, 'WHATSAPP');
@@ -176,7 +176,7 @@ test('un admin puede cargar un turno confirmado con origen WhatsApp', async () =
   assert.equal(created[0].userId, undefined);
 });
 
-test('los estados de pago se actualizan a seÃ±a y pagado', async () => {
+test('los estados de pago se actualizan a seña y pagado', async () => {
   const seen: string[] = [];
   db.$transaction = async (work: any) => work({
     booking: { update: async ({ data }: any) => { seen.push(data.paymentStatus); return { id: 8, priceTotal: 20000, ...data }; } },

@@ -1,4 +1,4 @@
-﻿import { CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
@@ -9,8 +9,8 @@ import { Api } from '../../core/api';
   template: `
     <section class="page-head">
       <span class="eyebrow">MI CUENTA</span>
-      <h1>{{ history ? 'Historial de turnos' : 'PrÃ³ximos partidos' }}</h1>
-      <div class="tabs"><a routerLink="/mis-turnos">PrÃ³ximos</a><a routerLink="/historial">Historial</a></div>
+      <h1>{{ history ? 'Historial de turnos' : 'Próximos partidos' }}</h1>
+      <div class="tabs"><a routerLink="/mis-turnos">Próximos</a><a routerLink="/historial">Historial</a></div>
     </section>
 
     <section class="cards-list">
@@ -22,7 +22,7 @@ import { Api } from '../../core/api';
           @if (!history && booking.status === 'PENDING_CONFIRMATION' && booking.whatsappUrl) { <a class="btn primary" [href]="booking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp de confirmación</a> } @if (!history) { <button type="button" class="btn danger" (click)="openCancelModal(booking)">Cancelar</button> }
         </article>
       } @empty {
-        <div class="empty">TodavÃ­a no hay turnos para mostrar.</div>
+        <div class="empty">Todavía no hay turnos para mostrar.</div>
       }
       @if (notice) { <p class="notice">{{ notice }}</p> }
     </section>
@@ -32,29 +32,29 @@ import { Api } from '../../core/api';
         <section class="booking-modal cancel-booking-modal" role="alertdialog" aria-modal="true"
           aria-labelledby="cancel-title" (click)="$event.stopPropagation()">
           @if (!cancelled) {
-            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeCancelModal()">Ã—</button>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeCancelModal()">×</button>
             <span class="cancel-icon">!</span>
             <span class="eyebrow danger-eyebrow">CANCELAR RESERVA</span>
-            <h2 id="cancel-title">Â¿Seguro que querÃ©s cancelar?</h2>
-            <p>El horario volverÃ¡ a quedar disponible para otros jugadores.</p>
+            <h2 id="cancel-title">¿Seguro que querés cancelar?</h2>
+            <p>El horario volverá a quedar disponible para otros jugadores.</p>
 
             <div class="cancel-summary">
-              <div><span>DÃ­a y hora</span><strong>{{ selectedBooking.startTime | date:'EEEE d MMMM Â· HH:mm' }}</strong></div>
-              <div><span>DuraciÃ³n</span><strong>{{ selectedBooking.durationMinutes }} minutos</strong></div>
+              <div><span>Día y hora</span><strong>{{ selectedBooking.startTime | date:'EEEE d MMMM · HH:mm' }}</strong></div>
+              <div><span>Duración</span><strong>{{ selectedBooking.durationMinutes }} minutos</strong></div>
               <div><span>Importe</span><strong>{{ selectedBooking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
             </div>
 
             @if (error) { <p class="notice error-notice">{{ error }}</p> }
             <div class="cancel-actions">
               <button type="button" class="btn keep-booking" [disabled]="cancelling" (click)="closeCancelModal()">No, mantener turno</button>
-              <button type="button" class="btn destructive" [disabled]="cancelling" (click)="confirmCancellation()">{{ cancelling ? 'Cancelando...' : 'SÃ­, cancelar turno' }}</button>
+              <button type="button" class="btn destructive" [disabled]="cancelling" (click)="confirmCancellation()">{{ cancelling ? 'Cancelando...' : 'Sí, cancelar turno' }}</button>
             </div>
           } @else {
             <div class="booking-success cancellation-success">
-              <span class="success-check">âœ“</span>
+              <span class="success-check">✓</span>
               <span class="eyebrow">TURNO CANCELADO</span>
               <h2>La reserva fue cancelada.</h2>
-              <p>El horario ya volviÃ³ a quedar disponible.</p>
+              <p>El horario ya volvió a quedar disponible.</p>
               <button type="button" class="btn primary full" (click)="closeCancelModal()">Entendido</button>
             </div>
           }

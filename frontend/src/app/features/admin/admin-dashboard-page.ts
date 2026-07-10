@@ -1,4 +1,4 @@
-﻿import { CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -30,9 +30,9 @@ type Booking = {
     <section class="dashboard-page operations-dashboard">
       <header class="dashboard-heading operations-heading">
         <div>
-          <span class="eyebrow">ADMINISTRACIÃ“N</span>
+          <span class="eyebrow">ADMINISTRACIÓN</span>
           <h1>Panel del club</h1>
-          <p>Turnos de hoy y operaciones rÃ¡pidas.</p>
+          <p>Turnos de hoy y operaciones rápidas.</p>
           <strong class="operations-date">{{ formattedDate }}</strong>
         </div>
         <div class="dashboard-actions operations-actions">
@@ -51,14 +51,14 @@ type Booking = {
 
       @if (auth.isAdmin() && auth.user()?.role === 'SUPERADMIN') {
         <details class="advanced-menu">
-          <summary>ConfiguraciÃ³n y herramientas avanzadas</summary>
+          <summary>Configuración y herramientas avanzadas</summary>
           <nav>
             <a routerLink="/admin/precios">Precios</a>
             <a routerLink="/admin/horarios">Horarios</a>
             <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
             <a routerLink="/admin/clientes">Clientes</a>
             <a routerLink="/admin/caja">Caja</a>
-            <a routerLink="/admin/estadisticas">EstadÃ­sticas</a>
+            <a routerLink="/admin/estadisticas">Estadísticas</a>
           </nav>
         </details>
       }
@@ -86,7 +86,7 @@ type Booking = {
 
       <section class="operations-agenda">
         <div class="section-heading">
-          <div><span class="eyebrow">HOY EN LA CANCHA</span><h2>PrÃ³ximos turnos de hoy</h2></div>
+          <div><span class="eyebrow">HOY EN LA CANCHA</span><h2>Próximos turnos de hoy</h2></div>
           <label class="operations-date-picker">Cambiar fecha<input type="date" [(ngModel)]="selectedDate" (change)="loadAll()"></label>
         </div>
 
@@ -105,9 +105,9 @@ type Booking = {
                   </div>
                   <h3>{{ booking.status === 'BLOCKED' ? 'Horario bloqueado' : booking.clientName }}</h3>
                   <p>
-                    @if (booking.status !== 'BLOCKED') { <span>{{ booking.clientPhone }} Â· </span> }
+                    @if (booking.status !== 'BLOCKED') { <span>{{ booking.clientPhone }} · </span> }
                     {{ booking.durationMinutes }} min
-                    @if (booking.status !== 'BLOCKED') { <span> Â· {{ booking.playersCount }} jugadores Â· {{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</span> }
+                    @if (booking.status !== 'BLOCKED') { <span> · {{ booking.playersCount }} jugadores · {{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</span> }
                   </p>
 
                 </div>
@@ -132,7 +132,7 @@ type Booking = {
                     <button type="button" class="small-action danger-action" (click)="deleteCancelled(booking)">Eliminar del historial</button>
                   }
                   @if (!['CANCELLED','BLOCKED'].includes(booking.status) && booking.paymentStatus === 'PENDING') {
-                    <button type="button" class="small-action" (click)="markPartial(booking)">Marcar seÃ±a</button>
+                    <button type="button" class="small-action" (click)="markPartial(booking)">Marcar seña</button>
                   }
                   @if (!['CANCELLED','BLOCKED'].includes(booking.status) && booking.paymentStatus !== 'PAID') {
                     <button type="button" class="small-action pay-action" (click)="markPaid(booking)">Marcar pagado</button>
@@ -148,14 +148,14 @@ type Booking = {
 
       <section class="availability-admin panel operations-availability">
         <div class="section-heading">
-          <div><span class="eyebrow">DISPONIBILIDAD</span><h2>Horarios del dÃ­a</h2></div>
+          <div><span class="eyebrow">DISPONIBILIDAD</span><h2>Horarios del día</h2></div>
           <div class="availability-controls">
             <select [(ngModel)]="availabilityDuration" (change)="loadAvailability()">
               <option [ngValue]="60">60 min</option><option [ngValue]="90">90 min</option><option [ngValue]="120">120 min</option>
             </select>
           </div>
         </div>
-        <p class="section-help">TocÃ¡ un horario disponible para cargar un turno. Los horarios pasados y los que no encajan con la duraciÃ³n elegida se muestran por separado.</p>
+        <p class="section-help">Tocá un horario disponible para cargar un turno. Los horarios pasados y los que no encajan con la duración elegida se muestran por separado.</p>
         <div class="admin-slots operations-slots">
           @for (slot of visibleSlots; track slot.startTime) {
             <button type="button" [class.occupied]="!slot.available" [class.blocked]="slotState(slot) === 'Bloqueado'" [class.past]="slot.reason === 'PAST'" [class.duration-gap]="slot.reason === 'DEAD_GAP'" (click)="openSlot(slot)">
@@ -169,10 +169,10 @@ type Booking = {
     @if (selectedBooking) {
       <div class="modal-backdrop" (click)="closeDetail()">
         <section class="booking-modal admin-detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title" (click)="$event.stopPropagation()">
-          <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeDetail()">Ã—</button>
+          <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeDetail()">×</button>
           <span class="eyebrow">DETALLE DEL TURNO</span>
           <h2 id="detail-title">{{ selectedBooking.status === 'BLOCKED' ? 'Horario bloqueado' : selectedBooking.clientName }}</h2>
-          @if (detailLoading) { <p>Cargando informaciÃ³n...</p> }
+          @if (detailLoading) { <p>Cargando información...</p> }
 
           <div class="detail-status-row">
             <span [class]="'status-pill status-' + selectedBooking.status.toLowerCase()">Estado: {{ statusLabel(selectedBooking.status) }}</span>
@@ -182,18 +182,18 @@ type Booking = {
 
           <div class="booking-detail-grid">
             @if (selectedBooking.status !== 'BLOCKED') {
-              <section><h3>Cliente</h3><dl><div><dt>Nombre</dt><dd>{{ clientFirstName(selectedBooking.clientName) }}</dd></div><div><dt>Apellido</dt><dd>{{ clientLastName(selectedBooking.clientName) }}</dd></div><div><dt>TelÃ©fono</dt><dd>{{ selectedBooking.clientPhone }}</dd></div></dl></section>
+              <section><h3>Cliente</h3><dl><div><dt>Nombre</dt><dd>{{ clientFirstName(selectedBooking.clientName) }}</dd></div><div><dt>Apellido</dt><dd>{{ clientLastName(selectedBooking.clientName) }}</dd></div><div><dt>Teléfono</dt><dd>{{ selectedBooking.clientPhone }}</dd></div></dl></section>
             }
-            <section><h3>Turno</h3><dl><div><dt>Fecha</dt><dd>{{ selectedBooking.startTime | date:'EEEE d MMMM' }}</dd></div><div><dt>Horario</dt><dd>{{ selectedBooking.startTime | date:'HH:mm' }} a {{ selectedBooking.endTime | date:'HH:mm' }}</dd></div><div><dt>DuraciÃ³n</dt><dd>{{ selectedBooking.durationMinutes }} minutos</dd></div>@if (selectedBooking.status !== 'BLOCKED') {<div><dt>Jugadores</dt><dd>{{ selectedBooking.playersCount }}</dd></div><div><dt>Precio</dt><dd>{{ selectedBooking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</dd></div>}</dl></section>
+            <section><h3>Turno</h3><dl><div><dt>Fecha</dt><dd>{{ selectedBooking.startTime | date:'EEEE d MMMM' }}</dd></div><div><dt>Horario</dt><dd>{{ selectedBooking.startTime | date:'HH:mm' }} a {{ selectedBooking.endTime | date:'HH:mm' }}</dd></div><div><dt>Duración</dt><dd>{{ selectedBooking.durationMinutes }} minutos</dd></div>@if (selectedBooking.status !== 'BLOCKED') {<div><dt>Jugadores</dt><dd>{{ selectedBooking.playersCount }}</dd></div><div><dt>Precio</dt><dd>{{ selectedBooking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</dd></div>}</dl></section>
             <section><h3>Estado</h3><dl><div><dt>Estado del turno</dt><dd>{{ statusLabel(selectedBooking.status) }}</dd></div><div><dt>Estado del pago</dt><dd>{{ paymentLabel(selectedBooking.paymentStatus) }}</dd></div><div><dt>Origen</dt><dd>{{ originLabel(selectedBooking.origin) }}</dd></div></dl></section>
-            <section><h3>InformaciÃ³n adicional</h3><dl><div><dt>ObservaciÃ³n</dt><dd>{{ selectedBooking.notes || 'Sin observaciones' }}</dd></div><div><dt>Creado</dt><dd>{{ selectedBooking.createdAt ? (selectedBooking.createdAt | date:'dd/MM/yyyy HH:mm') : 'â€”' }}</dd></div><div><dt>Ãšltima modificaciÃ³n</dt><dd>{{ selectedBooking.updatedAt ? (selectedBooking.updatedAt | date:'dd/MM/yyyy HH:mm') : 'â€”' }}</dd></div><div><dt>Cargado por</dt><dd>{{ selectedBooking.creator ? selectedBooking.creator.firstName + ' ' + selectedBooking.creator.lastName : 'Usuario #' + selectedBooking.createdBy }}</dd></div></dl></section>
+            <section><h3>Información adicional</h3><dl><div><dt>Observación</dt><dd>{{ selectedBooking.notes || 'Sin observaciones' }}</dd></div><div><dt>Creado</dt><dd>{{ selectedBooking.createdAt ? (selectedBooking.createdAt | date:'dd/MM/yyyy HH:mm') : '—' }}</dd></div><div><dt>Última modificación</dt><dd>{{ selectedBooking.updatedAt ? (selectedBooking.updatedAt | date:'dd/MM/yyyy HH:mm') : '—' }}</dd></div><div><dt>Cargado por</dt><dd>{{ selectedBooking.creator ? selectedBooking.creator.firstName + ' ' + selectedBooking.creator.lastName : 'Usuario #' + selectedBooking.createdBy }}</dd></div></dl></section>
           </div>
 
           <div class="detail-actions">
             @if (selectedBooking.status !== 'BLOCKED' && selectedBooking.clientPhone) {<a class="btn ghost" [href]="whatsappUrl(selectedBooking.clientPhone)" target="_blank" rel="noopener noreferrer">WhatsApp</a>}
             @if (!['CANCELLED','BLOCKED'].includes(selectedBooking.status)) {<a class="btn ghost" routerLink="/admin/turno" [queryParams]="{id:selectedBooking.id}">Editar</a><button type="button" class="btn danger" (click)="changeStatus(selectedBooking,'CANCELLED')">Cancelar</button>}
             @if (selectedBooking.status === 'BLOCKED') {<button type="button" class="btn ghost" (click)="changeStatus(selectedBooking,'CANCELLED')">Liberar horario</button>}
-            @if (!['CANCELLED','BLOCKED'].includes(selectedBooking.status) && selectedBooking.paymentStatus === 'PENDING') {<button type="button" class="btn ghost" (click)="markPartial(selectedBooking)">Marcar seÃ±a</button>}
+            @if (!['CANCELLED','BLOCKED'].includes(selectedBooking.status) && selectedBooking.paymentStatus === 'PENDING') {<button type="button" class="btn ghost" (click)="markPartial(selectedBooking)">Marcar seña</button>}
             @if (!['CANCELLED','BLOCKED'].includes(selectedBooking.status) && selectedBooking.paymentStatus !== 'PAID') {<button type="button" class="btn primary" (click)="markPaid(selectedBooking)">Marcar pagado</button>}
           </div>
         </section>
@@ -276,7 +276,7 @@ export class AdminDashboardPage implements OnInit {
 
   closeDetail() { this.selectedBooking = null; }
   clientFirstName(name: string) { return name.trim().split(/\s+/)[0] ?? ''; }
-  clientLastName(name: string) { return name.trim().split(/\s+/).slice(1).join(' ') || 'â€”'; }
+  clientLastName(name: string) { return name.trim().split(/\s+/).slice(1).join(' ') || '—'; }
   changeStatus(booking: Booking, status: string) {
     this.api.patch<any>(`/admin/bookings/${booking.id}/status`, { status }).subscribe({
       next: () => {
@@ -317,7 +317,7 @@ export class AdminDashboardPage implements OnInit {
 
   deleteCancelled(booking: Booking) {
     if (booking.status !== 'CANCELLED') return;
-    if (!window.confirm(`Â¿Eliminar definitivamente el turno cancelado de ${booking.clientName}?`)) return;
+    if (!window.confirm(`¿Eliminar definitivamente el turno cancelado de ${booking.clientName}?`)) return;
     this.api.delete<any>(`/admin/bookings/${booking.id}/permanent`).subscribe({
       next: response => {
         this.bookings = this.bookings.filter(item => item.id !== booking.id);
@@ -330,8 +330,8 @@ export class AdminDashboardPage implements OnInit {
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
       paymentStatus: 'PARTIAL', paymentMethod: 'EFECTIVO', createCashMovement: false
     }).subscribe({
-      next: () => { booking.paymentStatus = 'PARTIAL'; this.showNotice('SeÃ±a registrada correctamente.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar la seÃ±a.', true)
+      next: () => { booking.paymentStatus = 'PARTIAL'; this.showNotice('Seña registrada correctamente.'); },
+      error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar la seña.', true)
     });
   }
   markPaid(booking: Booking) {
@@ -352,7 +352,7 @@ export class AdminDashboardPage implements OnInit {
     }
     const booking = this.bookingAt(slot.startTime);
     if (booking?.status === 'BLOCKED') {
-      this.showNotice('Este horario estÃ¡ bloqueado. PodÃ©s liberarlo desde la agenda.');
+      this.showNotice('Este horario está bloqueado. Podés liberarlo desde la agenda.');
       return;
     }
     if (booking) this.router.navigate(['/admin/turno'], { queryParams: { id: booking.id } });
@@ -360,7 +360,7 @@ export class AdminDashboardPage implements OnInit {
 
   slotState(slot: any) {
     if (slot.available) return 'Disponible';
-    if (slot.reason === 'PAST') return 'Ya pasÃ³';
+    if (slot.reason === 'PAST') return 'Ya pasó';
     const booking = this.bookingAt(slot.startTime);
     if (booking?.status === 'BLOCKED') return 'Bloqueado';
     if (booking) return 'Ocupado';
@@ -377,7 +377,7 @@ export class AdminDashboardPage implements OnInit {
   statusLabel(status: string) {
     return ({
       PENDING_CONFIRMATION: 'Pendiente WhatsApp', CONFIRMED: 'Confirmado', PLAYED: 'Jugado',
-      CANCELLED: 'Cancelado', NO_SHOW: 'No asistiÃ³', BLOCKED: 'Bloqueado'
+      CANCELLED: 'Cancelado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado'
     } as Record<string, string>)[status] ?? status;
   }
 
@@ -386,7 +386,7 @@ export class AdminDashboardPage implements OnInit {
   }
 
   paymentLabel(status: string) {
-    return ({ PENDING: 'Pago pendiente', PAID: 'Pagado', PARTIAL: 'SeÃ±a pagada' } as Record<string, string>)[status] ?? 'Pago pendiente';
+    return ({ PENDING: 'Pago pendiente', PAID: 'Pagado', PARTIAL: 'Seña pagada' } as Record<string, string>)[status] ?? 'Pago pendiente';
   }
 
   private bookingAt(time: string) {

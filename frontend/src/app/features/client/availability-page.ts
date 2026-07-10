@@ -1,4 +1,4 @@
-﻿import { CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -8,7 +8,7 @@ import { buildWhatsappBookingUrl } from '../../shared/whatsapp-booking';
 
 type Price = { id: number; durationMinutes: number; price: number };
 type Slot = { startTime: string; endTime: string; available: boolean };
-type Availability = { date: string; durationMinutes: number; price: number; slots: Slot[] };
+type Availability = { date: string; durationMinutes: number; price: number | null; reason?: string; message?: string; slots: Slot[] };
 type PendingBooking = { date: string; duration: number; startTime: string };
 
 @Component({
@@ -18,22 +18,24 @@ type PendingBooking = { date: string; duration: number; startTime: string };
   template: `
     <section class="page-head availability-head">
       <span class="eyebrow">RESERVAS</span>
-      <h1>EncontrÃ¡ tu prÃ³ximo partido.</h1>
-      <p>ElegÃ­ la duraciÃ³n y te mostramos directamente los mejores horarios disponibles.</p>
+      <h1>Encontrá tu próximo partido.</h1>
+      <p>Elegí la duración y te mostramos directamente los mejores horarios disponibles.</p>
     </section>
 
     <section class="turn-grid-layout">
       <aside class="panel turn-filters">
         <div class="filter-step"><span>01</span><label>Fecha<input type="date" [min]="today" [(ngModel)]="date" (change)="search()"></label></div>
-        <div class="filter-step duration-step"><span>02</span><div><label>DuraciÃ³n del turno</label><div class="duration-options">@for (price of prices; track price.id) { <button type="button" [class.selected]="duration === price.durationMinutes" (click)="selectDuration(price.durationMinutes)"><b>{{ durationLabel(price.durationMinutes) }}</b><small>{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small></button> }</div></div></div>
+        <div class="filter-step duration-step"><span>02</span><div><label>Duración del turno</label><div class="duration-options">@for (price of prices; track price.id) { <button type="button" [class.selected]="duration === price.durationMinutes" (click)="selectDuration(price.durationMinutes)"><b>{{ durationLabel(price.durationMinutes) }}</b><small>{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small></button> }</div></div></div>
       </aside>
 
       <div class="turn-results" aria-live="polite">
-        <div class="result-title turn-results-title"><div><span class="eyebrow">HORARIOS DEL DÃA</span><h2>ElegÃ­ cuÃ¡ndo jugar</h2><p>{{ formattedDate }} Â· {{ durationLabel(duration) }}</p></div>@if (result?.price) { <strong>{{ result!.price | currency:'ARS':'symbol':'1.0-0' }}</strong> }</div>
+        <div class="result-title turn-results-title"><div><span class="eyebrow">HORARIOS DEL DÍA</span><h2>Elegí cuándo jugar</h2><p>{{ formattedDate }} · {{ durationLabel(duration) }}</p></div>@if (result?.price) { <strong>{{ result!.price | currency:'ARS':'symbol':'1.0-0' }}</strong> }</div>
         @if (loading) {
           <div class="empty turn-empty">Buscando horarios...</div>
+        } @else if (availabilityLoadFailed) {
+          <div class="empty turn-empty"><strong>No pudimos cargar los horarios.</strong><span>{{ message }}</span></div>
         } @else if (!availableSlots.length) {
-          <div class="empty turn-empty"><strong>No hay turnos disponibles para este dÃ­a.</strong><span>ProbÃ¡ con otra fecha o duraciÃ³n.</span></div>
+          <div class="empty turn-empty"><strong>{{ emptyTitle }}</strong><span>{{ emptyHint }}</span></div>
         } @else {
           <div class="start-time-grid">
             @for (slot of availableSlots; track slot.startTime) {
@@ -41,7 +43,7 @@ type PendingBooking = { date: string; duration: number; startTime: string };
             }
           </div>
         }
-        @if (message) { <p class="notice" [class.error-notice]="messageIsError">{{ message }}</p> }
+        @if (message && !availabilityLoadFailed) { <p class="notice" [class.error-notice]="messageIsError">{{ message }}</p> }
       </div>
     </section>
 
@@ -49,17 +51,17 @@ type PendingBooking = { date: string; duration: number; startTime: string };
       <div class="modal-backdrop" (click)="closeModal()">
         <section class="booking-modal" [class.guest-booking-modal]="!auth.user()" role="dialog" aria-modal="true" aria-labelledby="confirm-title" (click)="$event.stopPropagation()">
           @if (!confirmedBooking) {
-            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeModal()">Ã—</button>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeModal()">×</button>
 
             @if (!auth.user()) {
-              <span class="eyebrow">ÃšLTIMO PASO</span>
-              <h2 id="confirm-title">Ya casi tenÃ©s tu turno</h2>
-              <p>Para confirmar desde la web, ingresÃ¡ o creÃ¡ tu cuenta. Si preferÃ­s hacerlo como siempre, tambiÃ©n podÃ©s pedirlo por WhatsApp.</p>
+              <span class="eyebrow">ÚLTIMO PASO</span>
+              <h2 id="confirm-title">Ya casi tenés tu turno</h2>
+              <p>Para confirmar desde la web, ingresá o creá tu cuenta. Si preferís hacerlo como siempre, también podés pedirlo por WhatsApp.</p>
 
               <div class="booking-summary guest-booking-summary">
-                <div><span>DÃ­a</span><strong>{{ formattedDate }}</strong></div>
-                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} â€” {{ selectedSlot.endTime }}</strong></div>
-                <div><span>DuraciÃ³n</span><strong>{{ durationLabel(duration) }}</strong></div>
+                <div><span>Día</span><strong>{{ formattedDate }}</strong></div>
+                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
+                <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
                 <div><span>Precio</span><strong>{{ result?.price | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
               </div>
 
@@ -75,12 +77,12 @@ type PendingBooking = { date: string; duration: number; startTime: string };
                   <label>Apellido<input [(ngModel)]="guestLastName" autocomplete="family-name" placeholder="Tu apellido"></label>
                 </div>
                 @if (modalError) { <p class="notice error-notice">{{ modalError }}</p> }
-                <button type="button" class="btn guest-whatsapp full" (click)="reserveByWhatsapp()">Reservar por WhatsApp <span>â†—</span></button>
-                <p class="guest-confirmation-note">El turno por WhatsApp queda sujeto a confirmaciÃ³n del club.</p>
+                <button type="button" class="btn guest-whatsapp full" (click)="reserveByWhatsapp()">Reservar por WhatsApp <span>↗</span></button>
+                <p class="guest-confirmation-note">El turno por WhatsApp queda sujeto a confirmación del club.</p>
                 <button type="button" class="link cancel-modal" (click)="closeModal()">Elegir otro horario</button>
               } @else {
                 <div class="whatsapp-opened">
-                  <span class="success-check">âœ“</span>
+                  <span class="success-check">✓</span>
                   <h3>Te abrimos WhatsApp</h3>
                   <p>El mensaje ya tiene los datos del turno. El horario no queda reservado hasta que el club lo confirme.</p>
                   <button type="button" class="btn guest-register full" (click)="closeModal()">Volver a horarios</button>
@@ -88,11 +90,11 @@ type PendingBooking = { date: string; duration: number; startTime: string };
                 </div>
               }
             } @else {
-              <span class="eyebrow">ÃšLTIMO PASO</span><h2 id="confirm-title">ConfirmÃ¡ tu turno</h2><p>RevisÃ¡ los datos antes de guardar la reserva.</p>
+              <span class="eyebrow">ÚLTIMO PASO</span><h2 id="confirm-title">Confirmá tu turno</h2><p>Revisá los datos antes de guardar la reserva.</p>
               <div class="booking-summary">
                 <div><span>Fecha</span><strong>{{ formattedDate }}</strong></div>
-                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} â€” {{ selectedSlot.endTime }}</strong></div>
-                <div><span>DuraciÃ³n</span><strong>{{ durationLabel(duration) }}</strong></div>
+                <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
+                <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
                 <div><span>Jugadores</span><strong>{{ players }}</strong></div>
                 <div><span>Precio total</span><strong>{{ result?.price | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
               </div>
@@ -153,12 +155,24 @@ export class AvailabilityPage implements OnInit {
   submitting = false;
   message = '';
   messageIsError = true;
+  availabilityLoadFailed = false;
   modalError = '';
   whatsappOpened = false;
   private pendingBooking: PendingBooking | null = null;
 
   get availableSlots() {
     return this.result?.slots.filter(slot => slot.available) ?? [];
+  }
+
+  get emptyTitle() {
+    if (this.result?.reason === 'CLOSED') return 'La cancha está cerrada ese día.';
+    if (this.result?.reason === 'NO_PRICE') return 'No hay precio activo para esta duración.';
+    if (this.result?.reason === 'NO_BUSINESS_HOURS') return 'Faltan configurar horarios para ese día.';
+    return 'No hay turnos disponibles para este día.';
+  }
+
+  get emptyHint() {
+    return this.result?.message ?? 'Probá con otra fecha o duración.';
   }
 
   get formattedDate() {
@@ -170,12 +184,25 @@ export class AvailabilityPage implements OnInit {
 
   ngOnInit() {
     this.restorePendingBooking();
-    this.api.get<Price[]>('/prices').subscribe(prices => {
-      this.prices = prices;
-      if (!prices.some(price => price.durationMinutes === this.duration)) {
-        this.duration = prices[0]?.durationMinutes ?? 60;
+    this.api.get<Price[]>('/prices').subscribe({
+      next: prices => {
+        this.prices = prices;
+        if (!prices.length) {
+          this.message = 'No hay precios activos configurados.';
+          this.messageIsError = true;
+          this.availabilityLoadFailed = true;
+          return;
+        }
+        if (!prices.some(price => price.durationMinutes === this.duration)) {
+          this.duration = prices[0]?.durationMinutes ?? 60;
+        }
+        this.search();
+      },
+      error: error => {
+        this.message = error.error?.message ?? 'No pudimos cargar las duraciones disponibles.';
+        this.messageIsError = true;
+        this.availabilityLoadFailed = true;
       }
-      this.search();
     });
   }
 
@@ -189,6 +216,7 @@ export class AvailabilityPage implements OnInit {
     if (!this.date || !this.courtId || !this.duration) return;
     this.loading = true;
     this.message = '';
+    this.availabilityLoadFailed = false;
     this.result = null;
     this.selectedSlot = null;
     this.api.get<Availability>('/availability', {
@@ -201,6 +229,8 @@ export class AvailabilityPage implements OnInit {
       },
       error: error => {
         this.message = error.error?.message ?? 'No pudimos consultar los horarios.';
+        this.messageIsError = true;
+        this.availabilityLoadFailed = true;
         this.loading = false;
       }
     });
@@ -243,13 +273,13 @@ export class AvailabilityPage implements OnInit {
     const firstName = this.guestFirstName.trim();
     const lastName = this.guestLastName.trim();
     if (!firstName || !lastName) {
-      this.modalError = 'IngresÃ¡ tu nombre y apellido para continuar por WhatsApp.';
+      this.modalError = 'Ingresá tu nombre y apellido para continuar por WhatsApp.';
       return;
     }
     this.modalError = '';
     const price = new Intl.NumberFormat('es-AR', {
       style: 'currency', currency: 'ARS', maximumFractionDigits: 0
-    }).format(this.result.price);
+    }).format(this.result.price ?? 0);
     const url = buildWhatsappBookingUrl(VENUE.whatsapp, {
       firstName, lastName, formattedDate: this.formattedDate,
       startTime: this.selectedSlot.startTime, endTime: this.selectedSlot.endTime,
@@ -316,7 +346,7 @@ export class AvailabilityPage implements OnInit {
     if (slot) {
       this.openConfirmation(slot);
     } else {
-      this.message = 'Ese horario ya no estÃ¡ disponible. ElegÃ­ otro turno.';
+      this.message = 'Ese horario ya no está disponible. Elegí otro turno.';
     }
   }
 }

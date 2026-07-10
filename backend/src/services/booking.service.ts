@@ -1,4 +1,4 @@
-﻿import { BookingOrigin, BookingStatus, Prisma } from '@prisma/client';
+import { BookingOrigin, BookingStatus, Prisma } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { prisma } from '../prisma/client.js';
 import { businessIntervals, dayOfWeek, localDateTime } from '../utils/time.js';
@@ -33,8 +33,8 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
     tx.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(input.date) } })
   ]);
   if (!court) throw new HttpError(404, 'Cancha no encontrada');
-  if (!price) throw new HttpError(400, 'DuraciÃ³n sin precio activo');
-  if (!hours?.active) throw new HttpError(400, 'La cancha estÃ¡ cerrada ese dÃ­a');
+  if (!price) throw new HttpError(400, 'Duración sin precio activo');
+  if (!hours?.active) throw new HttpError(400, 'La cancha está cerrada ese día');
 
   if (start <= DateTime.now().setZone(config.timezone)) throw new HttpError(400, 'No se puede reservar un horario pasado');
   const schedules = businessIntervals(input.date, hours.openTime, hours.closeTime);
@@ -52,7 +52,7 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
     select: { startTime: true, endTime: true }
   });
   if (hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, bookings.map(b => ({ start: b.startTime, end: b.endTime })))) {
-    throw new HttpError(409, 'Ese horario ya no estÃ¡ disponible. ElegÃ­ otro turno.');
+    throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.');
   }
   if (config.booking.avoidDeadGaps && leavesDeadGap(start, end, schedule.open, schedule.close, bookings)
     && !(config.booking.allowAdminOverride && input.adminOverride)) {
@@ -78,18 +78,31 @@ export async function createBooking(input: BookingInput, createdBy: number, recu
 }
 
 export async function availability(date: string, durationMinutes: number, courtId: number) {
+  const requestedDay = dayOfWeek(date);
   const [hours, price] = await Promise.all([
-    prisma.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(date) } }),
+    prisma.businessHour.findUnique({ where: { dayOfWeek: requestedDay } }),
     prisma.price.findFirst({ where: { durationMinutes, active: true } })
   ]);
-  if (!hours?.active || !price) return { date, durationMinutes, price: price ? Number(price.price) : null, slots: [] };
+  const baseLog = { date, durationMinutes, courtId, timezone: config.timezone, dayOfWeek: requestedDay, hours, hasPrice: Boolean(price) };
+  if (!hours) {
+    console.warn('[Availability] missing business hours', baseLog);
+    return { date, durationMinutes, price: price ? Number(price.price) : null, reason: 'NO_BUSINESS_HOURS', message: 'No hay horarios de apertura configurados para ese día.', slots: [] };
+  }
+  if (!hours.active) {
+    console.info('[Availability] court closed for requested day', baseLog);
+    return { date, durationMinutes, price: price ? Number(price.price) : null, reason: 'CLOSED', message: 'La cancha está cerrada ese día.', slots: [] };
+  }
+  if (!price) {
+    console.warn('[Availability] missing active price for duration', baseLog);
+    return { date, durationMinutes, price: null, reason: 'NO_PRICE', message: 'No hay precio activo para esa duración.', slots: [] };
+  }
 
   const schedules = businessIntervals(date, hours.openTime, hours.closeTime);
   const rangeOpen = schedules[0].open;
   const rangeClose = schedules[schedules.length - 1].close;
   const bookings = await prisma.booking.findMany({
     where: { courtId, status: { in: occupiedBookingStatuses }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
-    select: { startTime: true, endTime: true }
+    select: { id: true, status: true, startTime: true, endTime: true }
   });
 
   const slots = [];
@@ -104,13 +117,24 @@ export async function availability(date: string, durationMinutes: number, courtI
         startTime: start.toFormat('HH:mm'), endTime: end.toFormat('HH:mm'),
         available: !past && !overlaps && !deadGap,
         reason: past ? 'PAST' : overlaps ? 'OCCUPIED' : deadGap ? 'DEAD_GAP' : null,
-        message: past ? 'El horario ya pasÃ³' : deadGap ? 'No disponible para esta duraciÃ³n' : null
+        message: past ? 'El horario ya pasó' : deadGap ? 'No disponible para esta duración' : null
       });
     }
   }
+  const availableCount = slots.filter(slot => slot.available).length;
+  const summary = {
+    ...baseLog,
+    schedules: schedules.map(item => ({ open: item.open.toISO(), close: item.close.toISO() })),
+    blockingStatuses: occupiedBookingStatuses,
+    bookingsFound: bookings.length,
+    bookings: bookings.map(item => ({ id: item.id, status: item.status, startTime: item.startTime, endTime: item.endTime })),
+    totalSlots: slots.length,
+    availableSlots: availableCount
+  };
+  if (availableCount === 0) console.warn('[Availability] no available slots', summary);
+  else if (process.env.AVAILABILITY_DEBUG === '1') console.info('[Availability] slots generated', summary);
   return { date, durationMinutes, price: Number(price.price), config: config.booking, slots };
 }
-
 const durationLabel = (minutes: number) => {
   const hours = Math.floor(minutes / 60), rest = minutes % 60;
   return `${hours ? `${hours}h` : ''}${hours && rest ? ' ' : ''}${rest ? `${rest}m` : ''}`;
