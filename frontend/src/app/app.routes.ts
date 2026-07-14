@@ -8,6 +8,7 @@ import { AdminDashboardPage } from './features/admin/admin-dashboard-page';
 import { AdminStatsPage } from './features/admin/admin-stats-page';
 import { AdminBookingFormPage } from './features/admin/admin-booking-form-page';
 import { AdminClientsPage } from './features/admin/admin-clients-page';
+import { InstagramStoriesPage } from './features/admin/instagram-stories-page';
 import { adminGuard, authGuard, superAdminGuard } from './core/api';
 
 export const routes: Routes = [
@@ -29,5 +30,6 @@ export const routes: Routes = [
   { path: 'admin/horarios', component: AdminPage, canActivate: [superAdminGuard] },
   { path: 'admin/caja', component: AdminPage, canActivate: [superAdminGuard] },
   { path: 'admin/clientes', component: AdminClientsPage, canActivate: [superAdminGuard] },
+  { path: 'admin/marketing/historias-instagram', component: InstagramStoriesPage, canActivate: [adminGuard] },
   { path: '**', redirectTo: '' }
 ];

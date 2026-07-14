@@ -56,6 +56,22 @@ test('rechaza login de usuario bloqueado', async () => {
   assert.deepEqual(await response.json(), { message: 'Tu cuenta está bloqueada. Comunicate con la cancha.' });
 });
 
+test('login no queda bloqueado por una cookie de sesión previa sin CSRF', async () => {
+  const passwordHash = await bcrypt.hash('clave-segura', 4);
+  db.user.findFirst = async () => ({ id: 9, firstName: 'Admin', lastName: 'Club', phone: '3510000000', passwordHash, role: 'ADMIN', active: true, phoneVerified: true, isBlocked: false });
+  db.user.findUnique = async () => ({ id: 9, firstName: 'Admin', lastName: 'Club', phone: '3510000000', passwordHash, role: 'ADMIN', active: true, phoneVerified: true, isBlocked: false });
+
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://localhost:4200', cookie: 'padel_session=old-session' },
+    body: JSON.stringify({ phone: '3510000000', password: 'clave-segura' })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as any;
+  assert.equal(body.user.role, 'ADMIN');
+});
+
 test('rechaza operaciones mutables desde un origen no autorizado', async () => {
   const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(response.status, 403);

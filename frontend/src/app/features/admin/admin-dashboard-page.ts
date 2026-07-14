@@ -49,6 +49,7 @@ type Booking = {
         <a routerLink="/admin/agenda-diaria">Agenda</a>
         <a routerLink="/admin/turno">Agregar turno</a>
         <a routerLink="/admin/turno" [queryParams]="{ mode: 'block' }">Bloquear horario</a>
+        <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
       </nav>
 
       @if (auth.isAdmin() && auth.user()?.role === 'SUPERADMIN') {
@@ -59,6 +60,7 @@ type Booking = {
             <a routerLink="/admin/horarios">Horarios</a>
             <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
             <a routerLink="/admin/clientes">Clientes</a>
+            <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
             <a routerLink="/admin/caja">Caja</a>
             <a routerLink="/admin/estadisticas">Estadísticas</a>
           </nav>
@@ -83,7 +85,7 @@ type Booking = {
               </div>
               <div class="operations-booking__actions">
                 <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button>
+                @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
             </article>
@@ -97,7 +99,12 @@ type Booking = {
           @for (user of pendingUsers; track user.id) {
             <article class="operations-booking">
               <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
-              <div class="operations-booking__actions"><button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button><button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button></div>
+              <div class="operations-booking__actions">
+                @if (auth.user()?.role === 'SUPERADMIN') {
+                  <button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button>
+                  <button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button>
+                }
+              </div>
             </article>
           } @empty { <div class="empty">No hay usuarios pendientes.</div> }
         </div>
@@ -143,7 +150,7 @@ type Booking = {
                   }
                   @if (booking.status === 'PENDING') {
                     <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                    <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button>
+                    @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>

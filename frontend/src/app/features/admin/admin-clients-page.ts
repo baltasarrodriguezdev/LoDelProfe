@@ -34,6 +34,8 @@ type Client = {
         <a routerLink="/admin/agenda-semanal">Agenda semanal</a>
         <a routerLink="/admin/turno">Agregar turno</a>
         <a routerLink="/admin/turno" [queryParams]="{mode:'block'}">Bloquear horario</a>
+        <small class="admin-nav-label advanced">MARKETING</small>
+        <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
         <small class="admin-nav-label advanced">CONFIGURACIÓN</small>
         <a routerLink="/admin/precios">Precios</a>
         <a routerLink="/admin/horarios">Horarios</a>

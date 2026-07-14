@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const csrfExemptPaths = new Set(['/auth/login', '/api/auth/login', '/auth/register', '/api/auth/register']);
 
 export function cookieValue(header: string | undefined, name: string) {
   return header?.split(';')
@@ -33,6 +34,7 @@ export const securityHeaders: RequestHandler = (_req, res, next) => {
 
 export const csrfProtection: RequestHandler = (req, _res, next) => {
   if (!unsafeMethods.has(req.method)) return next();
+  if (csrfExemptPaths.has(req.path)) return next();
 
   const authCookie = cookieValue(req.headers.cookie, config.authCookieName);
   if (!authCookie) return next();
