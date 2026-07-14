@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { finalize, timeout } from 'rxjs';
 import { API, Api, Auth } from '../../core/api';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
@@ -243,28 +244,35 @@ export class AvailabilityPage implements OnInit {
     }
     const popup = window.open('', '_blank');
     if (!popup) {
-      this.modalError = 'No pudimos abrir WhatsApp. Permit√≠ las ventanas emergentes e intent√° nuevamente.';
+      this.modalError = 'No pudimos abrir WhatsApp. PermitÌ las ventanas emergentes e intent· nuevamente.';
       return;
     }
     this.submitting = true;
     this.modalError = '';
-    this.api.post<any>('/bookings', this.bookingPayload()).subscribe({
-      next: () => {
+    this.cdr.detectChanges();
+    console.log('[reservas] booking request', this.bookingPayload());
+    this.api.post<any>('/bookings', this.bookingPayload()).pipe(
+      timeout(20000),
+      finalize(() => {
+        this.submitting = false;
+        this.cdr.detectChanges();
+      })
+    ).subscribe({
+      next: response => {
+        console.log('[reservas] booking response', response);
         const url = this.buildVerificationWhatsappUrl();
         this.lastWhatsappUrl = url;
         popup.location.href = url;
         this.modalState = 'verificationPending';
-        this.submitting = false;
         sessionStorage.removeItem(this.pendingKey);
       },
       error: error => {
+        console.error('[reservas] booking error', error);
         popup.close();
-        this.modalError = this.friendlyBookingError(error.error?.message);
-        this.submitting = false;
+        this.modalError = this.friendlyBookingError(error.error?.message ?? error.message);
       }
     });
   }
-
   openWhatsappAgain() {
     if (!this.lastWhatsappUrl) return;
     window.open(this.lastWhatsappUrl, '_blank');
@@ -278,15 +286,23 @@ export class AvailabilityPage implements OnInit {
     }
     this.submitting = true;
     this.modalError = '';
-    this.api.post('/bookings', this.bookingPayload()).subscribe({
-      next: () => {
-        this.modalState = 'reservationConfirmed';
+    this.cdr.detectChanges();
+    console.log('[reservas] booking request', this.bookingPayload());
+    this.api.post('/bookings', this.bookingPayload()).pipe(
+      timeout(20000),
+      finalize(() => {
         this.submitting = false;
+        this.cdr.detectChanges();
+      })
+    ).subscribe({
+      next: response => {
+        console.log('[reservas] booking response', response);
+        this.modalState = 'reservationConfirmed';
         sessionStorage.removeItem(this.pendingKey);
       },
       error: error => {
-        this.modalError = this.friendlyBookingError(error.error?.message);
-        this.submitting = false;
+        console.error('[reservas] booking error', error);
+        this.modalError = this.friendlyBookingError(error.error?.message ?? error.message);
       }
     });
   }
