@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { finalize } from 'rxjs';
 import { Api } from '../../core/api';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
@@ -178,6 +179,7 @@ export class AdminClientsPage implements OnInit {
   confirmDialog: { type: 'cancelPending' | 'deactivate'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
   confirmLoading = false;
   confirmError = '';
+  private clientsRequestId = 0;
 
   readonly tabs: Array<{ id: ClientStatus; label: string }> = [
     { id: 'pending', label: 'Pendientes' },
@@ -200,10 +202,27 @@ export class AdminClientsPage implements OnInit {
   }
 
   loadClients() {
+    const requestId = ++this.clientsRequestId;
+    console.log('[clientes] inicio loadClients', requestId);
     this.loading = true;
-    this.api.get<Client[]>('/admin/users', { search: this.search }).subscribe({
-      next: clients => { this.clients = clients; this.loading = false; },
-      error: error => { this.loading = false; this.showNotice(error.error?.message ?? 'No pudimos cargar los clientes.', true); }
+    this.api.get<Client[]>('/admin/users', { search: this.search }, { noCache: true }).pipe(
+      finalize(() => {
+        if (requestId === this.clientsRequestId) {
+          this.loading = false;
+          console.log('[clientes] loading false', requestId);
+        }
+      })
+    ).subscribe({
+      next: clients => {
+        if (requestId !== this.clientsRequestId) return;
+        console.log('[clientes] response', clients);
+        this.clients = Array.isArray(clients) ? clients : [];
+      },
+      error: error => {
+        if (requestId !== this.clientsRequestId) return;
+        console.error('[clientes] load error', error);
+        this.showNotice(error.error?.message ?? 'No pudimos cargar los clientes.', true);
+      }
     });
   }
 
@@ -269,18 +288,17 @@ export class AdminClientsPage implements OnInit {
     const request = this.editingClient
       ? this.api.patch<Client>(`/admin/users/${this.editingClient.id}`, { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim() })
       : this.api.post<Client>('/admin/users', { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim(), phone: this.form.phone.trim(), password: this.form.password });
-    request.subscribe({
+    request.pipe(finalize(() => this.saving = false)).subscribe({
       next: client => {
         const wasEditing = !!this.editingClient;
         if (wasEditing) this.clients = this.clients.map(item => item.id === client.id ? client : item);
         else this.clients = [client, ...this.clients];
-        this.saving = false;
         this.showForm = false;
         this.editingClient = null;
         this.activeTab = 'confirmed';
         this.showNotice(wasEditing ? 'Cliente actualizado correctamente.' : 'Cliente agregado correctamente.');
       },
-      error: error => { this.saving = false; this.formError = error.error?.message ?? 'No pudimos guardar el cliente.'; }
+      error: error => { this.formError = error.error?.message ?? 'No pudimos guardar el cliente.'; }
     });
   }
 
@@ -346,28 +364,30 @@ export class AdminClientsPage implements OnInit {
   private confirmCancelPending(client: Client) {
     this.confirmLoading = true;
     this.confirmError = '';
-    this.api.delete<any>(`/admin/users/${client.id}/pending-verification`).subscribe({
+    this.api.delete<any>(`/admin/users/${client.id}/pending-verification`).pipe(
+      finalize(() => this.confirmLoading = false)
+    ).subscribe({
       next: () => {
         this.clients = this.clients.filter(item => item.id !== client.id);
-        this.confirmLoading = false;
         this.confirmDialog = null;
-        this.showNotice('Usuario pendiente cancelado. El número ya está disponible.');
+        this.showNotice('Usuario pendiente cancelado. El n?mero ya est? disponible.');
       },
-      error: () => { this.confirmLoading = false; this.confirmError = 'No pudimos cancelar el usuario pendiente. Intentá nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intent? nuevamente.'; }
     });
   }
 
   private confirmDeactivate(client: Client) {
     this.confirmLoading = true;
     this.confirmError = '';
-    this.api.patch<Client>(`/admin/users/${client.id}`, { active: false }).subscribe({
+    this.api.patch<Client>(`/admin/users/${client.id}`, { active: false }).pipe(
+      finalize(() => this.confirmLoading = false)
+    ).subscribe({
       next: updated => {
         this.replaceClient({ ...client, ...updated, active: false });
-        this.confirmLoading = false;
         this.confirmDialog = null;
         this.showNotice('Cliente desactivado. Conservamos su historial.');
       },
-      error: () => { this.confirmLoading = false; this.confirmError = 'No pudimos actualizar el cliente. Intentá nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos actualizar el cliente. Intent? nuevamente.'; }
     });
   }
 

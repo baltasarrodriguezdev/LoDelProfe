@@ -1,7 +1,7 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
 import { Router, RouterStateSnapshot } from '@angular/router';
-import { tap, timeout } from 'rxjs';
+import { retry, tap, throwError, timer, timeout } from 'rxjs';
 
 export const API = '/api';
 const CSRF_COOKIE = 'padel_csrf';
@@ -31,13 +31,26 @@ function requestHeaders(options?: ApiOptions) {
     : undefined;
 }
 
+function retryTransientRequest(error: unknown, retryIndex: number) {
+  const value = error as HttpErrorResponse & { name?: string };
+  const transient = String(value.name) === 'TimeoutError'
+    || value.status === 0
+    || value.status === 408
+    || value.status === 429
+    || value.status >= 500;
+  return transient ? timer(retryIndex * 450) : throwError(() => error);
+}
+
 @Injectable({ providedIn: 'root' })
 export class Api {
   private http = inject(HttpClient);
 
   get<T>(path: string, params?: Record<string, string | number>, options?: ApiOptions) {
     return this.http.get<T>(API + path, { params: params as any, headers: requestHeaders(options) })
-      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+      .pipe(
+        timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
+        retry({ count: 2, delay: retryTransientRequest })
+      );
   }
 
   post<T>(path: string, body: unknown, options?: ApiOptions) {
@@ -84,8 +97,10 @@ export class Auth {
     if (!previous) return;
     this.api.get<any>('/auth/me', undefined, { noCache: true }).subscribe({
       next: user => this.setUser(user),
-      error: () => {
-        if (this.user() === previous) this.clearUser();
+      error: error => {
+        const status = (error as HttpErrorResponse)?.status;
+        if ([401, 403].includes(status) && this.user() === previous) this.clearUser();
+        else console.error('[auth] refresh session error', error);
       }
     });
   }

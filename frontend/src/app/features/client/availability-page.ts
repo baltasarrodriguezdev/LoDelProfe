@@ -6,6 +6,7 @@ import { finalize, firstValueFrom } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
+import { MyBookingsStore } from './my-bookings-store';
 
 type Price = { id: number; durationMinutes: number; price: number; active: boolean };
 type Slot = { startTime: string; endTime: string; available: boolean; reason?: string | null; message?: string | null };
@@ -127,6 +128,7 @@ export class AvailabilityPage implements OnInit {
   public auth = inject(Auth);
   private router = inject(Router);
   private cdr = inject(ChangeDetectorRef);
+  private myBookingsStore = inject(MyBookingsStore);
   private readonly pendingKey = 'pendingBooking';
 
   venue = VENUE;
@@ -251,7 +253,7 @@ export class AvailabilityPage implements OnInit {
     }
     const popup = window.open('', '_blank');
     if (!popup) {
-      this.modalError = 'No pudimos abrir WhatsApp. Permití las ventanas emergentes e intentá nuevamente.';
+      this.modalError = 'No pudimos abrir WhatsApp. Permitï¿½ las ventanas emergentes e intentï¿½ nuevamente.';
       return;
     }
     this.submitting = true;
