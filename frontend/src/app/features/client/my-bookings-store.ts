@@ -20,12 +20,14 @@ export class MyBookingsStore {
   private bookingsRequestId = 0;
   private loaded = false;
   private loadedUserId: number | null = null;
+  private loadedSessionRevision: number | null = null;
   private inFlight: Promise<void> | null = null;
+  private requestAbort: AbortController | null = null;
 
   readonly bookings = signal<ClientBooking[]>([]);
-  readonly loadingBookings = signal(false);
   readonly bookingsError = signal('');
   readonly bookingsStatus = signal<AsyncStatus>('idle');
+  readonly loadingBookings = computed(() => this.bookingsStatus() === 'loading');
 
   readonly upcomingBookings = computed(() =>
     this.bookings().filter(booking => this.isUpcoming(booking))
@@ -37,44 +39,43 @@ export class MyBookingsStore {
 
   loadBookings(force = false) {
     const userId = this.auth.user()?.id ?? null;
-    if (this.loaded && this.loadedUserId === userId && !force) return Promise.resolve();
-    if (this.loadedUserId !== userId) {
+    const sessionRevision = this.auth.sessionRevision();
+    if (this.loaded && this.loadedUserId === userId && this.loadedSessionRevision === sessionRevision && !force) return Promise.resolve();
+    if (this.loadedUserId !== userId || (this.loadedSessionRevision !== null && this.loadedSessionRevision !== sessionRevision)) {
       this.bookings.set([]);
       this.loaded = false;
     }
     if (this.inFlight && !force) return this.inFlight;
 
     const requestId = ++this.bookingsRequestId;
+    this.requestAbort?.abort();
+    const abortController = new AbortController();
+    this.requestAbort = abortController;
     const urls = ['/bookings/my', '/bookings/my/history'];
-    console.log('[mis-turnos] inicio loadBookings');
-    console.log('[mis-turnos] requestId', requestId);
-    console.log('[mis-turnos] URL solicitada', urls);
 
-    this.loadingBookings.set(true);
     this.bookingsStatus.set('loading');
     this.bookingsError.set('');
 
     this.inFlight = (async () => {
       try {
         const responses = await Promise.allSettled(
-          urls.map(url => firstValueFrom(this.api.get<unknown>(url, undefined, { noCache: true })))
+          urls.map(url => firstValueFrom(this.api.get<unknown>(url, undefined, { noCache: true, abortSignal: abortController.signal })))
         );
         if (requestId !== this.bookingsRequestId) return;
 
         const normalizedBookings = responses.flatMap((response, index) => {
           if (response.status === 'fulfilled') {
-            console.log('[mis-turnos] bookings response', response.value);
             return this.normalizeBookings(response.value);
           }
           console.error('[mis-turnos] bookings partial error', urls[index], response.reason);
           return [];
         });
         const dedupedBookings = this.dedupeBookings(normalizedBookings);
-        console.log('[mis-turnos] respuesta normalizada', dedupedBookings);
 
         this.bookings.set(dedupedBookings);
         this.loaded = responses.some(response => response.status === 'fulfilled');
         this.loadedUserId = userId;
+        this.loadedSessionRevision = sessionRevision;
         if (this.loaded) this.bookingsStatus.set('success');
         else {
           this.bookingsError.set('No pudimos consultar tus turnos.');
@@ -88,9 +89,8 @@ export class MyBookingsStore {
         this.bookingsStatus.set('error');
       } finally {
         if (requestId === this.bookingsRequestId) {
-          this.loadingBookings.set(false);
           this.inFlight = null;
-          console.log('[mis-turnos] loading false');
+          this.requestAbort = null;
         }
       }
     })();
@@ -99,19 +99,29 @@ export class MyBookingsStore {
   }
 
   invalidate() {
+    ++this.bookingsRequestId;
+    this.requestAbort?.abort();
+    this.requestAbort = null;
+    this.inFlight = null;
     this.loaded = false;
     this.loadedUserId = null;
+    this.loadedSessionRevision = null;
   }
 
   removeBooking(id: number) {
     this.bookings.set(this.bookings().filter(booking => booking.id !== id));
   }
 
+  updateBookingStatus(id: number, status: string) {
+    this.bookings.set(this.bookings().map(booking => booking.id === id ? { ...booking, status } : booking));
+    this.invalidate();
+  }
+
   upsertBooking(value: unknown) {
     const booking = this.extractBooking(value);
     if (!booking) return;
     this.bookings.set(this.dedupeBookings([booking, ...this.bookings()]));
-    this.loaded = false;
+    this.invalidate();
   }
 
   private extractBooking(value: unknown) {

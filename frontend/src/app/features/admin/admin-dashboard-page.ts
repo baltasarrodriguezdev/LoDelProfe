@@ -1,10 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, computed, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { NavigationEnd, Router, RouterLink } from '@angular/router';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { AdminAgendaStore } from './admin-agenda-store';
 
@@ -75,6 +75,11 @@ type Booking = {
       <section class="operations-agenda">
         <div class="section-heading"><div><span class="eyebrow">WHATSAPP</span><h2>Turnos pendientes de confirmación</h2></div></div>
         <div class="operations-bookings">
+          @if (pendingReservationsStatus() === 'loading') {
+            <div class='empty'>Cargando turnos pendientes...</div>
+          } @else if (pendingReservationsStatus() === 'error') {
+            <div class='empty'>No se pudieron cargar los turnos pendientes.</div>
+          } @else {
           @for (booking of pendingReservations; track booking.id) {
             <article class="operations-booking">
               <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>{{ booking.startTime | date:'dd/MM' }}</small></time>
@@ -93,12 +98,18 @@ type Booking = {
               </div>
             </article>
           } @empty { <div class="empty">No hay turnos pendientes de confirmación.</div> }
+          }
         </div>
       </section>
 
       <section class="operations-agenda">
         <div class="section-heading"><div><span class="eyebrow">VALIDACIONES</span><h2>Usuarios pendientes de verificar</h2></div></div>
         <div class="operations-bookings">
+          @if (pendingUsersStatus() === 'loading') {
+            <div class='empty'>Cargando usuarios pendientes...</div>
+          } @else if (pendingUsersStatus() === 'error') {
+            <div class='empty'>No se pudieron cargar los usuarios pendientes.</div>
+          } @else {
           @for (user of pendingUsers; track user.id) {
             <article class="operations-booking">
               <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
@@ -110,6 +121,7 @@ type Booking = {
               </div>
             </article>
           } @empty { <div class="empty">No hay usuarios pendientes.</div> }
+          }
         </div>
       </section>
 
@@ -126,9 +138,9 @@ type Booking = {
           <label class="operations-date-picker">Cambiar fecha<input type="date" [(ngModel)]="selectedDate" (change)="loadAll()"></label>
         </div>
 
-        @if (loading) {
+        @if (agendaStatus() === 'loading') {
           <div class="empty">Cargando agenda...</div>
-        } @else {
+        } @else if (agendaStatus() === 'success') {
           <div class="operations-bookings">
             @for (booking of bookings(); track booking.id) {
               <article class="operations-booking" [class.cancelled]="booking.status === 'CANCELLED'" [class.blocked]="booking.status === 'BLOCKED'">
@@ -257,10 +269,9 @@ type Booking = {
     }
   `
 })
-export class AdminDashboardPage implements OnInit {
+export class AdminDashboardPage implements OnInit, OnDestroy {
   private api = inject(Api);
   private router = inject(Router);
-  private destroyRef = inject(DestroyRef);
   private agendaStore = inject(AdminAgendaStore);
   public auth = inject(Auth);
 
@@ -274,7 +285,11 @@ export class AdminDashboardPage implements OnInit {
   readonly agendaError = this.agendaStore.agendaError;
   readonly availabilityStatus = this.agendaStore.availabilityStatus;
   readonly availabilityError = this.agendaStore.availabilityError;
-  loading = false;
+  readonly pendingReservationsStatus = signal<AsyncStatus>('idle');
+  readonly pendingUsersStatus = signal<AsyncStatus>('idle');
+  readonly bookingMutationId = signal<number | null>(null);
+  readonly pendingUserMutationId = signal<number | null>(null);
+  readonly paymentMutationId = signal<number | null>(null);
   notice = '';
   noticeError = false;
   selectedBooking: Booking | null = null;
@@ -284,6 +299,11 @@ export class AdminDashboardPage implements OnInit {
   confirmError = '';
   private bookingsRequestId = 0;
   private detailRequestId = 0;
+  private pendingReservationsRequestId = 0;
+  private pendingUsersRequestId = 0;
+  private pendingReservationsAbort: AbortController | null = null;
+  private pendingUsersAbort: AbortController | null = null;
+  private detailAbort: AbortController | null = null;
 
   get formattedDate() {
     const value = new Intl.DateTimeFormat('es-AR', {
@@ -300,12 +320,18 @@ export class AdminDashboardPage implements OnInit {
 
   ngOnInit() {
     this.ensureLoaded();
-    this.router.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(event => {
-      if (event instanceof NavigationEnd && this.router.url === '/admin') this.ensureLoaded();
-    });
   }
 
-  loadAll() { this.ensureLoaded(true); }
+  ngOnDestroy() {
+    this.pendingReservationsAbort?.abort();
+    this.pendingUsersAbort?.abort();
+    this.detailAbort?.abort();
+  }
+
+  loadAll() {
+    this.loadBookings(true);
+    this.loadAvailability(true);
+  }
 
   ensureLoaded(force = false) {
     this.loadBookings(force);
@@ -315,20 +341,62 @@ export class AdminDashboardPage implements OnInit {
   }
 
   loadBookings(force = false) {
-    void this.agendaStore.ensureAgendaLoaded({ date: this.selectedDate, days: 1 }, force);
+    void this.agendaStore.ensureAgendaLoaded({ date: this.selectedDate, days: 1 }, force).then(() => {
+      if (this.agendaStatus() === 'error') this.showNotice(this.agendaError(), true);
+    });
   }
 
   loadPendingReservations() {
-    this.api.get<Booking[]>('/admin/reservations', { status: 'PENDING' }).subscribe({
-      next: bookings => this.pendingReservations = bookings,
-      error: error => this.showNotice(error.error?.message ?? 'No se pudieron cargar turnos pendientes.', true)
+    const requestId = ++this.pendingReservationsRequestId;
+    this.pendingReservationsAbort?.abort();
+    const abortController = new AbortController();
+    this.pendingReservationsAbort = abortController;
+    this.pendingReservationsStatus.set('loading');
+    this.api.get<unknown>('/admin/reservations', { status: 'PENDING' }, { noCache: true, abortSignal: abortController.signal }).pipe(
+      finalize(() => {
+        if (requestId === this.pendingReservationsRequestId && this.pendingReservationsStatus() === 'loading') {
+          this.pendingReservationsStatus.set('error');
+        }
+        if (requestId === this.pendingReservationsRequestId) this.pendingReservationsAbort = null;
+      })
+    ).subscribe({
+      next: response => {
+        if (requestId !== this.pendingReservationsRequestId) return;
+        this.pendingReservations = this.normalizeList<Booking>(response, 'bookings');
+        this.pendingReservationsStatus.set('success');
+      },
+      error: error => {
+        if (requestId !== this.pendingReservationsRequestId) return;
+        this.pendingReservationsStatus.set('error');
+        this.showNotice(error.error?.message ?? 'No se pudieron cargar turnos pendientes.', true);
+      }
     });
   }
 
   loadPendingUsers() {
-    this.api.get<any[]>('/admin/users/pending-verification').subscribe({
-      next: users => this.pendingUsers = users,
-      error: error => this.showNotice(error.error?.message ?? 'No se pudieron cargar usuarios pendientes.', true)
+    const requestId = ++this.pendingUsersRequestId;
+    this.pendingUsersAbort?.abort();
+    const abortController = new AbortController();
+    this.pendingUsersAbort = abortController;
+    this.pendingUsersStatus.set('loading');
+    this.api.get<unknown>('/admin/users/pending-verification', undefined, { noCache: true, abortSignal: abortController.signal }).pipe(
+      finalize(() => {
+        if (requestId === this.pendingUsersRequestId && this.pendingUsersStatus() === 'loading') {
+          this.pendingUsersStatus.set('error');
+        }
+        if (requestId === this.pendingUsersRequestId) this.pendingUsersAbort = null;
+      })
+    ).subscribe({
+      next: response => {
+        if (requestId !== this.pendingUsersRequestId) return;
+        this.pendingUsers = this.normalizeList<any>(response, 'users');
+        this.pendingUsersStatus.set('success');
+      },
+      error: error => {
+        if (requestId !== this.pendingUsersRequestId) return;
+        this.pendingUsersStatus.set('error');
+        this.showNotice(error.error?.message ?? 'No se pudieron cargar usuarios pendientes.', true);
+      }
     });
   }
 
@@ -338,11 +406,15 @@ export class AdminDashboardPage implements OnInit {
 
   openDetail(booking: Booking) {
     const requestId = ++this.detailRequestId;
+    this.detailAbort?.abort();
+    const abortController = new AbortController();
+    this.detailAbort = abortController;
     this.selectedBooking = booking;
     this.detailLoading = true;
-    this.api.get<Booking>(`/admin/bookings/${booking.id}`, undefined, { noCache: true }).pipe(
+    this.api.get<Booking>(`/admin/bookings/${booking.id}`, undefined, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
         if (requestId === this.detailRequestId) this.detailLoading = false;
+        if (requestId === this.detailRequestId) this.detailAbort = null;
       })
     ).subscribe({
       next: detail => {
@@ -356,11 +428,21 @@ export class AdminDashboardPage implements OnInit {
     });
   }
 
-  closeDetail() { this.selectedBooking = null; }
+  closeDetail() {
+    ++this.detailRequestId;
+    this.detailAbort?.abort();
+    this.detailAbort = null;
+    this.detailLoading = false;
+    this.selectedBooking = null;
+  }
   clientFirstName(name: string) { return name.trim().split(/\s+/)[0] ?? ''; }
   clientLastName(name: string) { return name.trim().split(/\s+/).slice(1).join(' ') || '—'; }
   changeStatus(booking: Booking, status: string) {
-    this.api.patch<any>(`/admin/bookings/${booking.id}/status`, { status }).subscribe({
+    if (!booking.id || this.bookingMutationId() !== null) return;
+    this.bookingMutationId.set(booking.id);
+    this.api.patch<any>(`/admin/bookings/${booking.id}/status`, { status }).pipe(
+      finalize(() => this.bookingMutationId.set(null))
+    ).subscribe({
       next: () => {
         booking.status = status;
         this.agendaStore.updateBookingStatus(booking.id, status);
@@ -374,7 +456,11 @@ export class AdminDashboardPage implements OnInit {
   }
 
   verifyUser(user: any) {
-    this.api.patch<any>('/admin/users/' + user.id + '/verify', {}).subscribe({
+    if (!user?.id || this.pendingUserMutationId() !== null) return;
+    this.pendingUserMutationId.set(user.id);
+    this.api.patch<any>('/admin/users/' + user.id + '/verify', {}).pipe(
+      finalize(() => this.pendingUserMutationId.set(null))
+    ).subscribe({
       next: () => { this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id); this.showNotice('Usuario verificado.'); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
     });
@@ -390,19 +476,31 @@ export class AdminDashboardPage implements OnInit {
     this.confirmError = '';
   }
   confirmPending(booking: Booking) {
-    this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm', {}).subscribe({
+    if (!booking.id || this.bookingMutationId() !== null) return;
+    this.bookingMutationId.set(booking.id);
+    this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm', {}).pipe(
+      finalize(() => this.bookingMutationId.set(null))
+    ).subscribe({
       next: () => { booking.status = 'CONFIRMED'; this.agendaStore.updateBookingStatus(booking.id, 'CONFIRMED'); this.showNotice('Turno confirmado.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar el turno.', true)
     });
   }
   confirmAndVerify(booking: Booking) {
-    this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm-and-verify-user', {}).subscribe({
+    if (!booking.id || this.bookingMutationId() !== null) return;
+    this.bookingMutationId.set(booking.id);
+    this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm-and-verify-user', {}).pipe(
+      finalize(() => this.bookingMutationId.set(null))
+    ).subscribe({
       next: () => { booking.status = 'CONFIRMED'; this.agendaStore.updateBookingStatus(booking.id, 'CONFIRMED'); this.showNotice('Cliente y turno confirmados.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar y verificar.', true)
     });
   }
   cancelPendingReservation(booking: Booking) {
-    this.api.patch<any>('/admin/reservations/' + booking.id + '/cancel', {}).subscribe({
+    if (!booking.id || this.bookingMutationId() !== null) return;
+    this.bookingMutationId.set(booking.id);
+    this.api.patch<any>('/admin/reservations/' + booking.id + '/cancel', {}).pipe(
+      finalize(() => this.bookingMutationId.set(null))
+    ).subscribe({
       next: () => { booking.status = 'CANCELLED'; this.agendaStore.updateBookingStatus(booking.id, 'CANCELLED'); this.showNotice('Turno cancelado.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo cancelar el turno.', true)
     });
@@ -450,22 +548,14 @@ export class AdminDashboardPage implements OnInit {
   }
 
   private confirmDeleteCancelled(booking: Booking) {
+    if (!booking.id) {
+      this.confirmError = 'No pudimos identificar el turno.';
+      return;
+    }
     this.confirmLoading = true;
     this.confirmError = '';
-    const loadingTimer = window.setTimeout(() => {
-      if (this.confirmDialog?.type !== 'deleteCancelled' || this.confirmDialog.target?.id !== booking.id) return;
-      this.confirmLoading = false;
-      this.confirmDialog = null;
-      this.confirmError = '';
-      this.showNotice('La eliminaci?n est? tardando. Actualizamos la agenda para verificar el estado.', true);
-      this.reloadOperationalViews();
-    }, 7000);
-
     this.api.delete<any>(`/admin/bookings/${booking.id}/permanent`).pipe(
-      finalize(() => {
-        window.clearTimeout(loadingTimer);
-        this.confirmLoading = false;
-      })
+      finalize(() => this.confirmLoading = false)
     ).subscribe({
       next: response => {
         this.agendaStore.removeBooking(booking.id);
@@ -476,26 +566,25 @@ export class AdminDashboardPage implements OnInit {
         console.error('[admin-dashboard] delete booking error', error);
         this.confirmError = error.error?.message ?? 'No se pudo eliminar el turno.';
         this.reloadOperationalViews();
-        window.setTimeout(() => {
-          if (this.confirmDialog?.type !== 'deleteCancelled' || this.confirmDialog.target?.id !== booking.id) return;
-          this.confirmDialog = null;
-          this.confirmError = '';
-        }, 2500);
       }
     });
   }
   markPartial(booking: Booking) {
+    if (!booking.id || this.paymentMutationId() !== null) return;
+    this.paymentMutationId.set(booking.id);
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
       paymentStatus: 'PARTIAL', paymentMethod: 'EFECTIVO', createCashMovement: false
-    }).subscribe({
+    }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
       next: () => { booking.paymentStatus = 'PARTIAL'; this.showNotice('Seña registrada correctamente.'); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar la seña.', true)
     });
   }
   markPaid(booking: Booking) {
+    if (!booking.id || this.paymentMutationId() !== null) return;
+    this.paymentMutationId.set(booking.id);
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
       paymentStatus: 'PAID', paymentMethod: 'EFECTIVO', createCashMovement: true
-    }).subscribe({
+    }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
       next: () => { booking.paymentStatus = 'PAID'; this.showNotice('Pago registrado correctamente.'); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar el pago.', true)
     });
@@ -548,10 +637,10 @@ export class AdminDashboardPage implements OnInit {
   }
 
   private reloadOperationalViews() {
-    this.loadBookings();
+    this.loadBookings(true);
     this.loadPendingReservations();
     this.loadPendingUsers();
-    this.loadAvailability();
+    this.loadAvailability(true);
   }
 
   private bookingAt(time: string) {
@@ -562,6 +651,12 @@ export class AdminDashboardPage implements OnInit {
     return new Intl.DateTimeFormat('es-AR', {
       hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires'
     }).format(new Date(value));
+  }
+
+  private normalizeList<T>(response: unknown, key: string): T[] {
+    const value = response as any;
+    const normalized = Array.isArray(response) ? response : value?.[key] ?? value?.data?.[key] ?? [];
+    return Array.isArray(normalized) ? normalized as T[] : [];
   }
 
   private showNotice(message: string, error = false) {

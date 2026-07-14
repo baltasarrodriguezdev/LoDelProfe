@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { Api } from '../../core/api';
+import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
 type ClientStatus = 'pending' | 'confirmed' | 'inactive' | 'blocked' | 'all';
@@ -89,9 +90,9 @@ type Client = {
         }
 
         <section class="clients-list" aria-live="polite">
-          @if (loading) {
+          @if (clientsStatus() === 'loading') {
             <div class="empty">Cargando clientes...</div>
-          } @else {
+          } @else if (clientsStatus() === 'success') {
             @for (client of filteredClients; track client.id) {
               <article class="client-row" [class.inactive]="!client.active" [class.blocked]="client.isBlocked">
                 <div class="client-avatar" aria-hidden="true">{{ initials(client) }}</div>
@@ -162,13 +163,14 @@ type Client = {
     @media(max-width:560px){.clients-admin-content{padding-inline:14px}.client-tabs{grid-template-columns:1fr 1fr}.client-row{grid-template-columns:1fr}.client-avatar{display:none}.client-actions{display:grid;grid-template-columns:1fr 1fr}.client-actions .small-action{width:100%}.client-form-actions{display:grid}.client-form-actions .btn{width:100%}}
   `]
 })
-export class AdminClientsPage implements OnInit {
+export class AdminClientsPage implements OnInit, OnDestroy {
   private api = inject(Api);
 
   clients: Client[] = [];
   activeTab: ClientStatus = 'pending';
   search = '';
-  loading = false;
+  readonly clientsStatus = signal<AsyncStatus>('idle');
+  readonly savingClientId = signal<number | null>(null);
   saving = false;
   notice = '';
   noticeError = false;
@@ -180,6 +182,7 @@ export class AdminClientsPage implements OnInit {
   confirmLoading = false;
   confirmError = '';
   private clientsRequestId = 0;
+  private clientsAbort: AbortController | null = null;
 
   readonly tabs: Array<{ id: ClientStatus; label: string }> = [
     { id: 'pending', label: 'Pendientes' },
@@ -190,6 +193,7 @@ export class AdminClientsPage implements OnInit {
   ];
 
   ngOnInit() { this.loadClients(); }
+  ngOnDestroy() { this.clientsAbort?.abort(); }
 
   get clientRows() { return this.clients.filter(client => client.role === 'CLIENT'); }
 
@@ -203,24 +207,29 @@ export class AdminClientsPage implements OnInit {
 
   loadClients() {
     const requestId = ++this.clientsRequestId;
-    console.log('[clientes] inicio loadClients', requestId);
-    this.loading = true;
-    this.api.get<Client[]>('/admin/users', { search: this.search }, { noCache: true }).pipe(
+    this.clientsAbort?.abort();
+    const abortController = new AbortController();
+    this.clientsAbort = abortController;
+    this.clientsStatus.set('loading');
+    this.api.get<unknown>('/admin/users', { search: this.search }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
         if (requestId === this.clientsRequestId) {
-          this.loading = false;
-          console.log('[clientes] loading false', requestId);
+          if (this.clientsStatus() === 'loading') this.clientsStatus.set('error');
+          this.clientsAbort = null;
         }
       })
     ).subscribe({
-      next: clients => {
+      next: response => {
         if (requestId !== this.clientsRequestId) return;
-        console.log('[clientes] response', clients);
+        const value = response as any;
+        const clients = Array.isArray(response) ? response : value?.users ?? value?.data?.users ?? [];
         this.clients = Array.isArray(clients) ? clients : [];
+        this.clientsStatus.set('success');
       },
       error: error => {
         if (requestId !== this.clientsRequestId) return;
         console.error('[clientes] load error', error);
+        this.clientsStatus.set('error');
         this.showNotice(error.error?.message ?? 'No pudimos cargar los clientes.', true);
       }
     });
@@ -303,21 +312,33 @@ export class AdminClientsPage implements OnInit {
   }
 
   verifyClient(client: Client) {
-    this.api.patch<Client>(`/admin/users/${client.id}/verify`, {}).subscribe({
+    if (!client.id || this.savingClientId() !== null) return;
+    this.savingClientId.set(client.id);
+    this.api.patch<Client>(`/admin/users/${client.id}/verify`, {}).pipe(
+      finalize(() => this.savingClientId.set(null))
+    ).subscribe({
       next: updated => { this.replaceClient({ ...client, ...updated, phoneVerified: true }); this.showNotice('Usuario verificado.'); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
     });
   }
 
   setActive(client: Client, active: boolean) {
-    this.api.patch<Client>(`/admin/users/${client.id}`, { active }).subscribe({
+    if (!client.id || this.savingClientId() !== null) return;
+    this.savingClientId.set(client.id);
+    this.api.patch<Client>(`/admin/users/${client.id}`, { active }).pipe(
+      finalize(() => this.savingClientId.set(null))
+    ).subscribe({
       next: updated => { this.replaceClient({ ...client, ...updated, active }); this.showNotice(active ? 'Cliente reactivado.' : 'Cliente desactivado. Conservamos su historial.'); },
       error: error => this.showNotice(error.error?.message ?? 'No pudimos actualizar el cliente. Intentá nuevamente.', true)
     });
   }
 
   setBlocked(client: Client, isBlocked: boolean) {
-    this.api.patch<Client>(`/admin/users/${client.id}`, { isBlocked }).subscribe({
+    if (!client.id || this.savingClientId() !== null) return;
+    this.savingClientId.set(client.id);
+    this.api.patch<Client>(`/admin/users/${client.id}`, { isBlocked }).pipe(
+      finalize(() => this.savingClientId.set(null))
+    ).subscribe({
       next: updated => { this.replaceClient({ ...client, ...updated, isBlocked }); this.showNotice(isBlocked ? 'Cliente bloqueado.' : 'Cliente desbloqueado.'); },
       error: error => this.showNotice(error.error?.message ?? 'No pudimos actualizar el cliente. Intentá nuevamente.', true)
     });

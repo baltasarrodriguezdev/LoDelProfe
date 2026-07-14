@@ -3,6 +3,10 @@ import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { finalize, forkJoin } from 'rxjs';
+import { AsyncStatus } from '../../shared/async-state';
+import { AdminAgendaStore } from './admin-agenda-store';
+import { MyBookingsStore } from '../client/my-bookings-store';
 
 @Component({
   standalone: true,
@@ -40,7 +44,7 @@ import { Api } from '../../core/api';
                       <b>{{ client.firstName }} {{ client.lastName }}</b><span>{{ client.phone }}</span>
                     </button>
                   } @empty {
-                    <p>No hay clientes para esa busqueda.</p>
+                    <p>{{ resourcesStatus === 'loading' ? 'Cargando clientes...' : 'No hay clientes para esa b√∫squeda.' }}</p>
                   }
                 </div>
               </div>
@@ -97,6 +101,8 @@ import { Api } from '../../core/api';
 export class AdminBookingFormPage implements OnInit {
   private api = inject(Api);
   private route = inject(ActivatedRoute);
+  private agendaStore = inject(AdminAgendaStore);
+  private myBookingsStore = inject(MyBookingsStore);
 
   mode: 'BOOKING' | 'BLOCK' = 'BOOKING';
   bookingId: number | null = null;
@@ -112,6 +118,7 @@ export class AdminBookingFormPage implements OnInit {
   created = false;
   error = '';
   warning = '';
+  resourcesStatus: AsyncStatus = 'idle';
 
   get successMessage() {
     if (this.mode === 'BLOCK') return 'El horario qued√≥ bloqueado correctamente.';
@@ -125,12 +132,23 @@ export class AdminBookingFormPage implements OnInit {
     this.form.durationMinutes = Number(params.get('durationMinutes') ?? 90);
     this.mode = params.get('mode') === 'block' ? 'BLOCK' : 'BOOKING';
     this.bookingId = Number(params.get('id')) || null;
-    this.api.get<any[]>('/prices').subscribe(prices => {
-      this.prices = prices;
-      this.syncPrice();
-      if (this.bookingId) this.loadBooking(this.bookingId);
+    this.resourcesStatus = 'loading';
+    forkJoin({
+      prices: this.api.get<unknown>('/prices', undefined, { noCache: true }),
+      clients: this.api.get<unknown>('/admin/users', undefined, { noCache: true })
+    }).subscribe({
+      next: ({ prices, clients }) => {
+        this.prices = this.normalizeList(prices, 'prices');
+        this.clients = this.normalizeList(clients, 'users').filter(client => client.role === 'CLIENT' && client.active);
+        this.resourcesStatus = 'success';
+        this.syncPrice();
+        if (this.bookingId) this.loadBooking(this.bookingId);
+      },
+      error: response => {
+        this.resourcesStatus = 'error';
+        this.error = response.error?.message ?? 'No se pudieron cargar los datos del formulario.';
+      }
     });
-    this.api.get<any[]>('/admin/users').subscribe(clients => this.clients = clients.filter(client => client.role === 'CLIENT' && client.active));
   }
 
   get filteredClients() {
@@ -174,14 +192,17 @@ export class AdminBookingFormPage implements OnInit {
 
   save(adminOverride = false) {
     if (this.saving) return;
-    this.saving = true;
     this.error = '';
     if (!adminOverride) this.warning = '';
     if (this.mode === 'BOOKING' && this.form.clientMode === 'EXISTING' && !this.form.userId) {
-      this.error = 'ElegÌ un cliente existente o cambi· a carga manual.';
-      this.saving = false;
+      this.error = 'ElegÔøΩ un cliente existente o cambiÔøΩ a carga manual.';
       return;
     }
+    if (!this.form.date || !this.form.startTime || !this.form.durationMinutes) {
+      this.error = 'CompletÔøΩ fecha, hora y duraciÔøΩn.';
+      return;
+    }
+    this.saving = true;
 
     const bookingData = {
       courtId: 1,
@@ -210,10 +231,14 @@ export class AdminBookingFormPage implements OnInit {
           })
         : this.api.post('/admin/bookings', bookingData);
 
-    request.subscribe({
-      next: () => { this.created = true; this.saving = false; this.warning = ''; },
+    request.pipe(finalize(() => this.saving = false)).subscribe({
+      next: () => {
+        this.created = true;
+        this.warning = '';
+        this.agendaStore.invalidate();
+        this.myBookingsStore.invalidate();
+      },
       error: response => {
-        this.saving = false;
         if (response.error?.code === 'DEAD_GAP') this.warning = response.error.message;
         else this.error = response.error?.message ?? (this.mode === 'BLOCK' ? 'No se pudo bloquear el horario.' : 'No se pudo guardar el turno.');
       }
@@ -258,6 +283,12 @@ export class AdminBookingFormPage implements OnInit {
       },
       error: response => this.error = response.error?.message ?? 'No se pudo cargar el turno.'
     });
+  }
+
+  private normalizeList(response: unknown, key: string): any[] {
+    const value = response as any;
+    const normalized = Array.isArray(response) ? response : value?.[key] ?? value?.data?.[key] ?? [];
+    return Array.isArray(normalized) ? normalized : [];
   }
 
   private dateInput(date: Date) {

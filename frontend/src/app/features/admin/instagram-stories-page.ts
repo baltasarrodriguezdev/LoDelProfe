@@ -1,8 +1,10 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, OnInit, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { AsyncStatus } from '../../shared/async-state';
+import { finalize } from 'rxjs';
 import { VENUE } from '../../shared/venue';
 
 type StoryTemplate = 'premium' | 'sport' | 'minimal';
@@ -151,7 +153,7 @@ const ASSET_KEY = 'padel_story_assets_v1';
                 <span>Cargando disponibilidad...</span>
               } @else if (availableSlots.length) {
                 @for (slot of availableSlots.slice(0, 8); track slot.startTime) { <b>{{ slot.startTime }}</b> }
-              } @else {
+              } @else if (availabilityStatus === 'success') {
                 <span>Sin horarios libres para mostrar.</span>
               }
             </div>
@@ -198,7 +200,7 @@ const ASSET_KEY = 'padel_story_assets_v1';
     @media(max-width:620px){.stories-header{display:grid}.story-controls{padding:16px}.control-grid,.color-grid,.asset-gallery{grid-template-columns:1fr}.preview-toolbar{display:grid}.phone-frame{padding:10px;border-radius:22px}}
   `]
 })
-export class InstagramStoriesPage implements OnInit, AfterViewInit {
+export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   private api = inject(Api);
   @ViewChild('storyCanvas') storyCanvas?: ElementRef<HTMLCanvasElement>;
 
@@ -218,11 +220,13 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit {
   defaultLogo = 'assets/logos/lo-del-profe-stacked.png';
   slots: AvailabilitySlot[] = [];
   assets: StoryAsset[] = [];
-  loadingSlots = false;
+  availabilityStatus: AsyncStatus = 'idle';
   downloading = false;
   notice = '';
   noticeError = false;
   private drawTimer: ReturnType<typeof setTimeout> | null = null;
+  private availabilityRequestId = 0;
+  get loadingSlots() { return this.availabilityStatus === 'loading'; }
 
   readonly templates: Array<{ id: StoryTemplate; name: string; description: string }> = [
     { id: 'premium', name: 'Premium oscuro', description: 'Foto profunda, logo arriba, horarios sobrios.' },
@@ -236,6 +240,7 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit() { this.drawSoon(); }
+  ngOnDestroy() { if (this.drawTimer) clearTimeout(this.drawTimer); }
 
   get availableSlots() { return this.slots.filter(slot => slot.available); }
   get backgroundAssets() { return this.assets.filter(asset => asset.type === 'background'); }
@@ -256,16 +261,27 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit {
   }
 
   loadAvailability() {
-    this.loadingSlots = true;
+    const requestId = ++this.availabilityRequestId;
+    this.availabilityStatus = 'loading';
     this.notice = '';
-    this.api.get<any>('/availability', { date: this.date, duration: this.duration, courtId: 1 }).subscribe({
+    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: 1 }, { noCache: true }).pipe(
+      finalize(() => {
+        if (requestId === this.availabilityRequestId && this.availabilityStatus === 'loading') {
+          this.availabilityStatus = 'error';
+        }
+      })
+    ).subscribe({
       next: data => {
-        this.slots = data?.slots ?? [];
-        this.loadingSlots = false;
+        if (requestId !== this.availabilityRequestId) return;
+        const value = data as any;
+        const slots = Array.isArray(data) ? data : value?.slots ?? value?.data?.slots ?? [];
+        this.slots = Array.isArray(slots) ? slots : [];
+        this.availabilityStatus = 'success';
         this.drawSoon();
       },
       error: error => {
-        this.loadingSlots = false;
+        if (requestId !== this.availabilityRequestId) return;
+        this.availabilityStatus = 'error';
         this.notice = error.error?.message ?? 'No pudimos cargar la disponibilidad.';
         this.noticeError = true;
         this.drawSoon();

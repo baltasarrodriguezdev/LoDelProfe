@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { AsyncStatus } from '../../shared/async-state';
+import { finalize } from 'rxjs';
 
 interface DashboardData {
   summary: { totalBookings: number; activeBookings: number; occupancyRate: number; cancelledCount: number; cancellationRate: number; noShowCount: number; blockedHours: number; newClients: number };
@@ -34,7 +36,7 @@ interface DashboardData {
       </section>
 
       @if (loading) { <div class="empty dashboard-loading">Calculando estadísticas...</div> }
-      @else if (dashboard) {
+      @else if (dashboard && availabilityStatus === 'success' && agendaStatus === 'success') {
         <section class="dashboard-metrics">
           <article class="metric-card featured"><span>Ocupación</span><b>{{ dashboard.summary.occupancyRate }}%</b><small>del tiempo vendible</small><i class="metric-progress"><i [style.width.%]="dashboard.summary.occupancyRate"></i></i></article>
           <article class="metric-card"><span>Turnos</span><b>{{ dashboard.summary.totalBookings }}</b><small>{{ dashboard.summary.activeBookings }} activos</small></article>
@@ -76,18 +78,84 @@ interface DashboardData {
     </section>
   `
 })
-export class AdminStatsPage implements OnInit {
+export class AdminStatsPage implements OnInit, OnDestroy {
   private api = inject(Api); private router = inject(Router);
   dashboard: DashboardData | null = null; availability: any; todayBookings: any[] = [];
-  loading = false; error = ''; period = 'today';
+  dashboardStatus: AsyncStatus = 'idle';
+  availabilityStatus: AsyncStatus = 'idle';
+  agendaStatus: AsyncStatus = 'idle';
+  error = ''; period = 'today';
+  private dashboardRequestId = 0;
+  private availabilityRequestId = 0;
+  private agendaRequestId = 0;
+  private requestedAgendaDate = '';
+  private dashboardAbort: AbortController | null = null;
+  private availabilityAbort: AbortController | null = null;
+  private agendaAbort: AbortController | null = null;
   from = this.dateInput(new Date()); to = this.dateInput(new Date());
   availabilityDate = this.dateInput(new Date()); availabilityDuration = 90;
 
-  ngOnInit() { this.loadDashboard(); this.loadAvailability(); this.loadTodayAgenda(); }
+  ngOnInit() { this.loadDashboard(); this.loadAvailability(); }
+  ngOnDestroy() { this.dashboardAbort?.abort(); this.availabilityAbort?.abort(); this.agendaAbort?.abort(); }
   setPeriod(period: string) { this.period = period; const today = new Date(); const start = new Date(today); if (period === '7') start.setDate(start.getDate() - 6); if (period === '30') start.setDate(start.getDate() - 29); this.from = this.dateInput(start); this.to = this.dateInput(today); this.loadDashboard(); }
-  loadDashboard() { this.loading = true; this.error = ''; this.api.get<DashboardData>('/admin/dashboard', { from: this.from, to: this.to }).subscribe({ next: data => { this.dashboard = data; this.loading = false; }, error: error => { this.error = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.loading = false; } }); }
-  loadAvailability() { this.api.get<any>('/availability', { date: this.availabilityDate, duration: this.availabilityDuration, courtId: 1 }).subscribe(data => this.availability = data); }
-  loadTodayAgenda() { const start = new Date(`${this.availabilityDate}T00:00:00`); const end = new Date(start); end.setDate(end.getDate() + 1); this.api.get<any[]>('/admin/bookings', { from: start.toISOString(), to: end.toISOString() }).subscribe(bookings => this.todayBookings = bookings.filter(item => item.status !== 'CANCELLED').slice(0, 8)); }
+  loadDashboard() {
+    const requestId = ++this.dashboardRequestId;
+    this.dashboardAbort?.abort();
+    const abortController = new AbortController();
+    this.dashboardAbort = abortController;
+    this.dashboardStatus = 'loading';
+    this.error = '';
+    this.api.get<DashboardData>('/admin/dashboard', { from: this.from, to: this.to }, { noCache: true, abortSignal: abortController.signal }).pipe(
+      finalize(() => { if (requestId === this.dashboardRequestId && this.dashboardStatus === 'loading') this.dashboardStatus = 'error'; if (requestId === this.dashboardRequestId) this.dashboardAbort = null; })
+    ).subscribe({
+      next: data => { if (requestId === this.dashboardRequestId) { this.dashboard = data; this.dashboardStatus = 'success'; } },
+      error: error => { if (requestId === this.dashboardRequestId) { this.error = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.dashboardStatus = 'error'; } }
+    });
+  }
+  get loading() { return [this.dashboardStatus, this.availabilityStatus, this.agendaStatus].includes('loading'); }
+  loadAvailability() {
+    if (this.requestedAgendaDate !== this.availabilityDate) this.loadTodayAgenda();
+    const requestId = ++this.availabilityRequestId;
+    this.availabilityAbort?.abort();
+    const abortController = new AbortController();
+    this.availabilityAbort = abortController;
+    this.availabilityStatus = 'loading';
+    this.api.get<unknown>('/availability', { date: this.availabilityDate, duration: this.availabilityDuration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
+      finalize(() => { if (requestId === this.availabilityRequestId && this.availabilityStatus === 'loading') this.availabilityStatus = 'error'; if (requestId === this.availabilityRequestId) this.availabilityAbort = null; })
+    ).subscribe({
+      next: response => {
+        if (requestId !== this.availabilityRequestId) return;
+        const value = response as any;
+        const slots = Array.isArray(response) ? response : value?.slots ?? value?.data?.slots ?? [];
+        this.availability = { ...(Array.isArray(response) ? {} : value), slots: Array.isArray(slots) ? slots : [] };
+        this.availabilityStatus = 'success';
+      },
+      error: error => { if (requestId === this.availabilityRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la disponibilidad.'; this.availabilityStatus = 'error'; } }
+    });
+  }
+  loadTodayAgenda() {
+    const requestId = ++this.agendaRequestId;
+    this.agendaAbort?.abort();
+    const abortController = new AbortController();
+    this.agendaAbort = abortController;
+    this.requestedAgendaDate = this.availabilityDate;
+    const start = new Date(`${this.availabilityDate}T00:00:00`);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    this.agendaStatus = 'loading';
+    this.api.get<unknown>('/admin/bookings', { from: start.toISOString(), to: end.toISOString() }, { noCache: true, abortSignal: abortController.signal }).pipe(
+      finalize(() => { if (requestId === this.agendaRequestId && this.agendaStatus === 'loading') this.agendaStatus = 'error'; if (requestId === this.agendaRequestId) this.agendaAbort = null; })
+    ).subscribe({
+      next: response => {
+        if (requestId !== this.agendaRequestId) return;
+        const value = response as any;
+        const bookings = Array.isArray(response) ? response : value?.bookings ?? value?.data?.bookings ?? [];
+        this.todayBookings = (Array.isArray(bookings) ? bookings : []).filter(item => item.status !== 'CANCELLED').slice(0, 8);
+        this.agendaStatus = 'success';
+      },
+      error: error => { if (requestId === this.agendaRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la agenda.'; this.agendaStatus = 'error'; } }
+    });
+  }
   openManualBooking(slot: any) { if (!slot.available && slot.reason !== 'DEAD_GAP') return; this.router.navigate(['/admin/turno'], { queryParams: { date: this.availabilityDate, startTime: slot.startTime, durationMinutes: this.availabilityDuration } }); }
   dayHeight(value: number) { const max = Math.max(1, ...(this.dashboard?.byDay.map(item => item.bookings) ?? [1])); return Math.max(value ? 8 : 2, value / max * 100); }
   statusWidth(value: number) { return this.dashboard?.summary.totalBookings ? value / this.dashboard.summary.totalBookings * 100 : 0; }

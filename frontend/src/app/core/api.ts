@@ -1,12 +1,13 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
 import { Router, RouterStateSnapshot } from '@angular/router';
-import { retry, tap, throwError, timer, timeout } from 'rxjs';
+import { firstValueFrom, fromEvent, Observable, takeUntil, tap, timeout } from 'rxjs';
+import { AsyncStatus } from '../shared/async-state';
 
 export const API = '/api';
 const CSRF_COOKIE = 'padel_csrf';
 const REQUEST_TIMEOUT_MS = 20000;
-type ApiOptions = { noCache?: boolean; timeoutMs?: number };
+type ApiOptions = { noCache?: boolean; timeoutMs?: number; abortSignal?: AbortSignal };
 
 function cookieValue(name: string) {
   return document.cookie
@@ -31,14 +32,11 @@ function requestHeaders(options?: ApiOptions) {
     : undefined;
 }
 
-function retryTransientRequest(error: unknown, retryIndex: number) {
-  const value = error as HttpErrorResponse & { name?: string };
-  const transient = String(value.name) === 'TimeoutError'
-    || value.status === 0
-    || value.status === 408
-    || value.status === 429
-    || value.status >= 500;
-  return transient ? timer(retryIndex * 450) : throwError(() => error);
+function applyRequestControls<T>(request: Observable<T>, options?: ApiOptions) {
+  const timed = request.pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+  return options?.abortSignal
+    ? timed.pipe(takeUntil(fromEvent(options.abortSignal, 'abort')))
+    : timed;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -46,31 +44,26 @@ export class Api {
   private http = inject(HttpClient);
 
   get<T>(path: string, params?: Record<string, string | number>, options?: ApiOptions) {
-    return this.http.get<T>(API + path, { params: params as any, headers: requestHeaders(options) })
-      .pipe(
-        timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS),
-        retry({ count: 2, delay: retryTransientRequest })
-      );
+    return applyRequestControls(
+      this.http.get<T>(API + path, { params: params as any, headers: requestHeaders(options) }),
+      options
+    );
   }
 
   post<T>(path: string, body: unknown, options?: ApiOptions) {
-    return this.http.post<T>(API + path, body, { headers: requestHeaders(options) })
-      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+    return applyRequestControls(this.http.post<T>(API + path, body, { headers: requestHeaders(options) }), options);
   }
 
   patch<T>(path: string, body: unknown, options?: ApiOptions) {
-    return this.http.patch<T>(API + path, body, { headers: requestHeaders(options) })
-      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+    return applyRequestControls(this.http.patch<T>(API + path, body, { headers: requestHeaders(options) }), options);
   }
 
   put<T>(path: string, body: unknown, options?: ApiOptions) {
-    return this.http.put<T>(API + path, body, { headers: requestHeaders(options) })
-      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+    return applyRequestControls(this.http.put<T>(API + path, body, { headers: requestHeaders(options) }), options);
   }
 
   delete<T>(path: string, options?: ApiOptions) {
-    return this.http.delete<T>(API + path, { headers: requestHeaders(options) })
-      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
+    return applyRequestControls(this.http.delete<T>(API + path, { headers: requestHeaders(options) }), options);
   }
 }
 
@@ -79,6 +72,10 @@ export class Auth {
   private api = inject(Api);
   private router = inject(Router);
   user = signalUser();
+  readonly sessionRevision = signal(0);
+  readonly sessionStatus = signal<AsyncStatus>('idle');
+  private refreshInFlight: Promise<void> | null = null;
+  private sessionInitialized = false;
 
   login(body: unknown) {
     return this.api.post<any>('/auth/login', body).pipe(tap(x => this.save(x)));
@@ -90,19 +87,40 @@ export class Auth {
 
   save(x: any) {
     this.setUser(x.user);
+    this.sessionInitialized = true;
+    this.sessionStatus.set('success');
   }
 
   refreshSession() {
+    if (this.sessionInitialized) return Promise.resolve();
+    if (this.refreshInFlight) return this.refreshInFlight;
     const previous = this.user();
-    if (!previous) return;
-    this.api.get<any>('/auth/me', undefined, { noCache: true }).subscribe({
-      next: user => this.setUser(user),
-      error: error => {
+    if (!previous && !cookieValue(CSRF_COOKIE)) {
+      this.sessionInitialized = true;
+      this.sessionStatus.set('success');
+      return Promise.resolve();
+    }
+    this.sessionStatus.set('loading');
+    this.refreshInFlight = (async () => {
+      try {
+        const user = await firstValueFrom(this.api.get<any>('/auth/me', undefined, { noCache: true }));
+        this.setUser(user);
+        this.sessionStatus.set('success');
+      } catch (error) {
         const status = (error as HttpErrorResponse)?.status;
-        if ([401, 403].includes(status) && this.user() === previous) this.clearUser();
-        else console.error('[auth] refresh session error', error);
+        if ([401, 403].includes(status)) {
+          if (this.user() === previous) this.clearUser();
+          this.sessionStatus.set('success');
+        } else {
+          console.error('[auth] refresh session error', error);
+          this.sessionStatus.set('error');
+        }
+      } finally {
+        this.sessionInitialized = true;
+        this.refreshInFlight = null;
       }
-    });
+    })();
+    return this.refreshInFlight;
   }
 
   logout() {
@@ -116,12 +134,14 @@ export class Auth {
     localStorage.removeItem('token');
     localStorage.setItem('user', JSON.stringify(user));
     this.user.set(user);
+    this.sessionRevision.update(value => value + 1);
   }
 
   private clearUser() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     this.user.set(null);
+    this.sessionRevision.update(value => value + 1);
   }
 
   private finishLogout() {
@@ -143,13 +163,25 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }));
 };
 
-export const authGuard = (_: unknown, state: RouterStateSnapshot) =>
-  inject(Auth).user()
+export const authGuard = async (_: unknown, state: RouterStateSnapshot) => {
+  const auth = inject(Auth);
+  const router = inject(Router);
+  await auth.refreshSession();
+  return auth.user()
     ? true
-    : inject(Router).createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
+    : router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
+};
 
-export const adminGuard = () =>
-  inject(Auth).isAdmin() ? true : inject(Router).createUrlTree(['/']);
+export const adminGuard = async () => {
+  const auth = inject(Auth);
+  const router = inject(Router);
+  await auth.refreshSession();
+  return auth.isAdmin() ? true : router.createUrlTree(['/']);
+};
 
-export const superAdminGuard = () =>
-  inject(Auth).user()?.role === 'SUPERADMIN' ? true : inject(Router).createUrlTree(['/admin']);
+export const superAdminGuard = async () => {
+  const auth = inject(Auth);
+  const router = inject(Router);
+  await auth.refreshSession();
+  return auth.user()?.role === 'SUPERADMIN' ? true : router.createUrlTree(['/admin']);
+};

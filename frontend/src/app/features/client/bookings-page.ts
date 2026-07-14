@@ -4,6 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { Api } from '../../core/api';
+import { AdminAgendaStore } from '../admin/admin-agenda-store';
 import { ClientBooking, MyBookingsStore } from './my-bookings-store';
 
 @Component({
@@ -17,7 +18,7 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
     </section>
 
     <section class="cards-list">
-      @if (loadingBookings()) {
+      @if (bookingsStatus() === 'loading') {
         <div class="empty">Cargando tus turnos...</div>
       } @else if (loadError()) {
         <div class="empty"><strong>No pudimos cargar tus turnos.</strong><span>{{ loadError() }}</span></div>
@@ -81,9 +82,10 @@ export class BookingsPage implements OnInit {
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
   private bookingsStore = inject(MyBookingsStore);
+  private adminAgendaStore = inject(AdminAgendaStore);
 
   readonly history = signal(this.router.url.includes('historial'));
-  readonly loadingBookings = this.bookingsStore.loadingBookings;
+  readonly bookingsStatus = this.bookingsStore.bookingsStatus;
   readonly loadError = this.bookingsStore.bookingsError;
   readonly bookings = computed(() =>
     this.history() ? this.bookingsStore.historyBookings() : this.bookingsStore.upcomingBookings()
@@ -120,12 +122,11 @@ export class BookingsPage implements OnInit {
     this.api.patch(`/bookings/${id}/cancel`, {}).pipe(
       finalize(() => {
         this.cancelling.set(false);
-        console.log('[mis-turnos] cancel loading false');
       })
     ).subscribe({
       next: () => {
-        this.bookingsStore.removeBooking(id);
-        this.bookingsStore.invalidate();
+        this.bookingsStore.updateBookingStatus(id, 'CANCELLED');
+        this.adminAgendaStore.invalidate();
         this.cancelled.set(true);
         this.notice.set('El turno fue cancelado correctamente.');
       },

@@ -1,6 +1,7 @@
 ﻿import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { finalize } from 'rxjs';
 import { Auth } from '../../core/api';
 
 @Component({
@@ -77,7 +78,7 @@ export class AuthPage {
     if (!phone) { this.loading = false; return; }
     const payload = { ...this.form, phone };
     const call = this.registerMode ? this.auth.register(payload) : this.auth.login(payload);
-    call.subscribe({
+    call.pipe(finalize(() => this.loading = false)).subscribe({
       next: value => {
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         if (this.registerMode) sessionStorage.setItem('accountCreatedNotice', '1');
@@ -87,7 +88,6 @@ export class AuthPage {
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;
         this.fieldErrors = Object.fromEntries(Object.entries(fields ?? {}).map(([field, messages]) => [field, messages?.[0] ?? 'Dato inválido'])) as typeof this.fieldErrors;
         this.error = Object.keys(this.fieldErrors).length ? '' : this.registrationError(response);
-        this.loading = false;
       }
     });
   }
