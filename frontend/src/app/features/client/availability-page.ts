@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { finalize, firstValueFrom } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
@@ -32,18 +32,18 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
 
       <div class="turn-results" aria-live="polite">
         <div class="result-title turn-results-title"><div><span class="eyebrow">HORARIOS DEL DÍA</span><h2>Elegí cuándo jugar</h2><p>{{ formattedDate }} · {{ durationLabel(duration) }}</p></div>@if (result?.price) { <strong>{{ result!.price | currency:'ARS':'symbol':'1.0-0' }}</strong> }</div>
-        @if (loading) {
+        @if (loadingAvailability()) {
           <div class="empty turn-empty">Buscando horarios...</div>
-        } @else if (availabilityLoadFailed) {
-          <div class="empty turn-empty"><strong>No pudimos cargar los horarios.</strong><span>{{ message }}</span></div>
-        } @else if (!availableSlots.length) {
-          <div class="empty turn-empty"><strong>{{ emptyTitle }}</strong><span>{{ emptyHint }}</span></div>
-        } @else {
+        } @else if (availableSlots().length > 0) {
           <div class="start-time-grid">
-            @for (slot of availableSlots; track slot.startTime) {
+            @for (slot of availableSlots(); track slot.startTime) {
               <button type="button" [class.selected]="selectedSlot === slot" (click)="openConfirmation(slot)"><span>INICIO</span><b>{{ slot.startTime }}</b><small>hasta {{ slot.endTime }}</small></button>
             }
           </div>
+        } @else if (availabilityLoadFailed) {
+          <div class="empty turn-empty"><strong>No pudimos cargar los horarios.</strong><span>{{ message }}</span></div>
+        } @else {
+          <div class="empty turn-empty"><strong>{{ emptyTitle }}</strong><span>{{ emptyHint }}</span></div>
         }
         @if (message && !availabilityLoadFailed) { <p class="notice" [class.error-notice]="messageIsError">{{ message }}</p> }
       </div>
@@ -141,6 +141,11 @@ export class AvailabilityPage implements OnInit {
   selectedSlot: Slot | null = null;
   modalState: ModalState = 'confirm';
   loading = false;
+  readonly loadingAvailability = signal(false);
+  readonly slots = signal<Slot[]>([]);
+  readonly availableSlots = computed(() =>
+    this.slots().filter(slot => slot.available === true)
+  );
   submitting = false;
   message = '';
   messageIsError = true;
@@ -149,8 +154,6 @@ export class AvailabilityPage implements OnInit {
   private pendingBooking: PendingBooking | null = null;
   private lastWhatsappUrl = '';
   private availabilityRequestId = 0;
-
-  get availableSlots() { return this.result?.slots.filter(slot => slot.available === true) ?? []; }
   get selectedPrice() { return this.pendingBooking?.price ?? this.result?.price ?? null; }
 
   get modalTitle() {
@@ -193,13 +196,17 @@ export class AvailabilityPage implements OnInit {
   }
 
   search() {
-    if (!this.date || !this.courtId || !this.duration) return;
-    this.loading = true;
+    if (!this.date || !this.courtId || !this.duration) {
+      this.slots.set([]);
+      this.loadingAvailability.set(false);
+      return;
+    }
     this.message = '';
     this.availabilityLoadFailed = false;
     this.result = null;
+    this.slots.set([]);
     this.selectedSlot = null;
-    this.loadAvailability();
+    void this.loadAvailability();
   }
 
   openConfirmation(slot: Slot, pending?: PendingBooking) {
@@ -373,54 +380,54 @@ export class AvailabilityPage implements OnInit {
     });
   }
 
-  private loadAvailability() {
+  private async loadAvailability() {
     const requestId = ++this.availabilityRequestId;
-    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: this.courtId }, { noCache: true }).pipe(
-      finalize(() => {
-        if (requestId === this.availabilityRequestId) this.loading = false;
-      })
-    ).subscribe({
-      next: json => {
-        if (requestId !== this.availabilityRequestId) return;
-        console.log('[reservas] availability response', json);
-        const normalizedSlots = Array.isArray(json)
-          ? json
-          : (json as any)?.slots ?? (json as any)?.data?.slots ?? [];
-        const availableSlots = normalizedSlots.filter(
-          (slot: Partial<Slot>) => slot.available === true
-        );
-        console.log('[reservas] normalized slots', normalizedSlots);
-        console.log('[reservas] available slots', availableSlots);
+    if (!this.date || !this.duration) {
+      this.slots.set([]);
+      this.loadingAvailability.set(false);
+      return;
+    }
 
-        this.result = {
-          date: (json as any)?.date ?? this.date,
-          durationMinutes: Number((json as any)?.durationMinutes ?? this.duration),
-          price: (json as any)?.price ?? null,
-          reason: (json as any)?.reason,
-          message: (json as any)?.message,
-          slots: normalizedSlots
-            .map((slot: Partial<Slot>) => ({
-              startTime: String(slot.startTime ?? ''),
-              endTime: String(slot.endTime ?? ''),
-              available: slot.available === true,
-              reason: slot.reason ?? null,
-              message: slot.message ?? null
-            }))
-            .filter((slot: Slot) => slot.startTime && slot.endTime)
-        };
-        this.resumePendingConfirmation();
-      },
-      error: error => {
-        if (requestId !== this.availabilityRequestId) return;
-        console.error('[reservas] availability error', error);
-        this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
-        this.messageIsError = true;
-        this.availabilityLoadFailed = true;
+    this.loadingAvailability.set(true);
+    console.log('[reservas] loading true');
+    try {
+      const json = await firstValueFrom(this.api.get<unknown>('/availability', {
+        date: this.date, duration: this.duration, courtId: this.courtId
+      }, { noCache: true }));
+      if (requestId !== this.availabilityRequestId) return;
+      console.log('[reservas] availability response', json);
+      const normalizedSlots = Array.isArray(json)
+        ? json
+        : (json as any)?.slots ?? (json as any)?.data?.slots ?? [];
+      console.log('[reservas] slots guardados', normalizedSlots);
+      this.slots.set(normalizedSlots);
+      this.result = {
+        date: (json as any)?.date ?? this.date,
+        durationMinutes: Number((json as any)?.durationMinutes ?? this.duration),
+        price: (json as any)?.price ?? null,
+        reason: (json as any)?.reason,
+        message: (json as any)?.message,
+        slots: normalizedSlots
+      };
+      this.resumePendingConfirmation();
+    } catch (error) {
+      if (requestId !== this.availabilityRequestId) return;
+      console.error('[reservas] availability error', error);
+      this.slots.set([]);
+      this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
+      this.messageIsError = true;
+      this.availabilityLoadFailed = true;
+    } finally {
+      if (requestId === this.availabilityRequestId) {
+        this.loadingAvailability.set(false);
+        console.log('[reservas] loading false');
       }
-    });
+    }
   }
   private errorMessage(error: unknown, fallback: string) {
-    if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') return (error as any).message;
+    const value = error as any;
+    if (typeof value?.error?.message === 'string') return value.error.message;
+    if (typeof value?.message === 'string') return value.message;
     return fallback;
   }
   private friendlyBookingError(message?: string) {
@@ -461,7 +468,7 @@ export class AvailabilityPage implements OnInit {
   private resumePendingConfirmation() {
     if (!this.pendingBooking || !this.auth.user()) return;
     const pending = this.pendingBooking;
-    const slot = this.availableSlots.find(item => item.startTime === pending.startTime && item.endTime === pending.endTime);
+    const slot = this.availableSlots().find(item => item.startTime === pending.startTime && item.endTime === pending.endTime);
     sessionStorage.removeItem(this.pendingKey);
     this.router.navigate(['/reservar'], { replaceUrl: true });
     if (slot) {
