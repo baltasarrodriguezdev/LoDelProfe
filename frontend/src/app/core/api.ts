@@ -1,10 +1,12 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
 import { Router, RouterStateSnapshot } from '@angular/router';
-import { tap } from 'rxjs';
+import { tap, timeout } from 'rxjs';
 
 export const API = '/api';
 const CSRF_COOKIE = 'padel_csrf';
+const REQUEST_TIMEOUT_MS = 20000;
+type ApiOptions = { noCache?: boolean; timeoutMs?: number };
 
 function cookieValue(name: string) {
   return document.cookie
@@ -23,28 +25,39 @@ function signalUser() {
   }
 }
 
+function requestHeaders(options?: ApiOptions) {
+  return options?.noCache
+    ? new HttpHeaders({ 'Cache-Control': 'no-store', Pragma: 'no-cache' })
+    : undefined;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Api {
   private http = inject(HttpClient);
 
-  get<T>(path: string, params?: Record<string, string | number>) {
-    return this.http.get<T>(API + path, { params: params as any });
+  get<T>(path: string, params?: Record<string, string | number>, options?: ApiOptions) {
+    return this.http.get<T>(API + path, { params: params as any, headers: requestHeaders(options) })
+      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   }
 
-  post<T>(path: string, body: unknown) {
-    return this.http.post<T>(API + path, body);
+  post<T>(path: string, body: unknown, options?: ApiOptions) {
+    return this.http.post<T>(API + path, body, { headers: requestHeaders(options) })
+      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   }
 
-  patch<T>(path: string, body: unknown) {
-    return this.http.patch<T>(API + path, body);
+  patch<T>(path: string, body: unknown, options?: ApiOptions) {
+    return this.http.patch<T>(API + path, body, { headers: requestHeaders(options) })
+      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   }
 
-  put<T>(path: string, body: unknown) {
-    return this.http.put<T>(API + path, body);
+  put<T>(path: string, body: unknown, options?: ApiOptions) {
+    return this.http.put<T>(API + path, body, { headers: requestHeaders(options) })
+      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   }
 
-  delete<T>(path: string) {
-    return this.http.delete<T>(API + path);
+  delete<T>(path: string, options?: ApiOptions) {
+    return this.http.delete<T>(API + path, { headers: requestHeaders(options) })
+      .pipe(timeout(options?.timeoutMs ?? REQUEST_TIMEOUT_MS));
   }
 }
 
@@ -69,7 +82,7 @@ export class Auth {
   refreshSession() {
     const previous = this.user();
     if (!previous) return;
-    this.api.get<any>('/auth/me').subscribe({
+    this.api.get<any>('/auth/me', undefined, { noCache: true }).subscribe({
       next: user => this.setUser(user),
       error: () => {
         if (this.user() === previous) this.clearUser();

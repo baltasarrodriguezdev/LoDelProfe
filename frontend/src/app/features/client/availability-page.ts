@@ -2,8 +2,8 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize, timeout } from 'rxjs';
-import { API, Api, Auth } from '../../core/api';
+import { finalize } from 'rxjs';
+import { Api, Auth } from '../../core/api';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
 
@@ -252,7 +252,6 @@ export class AvailabilityPage implements OnInit {
     this.cdr.detectChanges();
     console.log('[reservas] booking request', this.bookingPayload());
     this.api.post<any>('/bookings', this.bookingPayload()).pipe(
-      timeout(20000),
       finalize(() => {
         this.submitting = false;
         this.cdr.detectChanges();
@@ -289,7 +288,6 @@ export class AvailabilityPage implements OnInit {
     this.cdr.detectChanges();
     console.log('[reservas] booking request', this.bookingPayload());
     this.api.post('/bookings', this.bookingPayload()).pipe(
-      timeout(20000),
       finalize(() => {
         this.submitting = false;
         this.cdr.detectChanges();
@@ -339,104 +337,88 @@ export class AvailabilityPage implements OnInit {
     });
   }
 
-  private async loadPrices() {
-    try {
-      const json = await this.fetchJson('/prices');
-      console.log('[reservas] prices response', json);
-      const activePrices = Array.isArray(json)
-        ? json.filter((item) => item.active === true)
-        : [];
-      console.log('[reservas] normalized prices', activePrices);
+  private loadPrices() {
+    this.api.get<unknown>('/prices', undefined, { noCache: true }).subscribe({
+      next: json => {
+        console.log('[reservas] prices response', json);
+        const activePrices = Array.isArray(json)
+          ? json.filter((item: Partial<Price>) => item.active === true)
+          : [];
+        console.log('[reservas] normalized prices', activePrices);
 
-      this.prices = activePrices
-        .map((price: Partial<Price>) => ({
-          id: Number(price.id),
-          durationMinutes: Number(price.durationMinutes),
-          price: Number(price.price),
-          active: price.active === true
-        }))
-        .filter((price: Price) => Number.isFinite(price.durationMinutes) && Number.isFinite(price.price));
+        this.prices = activePrices
+          .map((price: Partial<Price>) => ({
+            id: Number(price.id),
+            durationMinutes: Number(price.durationMinutes),
+            price: Number(price.price),
+            active: price.active === true
+          }))
+          .filter((price: Price) => Number.isFinite(price.durationMinutes) && Number.isFinite(price.price));
 
-      if (!this.prices.length) {
-        this.message = 'No hay precios activos configurados.';
+        if (!this.prices.length) {
+          this.message = 'No hay precios activos configurados.';
+          this.messageIsError = true;
+          this.availabilityLoadFailed = true;
+          return;
+        }
+        if (!this.duration || !this.prices.some(price => price.durationMinutes === this.duration)) this.duration = this.prices[0].durationMinutes;
+        this.search();
+      },
+      error: error => {
+        console.error('[reservas] prices error', error);
+        this.message = this.errorMessage(error, 'No pudimos cargar las duraciones disponibles.');
         this.messageIsError = true;
         this.availabilityLoadFailed = true;
-        this.cdr.detectChanges();
-        return;
       }
-      if (!this.duration || !this.prices.some(price => price.durationMinutes === this.duration)) this.duration = this.prices[0].durationMinutes;
-      this.cdr.detectChanges();
-      this.search();
-    } catch (error) {
-      console.error('[reservas] prices error', error);
-      this.message = this.errorMessage(error, 'No pudimos cargar las duraciones disponibles.');
-      this.messageIsError = true;
-      this.availabilityLoadFailed = true;
-      this.cdr.detectChanges();
-    }
+    });
   }
 
-  private async loadAvailability() {
+  private loadAvailability() {
     const requestId = ++this.availabilityRequestId;
-    try {
-      const json = await this.fetchJson('/availability', { date: this.date, duration: this.duration, courtId: this.courtId });
-      if (requestId !== this.availabilityRequestId) return;
-      console.log('[reservas] availability response', json);
-      const normalizedSlots = Array.isArray(json)
-        ? json
-        : json.slots ?? json.data?.slots ?? [];
-      const availableSlots = normalizedSlots.filter(
-        (slot: Partial<Slot>) => slot.available === true
-      );
-      console.log('[reservas] normalized slots', normalizedSlots);
-      console.log('[reservas] available slots', availableSlots);
+    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: this.courtId }, { noCache: true }).pipe(
+      finalize(() => {
+        if (requestId === this.availabilityRequestId) this.loading = false;
+      })
+    ).subscribe({
+      next: json => {
+        if (requestId !== this.availabilityRequestId) return;
+        console.log('[reservas] availability response', json);
+        const normalizedSlots = Array.isArray(json)
+          ? json
+          : (json as any)?.slots ?? (json as any)?.data?.slots ?? [];
+        const availableSlots = normalizedSlots.filter(
+          (slot: Partial<Slot>) => slot.available === true
+        );
+        console.log('[reservas] normalized slots', normalizedSlots);
+        console.log('[reservas] available slots', availableSlots);
 
-      this.result = {
-        date: json?.date ?? this.date,
-        durationMinutes: Number(json?.durationMinutes ?? this.duration),
-        price: json?.price ?? null,
-        reason: json?.reason,
-        message: json?.message,
-        slots: normalizedSlots
-          .map((slot: Partial<Slot>) => ({
-            startTime: String(slot.startTime ?? ''),
-            endTime: String(slot.endTime ?? ''),
-            available: slot.available === true,
-            reason: slot.reason ?? null,
-            message: slot.message ?? null
-          }))
-          .filter((slot: Slot) => slot.startTime && slot.endTime)
-      };
-      this.resumePendingConfirmation();
-    } catch (error) {
-      if (requestId !== this.availabilityRequestId) return;
-      console.error('[reservas] availability error', error);
-      this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
-      this.messageIsError = true;
-      this.availabilityLoadFailed = true;
-    } finally {
-      if (requestId === this.availabilityRequestId) {
-        this.loading = false;
-        this.cdr.detectChanges();
+        this.result = {
+          date: (json as any)?.date ?? this.date,
+          durationMinutes: Number((json as any)?.durationMinutes ?? this.duration),
+          price: (json as any)?.price ?? null,
+          reason: (json as any)?.reason,
+          message: (json as any)?.message,
+          slots: normalizedSlots
+            .map((slot: Partial<Slot>) => ({
+              startTime: String(slot.startTime ?? ''),
+              endTime: String(slot.endTime ?? ''),
+              available: slot.available === true,
+              reason: slot.reason ?? null,
+              message: slot.message ?? null
+            }))
+            .filter((slot: Slot) => slot.startTime && slot.endTime)
+        };
+        this.resumePendingConfirmation();
+      },
+      error: error => {
+        if (requestId !== this.availabilityRequestId) return;
+        console.error('[reservas] availability error', error);
+        this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
+        this.messageIsError = true;
+        this.availabilityLoadFailed = true;
       }
-    }
+    });
   }
-
-  private async fetchJson(path: string, params?: Record<string, string | number>) {
-    const url = new URL(API + path, window.location.origin);
-    Object.entries(params ?? {}).forEach(([key, value]) => url.searchParams.set(key, String(value)));
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
-    try {
-      const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: controller.signal });
-      const json = await response.json().catch(() => null);
-      if (!response.ok) throw json ?? new Error(`HTTP ${response.status}`);
-      return json;
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }
-
   private errorMessage(error: unknown, fallback: string) {
     if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') return (error as any).message;
     return fallback;

@@ -14,6 +14,11 @@ import { Api } from '../../core/api';
     </section>
 
     <section class="cards-list">
+      @if (loading) {
+        <div class="empty">Cargando tus turnos...</div>
+      } @else if (loadError) {
+        <div class="empty"><strong>No pudimos cargar tus turnos.</strong><span>{{ loadError }}</span></div>
+      } @else {
       @for (booking of bookings; track booking.id) {
         <article class="booking-card">
           <div class="date-block"><b>{{ booking.startTime | date:'dd' }}</b><span>{{ booking.startTime | date:'MMM' }}</span></div>
@@ -27,6 +32,7 @@ import { Api } from '../../core/api';
         </article>
       } @empty {
         <div class="empty">Todavía no hay turnos para mostrar.</div>
+      }
       }
       @if (notice) { <p class="notice">{{ notice }}</p> }
     </section>
@@ -72,6 +78,8 @@ export class BookingsPage implements OnInit {
   private router = inject(Router);
   history = this.router.url.includes('historial');
   bookings: any[] = [];
+  loading = false;
+  loadError = '';
   selectedBooking: any = null;
   cancelling = false;
   cancelled = false;
@@ -80,7 +88,30 @@ export class BookingsPage implements OnInit {
 
   ngOnInit() { this.load(); }
   statusLabel(status: string) { return ({ PENDING: 'Pendiente', CONFIRMED: 'Confirmado', CANCELLED: 'Cancelado', PLAYED: 'Completado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status; }
-  load() { this.api.get<any[]>(this.history ? '/bookings/my/history' : '/bookings/my').subscribe(bookings => this.bookings = bookings); }
+  load() {
+    this.loading = true;
+    this.loadError = '';
+    this.bookings = [];
+    const path = this.history ? '/bookings/my/history' : '/bookings/my';
+    this.api.get<unknown>(path, undefined, { noCache: true }).subscribe({
+      next: json => {
+        console.log('[mis-turnos] bookings response', json);
+        const bookings = Array.isArray(json) ? json : (Array.isArray((json as any)?.data) ? (json as any).data : []);
+        console.log('[mis-turnos] normalized bookings', bookings);
+        this.bookings = bookings;
+        this.loading = false;
+      },
+      error: error => {
+        console.error('[mis-turnos] bookings error', error);
+        this.loadError = this.errorMessage(error, 'No pudimos consultar tus turnos.');
+        this.loading = false;
+      }
+    });
+  }
+  private errorMessage(error: unknown, fallback: string) {
+    if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') return (error as any).message;
+    return fallback;
+  }
   openCancelModal(booking: any) { this.selectedBooking = booking; this.cancelled = false; this.error = ''; }
   closeCancelModal() { if (this.cancelling) return; this.selectedBooking = null; this.cancelled = false; this.error = ''; }
   confirmCancellation() {
