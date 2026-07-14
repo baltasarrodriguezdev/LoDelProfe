@@ -2,12 +2,12 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { Api, Auth } from '../../core/api';
+import { API, Api, Auth } from '../../core/api';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
 
-type Price = { id: number; durationMinutes: number; price: number };
-type Slot = { startTime: string; endTime: string; available: boolean };
+type Price = { id: number; durationMinutes: number; price: number; active: boolean };
+type Slot = { startTime: string; endTime: string; available: boolean; reason?: string | null; message?: string | null };
 type Availability = { date: string; durationMinutes: number; price: number | null; reason?: string; message?: string; slots: Slot[] };
 type PendingBooking = { date: string; startTime: string; endTime: string; duration: number; price: number | null; players: number };
 type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
@@ -178,24 +178,7 @@ export class AvailabilityPage implements OnInit {
 
   ngOnInit() {
     this.restorePendingBooking();
-    this.api.get<Price[]>('/prices').subscribe({
-      next: prices => {
-        this.prices = prices;
-        if (!prices.length) {
-          this.message = 'No hay precios activos configurados.';
-          this.messageIsError = true;
-          this.availabilityLoadFailed = true;
-          return;
-        }
-        if (!prices.some(price => price.durationMinutes === this.duration)) this.duration = prices[0]?.durationMinutes ?? 60;
-        this.search();
-      },
-      error: error => {
-        this.message = error.error?.message ?? 'No pudimos cargar las duraciones disponibles.';
-        this.messageIsError = true;
-        this.availabilityLoadFailed = true;
-      }
-    });
+    this.loadPrices();
   }
 
   isPhoneVerified() { return this.auth.user()?.phoneVerified === true || this.auth.user()?.status === 'VERIFIED'; }
@@ -213,15 +196,7 @@ export class AvailabilityPage implements OnInit {
     this.availabilityLoadFailed = false;
     this.result = null;
     this.selectedSlot = null;
-    this.api.get<Availability>('/availability', { date: this.date, duration: this.duration, courtId: this.courtId }).subscribe({
-      next: result => { this.result = result; this.loading = false; this.resumePendingConfirmation(); },
-      error: error => {
-        this.message = error.error?.message ?? 'No pudimos consultar los horarios.';
-        this.messageIsError = true;
-        this.availabilityLoadFailed = true;
-        this.loading = false;
-      }
-    });
+    this.loadAvailability();
   }
 
   openConfirmation(slot: Slot, pending?: PendingBooking) {
@@ -346,6 +321,86 @@ export class AvailabilityPage implements OnInit {
     });
   }
 
+  private async loadPrices() {
+    try {
+      const json = await this.fetchJson('/prices');
+      console.log('[reservas] prices response', json);
+      const priceList = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+      const prices: Price[] = priceList
+        .filter((price: Partial<Price>) => price.active === true)
+        .map((price: Partial<Price>) => ({
+          id: Number(price.id),
+          durationMinutes: Number(price.durationMinutes),
+          price: Number(price.price),
+          active: price.active === true
+        }))
+        .filter((price: Price) => Number.isFinite(price.durationMinutes) && Number.isFinite(price.price));
+
+      this.prices = prices;
+      if (!prices.length) {
+        this.message = 'No hay precios activos configurados.';
+        this.messageIsError = true;
+        this.availabilityLoadFailed = true;
+        return;
+      }
+      if (!prices.some(price => price.durationMinutes === this.duration)) this.duration = prices[0].durationMinutes;
+      this.search();
+    } catch (error) {
+      console.error('[reservas] prices error', error);
+      this.message = this.errorMessage(error, 'No pudimos cargar las duraciones disponibles.');
+      this.messageIsError = true;
+      this.availabilityLoadFailed = true;
+    }
+  }
+
+  private async loadAvailability() {
+    try {
+      const json = await this.fetchJson('/availability', { date: this.date, duration: this.duration, courtId: this.courtId });
+      console.log('[reservas] availability response', json);
+      const slotList = Array.isArray(json)
+        ? json
+        : json.slots ?? json.data?.slots ?? [];
+
+      this.result = {
+        date: json?.date ?? this.date,
+        durationMinutes: Number(json?.durationMinutes ?? this.duration),
+        price: json?.price ?? null,
+        reason: json?.reason,
+        message: json?.message,
+        slots: slotList
+          .map((slot: Partial<Slot>) => ({
+            startTime: String(slot.startTime ?? ''),
+            endTime: String(slot.endTime ?? ''),
+            available: slot.available === true,
+            reason: slot.reason ?? null,
+            message: slot.message ?? null
+          }))
+          .filter((slot: Slot) => slot.startTime && slot.endTime)
+      };
+      this.loading = false;
+      this.resumePendingConfirmation();
+    } catch (error) {
+      console.error('[reservas] availability error', error);
+      this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
+      this.messageIsError = true;
+      this.availabilityLoadFailed = true;
+      this.loading = false;
+    }
+  }
+
+  private async fetchJson(path: string, params?: Record<string, string | number>) {
+    const url = new URL(API + path, window.location.origin);
+    Object.entries(params ?? {}).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+    const response = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    const json = await response.json().catch(() => null);
+    if (!response.ok) throw json ?? new Error(`HTTP ${response.status}`);
+    return json;
+  }
+
+  private errorMessage(error: unknown, fallback: string) {
+    if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') return (error as any).message;
+    return fallback;
+  }
   private friendlyBookingError(message?: string) {
     if (!message) return 'No pudimos confirmar la reserva.';
     const normalized = message.toLowerCase();
