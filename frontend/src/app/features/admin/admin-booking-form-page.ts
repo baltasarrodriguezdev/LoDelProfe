@@ -27,10 +27,28 @@ import { Api } from '../../core/api';
         <form class="panel manual-booking-form" (ngSubmit)="save()">
           @if (mode === 'BOOKING') {
             <div class="form-section-title"><span>01</span><div><h2>Cliente</h2><p>Datos b√°sicos para identificar y contactar a la persona.</p></div></div>
+            <div class="booking-mode-switch client-mode-switch" role="group" aria-label="Tipo de cliente">
+              <button type="button" [class.active]="form.clientMode === 'EXISTING'" (click)="setClientMode('EXISTING')">Cliente existente</button>
+              <button type="button" [class.active]="form.clientMode === 'MANUAL'" (click)="setClientMode('MANUAL')">Carga manual</button>
+            </div>
+            @if (form.clientMode === 'EXISTING') {
+              <div class="client-picker-field">
+                <label>Buscar cliente<input type="search" placeholder="Nombre, apellido o telefono" [(ngModel)]="clientSearch" name="clientSearch"></label>
+                <div class="client-picker-list">
+                  @for (client of filteredClients; track client.id) {
+                    <button type="button" [class.selected]="form.userId === client.id" (click)="selectClient(client)">
+                      <b>{{ client.firstName }} {{ client.lastName }}</b><span>{{ client.phone }}</span>
+                    </button>
+                  } @empty {
+                    <p>No hay clientes para esa busqueda.</p>
+                  }
+                </div>
+              </div>
+            }
             <div class="form-grid">
-              <label>Nombre<input required minlength="2" [(ngModel)]="form.firstName" name="firstName"></label>
-              <label>Apellido<input required minlength="2" [(ngModel)]="form.lastName" name="lastName"></label>
-              <label>Tel√©fono<input required minlength="6" inputmode="tel" [(ngModel)]="form.clientPhone" name="clientPhone"></label>
+              <label>Nombre<input required minlength="2" [disabled]="form.clientMode === 'EXISTING'" [(ngModel)]="form.firstName" name="firstName"></label>
+              <label>Apellido<input required minlength="2" [disabled]="form.clientMode === 'EXISTING'" [(ngModel)]="form.lastName" name="lastName"></label>
+              <label>Telefono<input required minlength="6" [disabled]="form.clientMode === 'EXISTING'" inputmode="tel" [(ngModel)]="form.clientPhone" name="clientPhone"></label>
               <label>Origen<select [(ngModel)]="form.origin" name="origin"><option value="WHATSAPP">WhatsApp</option><option value="MANUAL">Manual</option><option value="WEB">Web</option></select></label>
             </div>
           }
@@ -64,7 +82,17 @@ import { Api } from '../../core/api';
         </div>
       }
     </section>
-  `
+  `,
+  styles: [`
+    .client-mode-switch{margin:12px 0 16px;max-width:430px}
+    .client-picker-field{display:grid;gap:10px;margin:0 0 18px}
+    .client-picker-field label{display:grid;gap:7px;font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)}
+    .client-picker-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+    .client-picker-list button{min-height:54px;padding:10px 12px;border:1px solid rgba(34,53,38,.14);border-radius:9px;background:#fffdf5;color:var(--color-green-dark);display:grid;gap:3px;text-align:left;cursor:pointer}
+    .client-picker-list button.selected{border-color:var(--color-green-main);background:#edf2e7;box-shadow:0 0 0 2px rgba(83,111,67,.14)}
+    .client-picker-list b{font-family:var(--font-display);font-size:.96rem;font-weight:600}
+    .client-picker-list span,.client-picker-list p{margin:0;color:#6f7a70;font-size:.75rem}
+  `]
 })
 export class AdminBookingFormPage implements OnInit {
   private api = inject(Api);
@@ -75,9 +103,11 @@ export class AdminBookingFormPage implements OnInit {
   form: any = {
     courtId: 1, firstName: '', lastName: '', clientPhone: '', origin: 'WHATSAPP',
     date: '', startTime: '18:00', durationMinutes: 90, priceTotal: 0,
-    playersCount: 4, notes: '', status: 'CONFIRMED'
+    playersCount: 4, notes: '', status: 'CONFIRMED', clientMode: 'EXISTING', userId: null
   };
   prices: any[] = [];
+  clients: any[] = [];
+  clientSearch = '';
   saving = false;
   created = false;
   error = '';
@@ -100,6 +130,15 @@ export class AdminBookingFormPage implements OnInit {
       this.syncPrice();
       if (this.bookingId) this.loadBooking(this.bookingId);
     });
+    this.api.get<any[]>('/admin/users').subscribe(clients => this.clients = clients.filter(client => client.role === 'CLIENT' && client.active));
+  }
+
+  get filteredClients() {
+    const term = this.clientSearch.trim().toLowerCase();
+    return this.clients.filter(client => {
+      if (!term) return true;
+      return `${client.firstName} ${client.lastName} ${client.phone}`.toLowerCase().includes(term);
+    }).slice(0, 8);
   }
 
   setMode(mode: 'BOOKING' | 'BLOCK') {
@@ -114,14 +153,39 @@ export class AdminBookingFormPage implements OnInit {
     if (price) this.form.priceTotal = price.price;
   }
 
+  setClientMode(mode: 'EXISTING' | 'MANUAL') {
+    this.form.clientMode = mode;
+    this.form.userId = null;
+    this.clientSearch = '';
+    if (mode === 'MANUAL') {
+      this.form.firstName = '';
+      this.form.lastName = '';
+      this.form.clientPhone = '';
+    }
+  }
+
+  selectClient(client: any) {
+    this.form.userId = client.id;
+    this.form.firstName = client.firstName;
+    this.form.lastName = client.lastName;
+    this.form.clientPhone = client.phone;
+    this.clientSearch = `${client.firstName} ${client.lastName}`;
+  }
+
   save(adminOverride = false) {
     if (this.saving) return;
     this.saving = true;
     this.error = '';
     if (!adminOverride) this.warning = '';
+    if (this.mode === 'BOOKING' && this.form.clientMode === 'EXISTING' && !this.form.userId) {
+      this.error = 'ElegÌ un cliente existente o cambi· a carga manual.';
+      this.saving = false;
+      return;
+    }
 
     const bookingData = {
       courtId: 1,
+      userId: this.form.clientMode === 'EXISTING' ? this.form.userId : null,
       clientName: `${this.form.firstName.trim()} ${this.form.lastName.trim()}`,
       clientPhone: this.form.clientPhone.trim(),
       date: this.form.date,
@@ -162,6 +226,9 @@ export class AdminBookingFormPage implements OnInit {
     this.form.firstName = '';
     this.form.lastName = '';
     this.form.clientPhone = '';
+    this.form.userId = null;
+    this.form.clientMode = 'EXISTING';
+    this.clientSearch = '';
     this.form.notes = '';
     this.warning = '';
     this.error = '';
@@ -172,9 +239,12 @@ export class AdminBookingFormPage implements OnInit {
       next: booking => {
         if (!booking) { this.error = 'No encontramos ese turno.'; return; }
         const parts = String(booking.clientName ?? '').trim().split(/\s+/);
+        this.form.userId = booking.userId ?? null;
+        this.form.clientMode = booking.userId ? 'EXISTING' : 'MANUAL';
         this.form.firstName = parts.shift() ?? '';
         this.form.lastName = parts.join(' ');
         this.form.clientPhone = booking.clientPhone ?? '';
+        if (booking.user) this.clientSearch = `${booking.user.firstName} ${booking.user.lastName}`;
         this.form.date = this.dateInput(new Date(booking.startTime));
         this.form.startTime = new Intl.DateTimeFormat('es-AR', {
           hour: '2-digit', minute: '2-digit', hour12: false,

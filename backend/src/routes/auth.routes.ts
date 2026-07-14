@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as auth from '../services/auth.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { authenticate } from '../middlewares/auth.js';
+import { createCsrfToken, rateLimit } from '../middlewares/security.js';
 import { config } from '../config.js';
 import { ARGENTINA_PHONE_ERROR, normalizeArgentinaPhone } from '../utils/argentina-phone.js';
 
@@ -24,18 +25,30 @@ const registrationSchema = z.object({
 
 const router = Router();
 const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
+const csrfCookieOptions = { httpOnly: false, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.phone ?? '')}`
+});
 const establish = (res: Response, result: { token: string; user: unknown }, status = 200) =>
-  res.status(status).cookie(config.authCookieName, result.token, cookieOptions).json({ user: result.user });
+  res.status(status)
+    .cookie(config.authCookieName, result.token, cookieOptions)
+    .cookie(config.csrfCookieName, createCsrfToken(), csrfCookieOptions)
+    .json({ user: result.user });
 
-router.post('/register', asyncHandler(async (req, res) => {
+router.post('/register', authRateLimit, asyncHandler(async (req, res) => {
   const data = registrationSchema.parse(req.body);
   establish(res, await auth.register(data), 201);
 }));
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
   const data = z.object({ phone: phoneSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).parse(req.body);
   establish(res, await auth.login(data.phone, data.password));
 }));
-router.post('/logout', (_req, res) => res.clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' }).status(204).end());
+router.post('/logout', (_req, res) => res
+  .clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
+  .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
+  .status(204).end());
 router.get('/me', authenticate, asyncHandler(async (req, res) => res.json(await auth.me(req.auth!.userId))));
 
 export default router;

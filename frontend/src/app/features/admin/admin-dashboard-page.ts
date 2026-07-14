@@ -3,6 +3,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, Auth } from '../../core/api';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
 type Booking = {
   id: number;
@@ -26,7 +27,7 @@ type Booking = {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
   template: `
     <section class="dashboard-page operations-dashboard">
       <header class="dashboard-heading operations-heading">
@@ -67,7 +68,7 @@ type Booking = {
       @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
       <section class="operations-agenda">
-        <div class="section-heading"><div><span class="eyebrow">WHATSAPP</span><h2>Turnos pendientes de WhatsApp</h2></div></div>
+        <div class="section-heading"><div><span class="eyebrow">WHATSAPP</span><h2>Turnos pendientes de confirmación</h2></div></div>
         <div class="operations-bookings">
           @for (booking of pendingReservations; track booking.id) {
             <article class="operations-booking">
@@ -82,11 +83,11 @@ type Booking = {
               </div>
               <div class="operations-booking__actions">
                 <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar y verificar usuario</button>
+                <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button>
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
             </article>
-          } @empty { <div class="empty">No hay turnos pendientes de WhatsApp.</div> }
+          } @empty { <div class="empty">No hay turnos pendientes de confirmación.</div> }
         </div>
       </section>
 
@@ -96,7 +97,7 @@ type Booking = {
           @for (user of pendingUsers; track user.id) {
             <article class="operations-booking">
               <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
-              <div class="operations-booking__actions"><button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button><button type="button" class="small-action danger-action" (click)="blockUser(user)">Bloquear</button></div>
+              <div class="operations-booking__actions"><button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button><button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button></div>
             </article>
           } @empty { <div class="empty">No hay usuarios pendientes.</div> }
         </div>
@@ -140,9 +141,9 @@ type Booking = {
                   @if (booking.status !== 'BLOCKED' && booking.clientPhone) {
                     <a class="small-action whatsapp-action" [href]="whatsappUrl(booking.clientPhone)" target="_blank" rel="noopener noreferrer">WhatsApp</a>
                   }
-                  @if (booking.status === 'PENDING_CONFIRMATION') {
+                  @if (booking.status === 'PENDING') {
                     <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                    <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar y verificar usuario</button>
+                    <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button>
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>
@@ -223,6 +224,21 @@ type Booking = {
         </section>
       </div>
     }
+    @if (confirmDialog; as dialog) {
+      <app-confirm-dialog
+        [title]="dialog.title"
+        [message]="dialog.message"
+        [secondaryMessage]="dialog.secondaryMessage"
+        [confirmText]="dialog.confirmText"
+        cancelText="Volver"
+        [loadingText]="dialog.loadingText"
+        variant="danger"
+        [loading]="confirmLoading"
+        [error]="confirmError"
+        (cancel)="closeConfirmDialog()"
+        (confirm)="confirmDialogConfirmed()"
+      />
+    }
   `
 })
 export class AdminDashboardPage implements OnInit {
@@ -241,6 +257,9 @@ export class AdminDashboardPage implements OnInit {
   noticeError = false;
   selectedBooking: Booking | null = null;
   detailLoading = false;
+  confirmDialog: { type: 'pendingUser' | 'deleteCancelled'; target: any; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
+  confirmLoading = false;
+  confirmError = '';
 
   get formattedDate() {
     const value = new Intl.DateTimeFormat('es-AR', {
@@ -276,7 +295,7 @@ export class AdminDashboardPage implements OnInit {
   }
 
   loadPendingReservations() {
-    this.api.get<Booking[]>('/admin/reservations', { status: 'PENDING_CONFIRMATION' }).subscribe({
+    this.api.get<Booking[]>('/admin/reservations', { status: 'PENDING' }).subscribe({
       next: bookings => this.pendingReservations = bookings,
       error: error => this.showNotice(error.error?.message ?? 'No se pudieron cargar turnos pendientes.', true)
     });
@@ -329,11 +348,15 @@ export class AdminDashboardPage implements OnInit {
       error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
     });
   }
-  blockUser(user: any) {
-    this.api.patch<any>('/admin/users/' + user.id, { isBlocked: true }).subscribe({
-      next: () => { this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id); this.showNotice('Usuario bloqueado.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo bloquear el usuario.', true)
-    });
+  cancelPendingUser(user: any) {
+    this.confirmDialog = {
+      type: 'pendingUser', target: user,
+      title: 'Cancelar usuario pendiente',
+      message: `¿Querés cancelar el registro pendiente de ${user.firstName} ${user.lastName}?`,
+      secondaryMessage: 'El número quedará disponible para que otra persona pueda registrarse.',
+      confirmText: 'Sí, cancelar', loadingText: 'Cancelando...'
+    };
+    this.confirmError = '';
   }
   confirmPending(booking: Booking) {
     this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm', {}).subscribe({
@@ -343,7 +366,7 @@ export class AdminDashboardPage implements OnInit {
   }
   confirmAndVerify(booking: Booking) {
     this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm-and-verify-user', {}).subscribe({
-      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Turno confirmado y usuario verificado.'); this.reloadOperationalViews(); },
+      next: () => { booking.status = 'CONFIRMED'; this.showNotice('Cliente y turno confirmados.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar y verificar.', true)
     });
   }
@@ -356,13 +379,59 @@ export class AdminDashboardPage implements OnInit {
 
   deleteCancelled(booking: Booking) {
     if (booking.status !== 'CANCELLED') return;
-    if (!window.confirm(`¿Eliminar definitivamente el turno cancelado de ${booking.clientName}?`)) return;
+    this.confirmDialog = {
+      type: 'deleteCancelled', target: booking,
+      title: 'Eliminar turno cancelado',
+      message: `¿Querés eliminar definitivamente el turno cancelado de ${booking.clientName}?`,
+      secondaryMessage: 'Esta acción quita el turno del historial visible.',
+      confirmText: 'Sí, eliminar', loadingText: 'Eliminando...'
+    };
+    this.confirmError = '';
+  }
+  closeConfirmDialog() {
+    if (this.confirmLoading) return;
+    this.confirmDialog = null;
+    this.confirmError = '';
+  }
+
+  confirmDialogConfirmed() {
+    if (!this.confirmDialog || this.confirmLoading) return;
+    if (this.confirmDialog.type === 'pendingUser') this.confirmCancelPendingUser(this.confirmDialog.target);
+    else this.confirmDeleteCancelled(this.confirmDialog.target);
+  }
+
+  private confirmCancelPendingUser(user: any) {
+    this.confirmLoading = true;
+    this.confirmError = '';
+    this.api.delete<any>('/admin/users/' + user.id + '/pending-verification').subscribe({
+      next: () => {
+        this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id);
+        this.confirmLoading = false;
+        this.confirmDialog = null;
+        this.showNotice('Usuario pendiente cancelado. El número ya está disponible.');
+        this.reloadOperationalViews();
+      },
+      error: () => {
+        this.confirmLoading = false;
+        this.confirmError = 'No pudimos cancelar el usuario pendiente. Intentá nuevamente.';
+      }
+    });
+  }
+
+  private confirmDeleteCancelled(booking: Booking) {
+    this.confirmLoading = true;
+    this.confirmError = '';
     this.api.delete<any>(`/admin/bookings/${booking.id}/permanent`).subscribe({
       next: response => {
         this.bookings = this.bookings.filter(item => item.id !== booking.id);
+        this.confirmLoading = false;
+        this.confirmDialog = null;
         this.showNotice(response?.message ?? 'Turno eliminado del historial.');
       },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo eliminar el turno.', true)
+      error: error => {
+        this.confirmLoading = false;
+        this.confirmError = error.error?.message ?? 'No se pudo eliminar el turno.';
+      }
     });
   }
   markPartial(booking: Booking) {
@@ -415,7 +484,7 @@ export class AdminDashboardPage implements OnInit {
 
   statusLabel(status: string) {
     return ({
-      PENDING_CONFIRMATION: 'Pendiente WhatsApp', CONFIRMED: 'Confirmado', PLAYED: 'Jugado',
+      PENDING: 'Pendiente', CONFIRMED: 'Confirmado', PLAYED: 'Jugado',
       CANCELLED: 'Cancelado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado'
     } as Record<string, string>)[status] ?? status;
   }

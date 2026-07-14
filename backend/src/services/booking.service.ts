@@ -12,7 +12,7 @@ export type BookingInput = {
   notes?: string; status?: BookingStatus; origin?: BookingOrigin; priceTotal?: number; adminOverride?: boolean;
 };
 
-export const occupiedBookingStatuses: BookingStatus[] = ['PENDING_CONFIRMATION', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+export const occupiedBookingStatuses: BookingStatus[] = ['PENDING', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
 const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
 const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
 
@@ -22,6 +22,34 @@ function leavesDeadGap(start: DateTime, end: DateTime, open: DateTime, close: Da
   const previousEnd = before ? DateTime.fromJSDate(before.endTime, { zone: config.timezone }) : open;
   const nextStart = after ? DateTime.fromJSDate(after.startTime, { zone: config.timezone }) : close;
   return gapIsDead(start.diff(previousEnd, 'minutes').minutes) || gapIsDead(nextStart.diff(end, 'minutes').minutes);
+}
+
+async function lockedBookingsInSchedule(tx: Prisma.TransactionClient, input: BookingInput, schedule: { open: DateTime; close: DateTime }, ignoreId?: number): Promise<Array<{ startTime: Date; endTime: Date }>> {
+  const ignoreClause = ignoreId ? Prisma.sql`AND id <> ${ignoreId}` : Prisma.empty;
+  const client = tx as Prisma.TransactionClient & { $queryRaw?: Prisma.TransactionClient['$queryRaw'] };
+  if (client.$queryRaw) {
+    return client.$queryRaw<Array<{ startTime: Date; endTime: Date }>>(Prisma.sql`
+      SELECT startTime, endTime
+      FROM bookings
+      WHERE courtId = ${input.courtId}
+        ${ignoreClause}
+        AND status IN (${Prisma.join(occupiedBookingStatuses)})
+        AND startTime < ${schedule.close.toJSDate()}
+        AND endTime > ${schedule.open.toJSDate()}
+      ORDER BY startTime
+      FOR UPDATE
+    `);
+  }
+  return (tx as any).booking.findMany({
+    where: {
+      id: ignoreId ? { not: ignoreId } : undefined,
+      courtId: input.courtId,
+      status: { in: occupiedBookingStatuses },
+      startTime: { lt: schedule.close.toJSDate() },
+      endTime: { gt: schedule.open.toJSDate() }
+    },
+    select: { startTime: true, endTime: true }
+  });
 }
 
 async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignoreId?: number) {
@@ -41,16 +69,7 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
   const schedule = schedules.find(item => start >= item.open && end <= item.close);
   if (!schedule) throw new HttpError(400, 'El turno queda fuera del horario de apertura');
 
-  const bookings = await tx.booking.findMany({
-    where: {
-      id: ignoreId ? { not: ignoreId } : undefined,
-      courtId: input.courtId,
-      status: { in: occupiedBookingStatuses },
-      startTime: { lt: schedule.close.toJSDate() },
-      endTime: { gt: schedule.open.toJSDate() }
-    },
-    select: { startTime: true, endTime: true }
-  });
+  const bookings = await lockedBookingsInSchedule(tx, input, schedule, ignoreId);
   if (hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, bookings.map(b => ({ start: b.startTime, end: b.endTime })))) {
     throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.');
   }

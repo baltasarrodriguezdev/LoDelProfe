@@ -1,4 +1,4 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -11,11 +11,11 @@ async function main() {
   }
   await prisma.user.upsert({
     where: { phone },
-    update: { role: Role.SUPERADMIN, active: true, phoneVerified: true, isBlocked: false },
+    update: { role: Role.SUPERADMIN, active: true, phoneVerified: true, status: UserStatus.VERIFIED, isBlocked: false },
     create: {
       firstName: 'Administrador', lastName: 'Principal', phone,
       passwordHash: await bcrypt.hash(password, 12),
-      role: Role.SUPERADMIN, phoneVerified: true, isBlocked: false
+      role: Role.SUPERADMIN, phoneVerified: true, status: UserStatus.VERIFIED, isBlocked: false
     }
   });
   await prisma.court.upsert({
@@ -27,9 +27,10 @@ async function main() {
   }
 
   for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+    const weekend = dayOfWeek === 0 || dayOfWeek === 6;
     const weekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-    const openTime = dayOfWeek === 4 ? '09:00' : '15:00';
-    const hours = { openTime, closeTime: '00:00', active: weekday };
+    const openTime = weekend || dayOfWeek === 4 ? '09:00' : '15:00';
+    const hours = { openTime, closeTime: '00:00', active: weekend || weekday };
     await prisma.businessHour.upsert({
       where: { dayOfWeek },
       update: hours,

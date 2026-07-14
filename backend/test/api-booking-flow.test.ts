@@ -51,6 +51,7 @@ beforeEach(() => {
   transactionOptions = null;
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
   db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
+  db.booking.findFirst = async () => null;
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, priceTotal: 20000 });
   db.booking.update = async ({ where, data }: any) => ({ id: where.id, ...data });
@@ -79,31 +80,72 @@ test('un usuario autenticado crea una reserva asociada a su cuenta', async () =>
 });
 
 
-test('usuario no verificado crea reserva pendiente con WhatsApp', async () => {
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabián', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
-  db.booking.findFirst = async () => null;
+test('usuario no verificado crea primera reserva pendiente para validar telefono', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
+  const response = await fetch(`${baseUrl}/bookings`, {
+    method: 'POST', headers: headers(token(22)),
+    body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4, status: 'CONFIRMED' })
+  });
+  assert.equal(response.status, 201);
+  assert.equal(created[0].status, 'PENDING');
+  assert.equal(created[0].origin, 'WEB');
+  const body = await response.json() as any;
+  assert.equal(body.reservation.status, 'PENDING');
+  assert.equal(body.alreadyPending, false);
+  assert.equal(body.requiresWhatsappConfirmation, undefined);
+  assert.equal(body.whatsappUrl, undefined);
+});
+
+test('usuario con status VERIFIED crea reserva confirmada aunque phoneVerified venga falso', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Perez', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, status: 'VERIFIED', isBlocked: false });
+  const response = await fetch(`${baseUrl}/bookings`, {
+    method: 'POST', headers: headers(token(23)),
+    body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
+  });
+  assert.equal(response.status, 201);
+  assert.equal(created[0].status, 'CONFIRMED');
+});
+test('usuario no verificado con la misma solicitud pendiente recibe la existente', async () => {
+  const pending = {
+    id: 77,
+    courtId: 1,
+    userId: 22,
+    status: 'PENDING',
+    startTime: new Date('2030-01-02T20:30:00-03:00'),
+    durationMinutes: 90,
+    court: { id: 1, name: 'Cancha 1' }
+  };
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
+  db.booking.findFirst = async ({ where }: any) => where.courtId ? pending : null;
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(22)),
     body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
   });
-  assert.equal(response.status, 201);
-  assert.equal(created[0].status, 'PENDING_CONFIRMATION');
+  assert.equal(response.status, 200);
+  assert.equal(created.length, 0);
   const body = await response.json() as any;
-  assert.equal(body.requiresWhatsappConfirmation, true);
-  assert.equal(body.reservation.status, 'PENDING_CONFIRMATION');
-  assert.match(body.whatsappMessage, /Quiero confirmar mi cuenta/);
+  assert.equal(body.reservation.id, 77);
+  assert.equal(body.alreadyPending, true);
 });
 
-test('usuario no verificado no puede tener dos reservas pendientes', async () => {
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabián', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
-  db.booking.findFirst = async () => ({ id: 99, status: 'PENDING_CONFIRMATION' });
+test('usuario no verificado con otra solicitud pendiente no duplica reservas', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
+  db.booking.findFirst = async ({ where }: any) => where.courtId ? null : ({
+    id: 78,
+    courtId: 1,
+    userId: 22,
+    status: 'PENDING',
+    startTime: new Date('2030-01-02T18:00:00-03:00'),
+    durationMinutes: 90
+  });
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(22)),
     body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
   });
   assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), { message: 'Ya tenés una reserva pendiente de confirmación por WhatsApp.' });
   assert.equal(created.length, 0);
+  const body = await response.json() as any;
+  assert.match(body.message, /solicitud pendiente/i);
 });
 test('rechaza una duración sin precio activo', async () => {
   const response = await fetch(`${baseUrl}/bookings`, {
@@ -148,7 +190,7 @@ test('disponibilidad bloquea pendientes y no consulta canceladas como ocupadas',
   db.businessHour.findUnique = async () => ({ active: true, openTime: '15:00', closeTime: '00:00' });
   db.price.findFirst = async () => ({ price: 16000 });
   db.booking.findMany = async ({ where }: any) => {
-    assert.ok(where.status.in.includes('PENDING_CONFIRMATION'));
+    assert.ok(where.status.in.includes('PENDING'));
     assert.ok(where.status.in.includes('CONFIRMED'));
     assert.equal(where.status.in.includes('CANCELLED'), false);
     return [];
@@ -181,10 +223,10 @@ test('un usuario común no puede acceder al admin por URL directa', async () => 
   assert.equal(response.status, 403);
 });
 
-test('admin lista reservas pendientes de WhatsApp', async () => {
+test('admin lista reservas pendientes de confirmación', async () => {
   db.booking.findMany = async ({ where, include, orderBy }: any) => {
     queriedWhere = where;
-    assert.equal(where.status, 'PENDING_CONFIRMATION');
+    assert.equal(where.status, 'PENDING');
     assert.ok(include.user);
     assert.deepEqual(orderBy, { createdAt: 'asc' });
     return [{
@@ -192,26 +234,76 @@ test('admin lista reservas pendientes de WhatsApp', async () => {
       startTime: new Date('2030-01-02T20:30:00-03:00'),
       endTime: new Date('2030-01-02T22:00:00-03:00'),
       durationMinutes: 90,
-      status: 'PENDING_CONFIRMATION',
+      status: 'PENDING',
       clientName: 'Fabian Carlos',
       clientPhone: '3576524440',
       createdAt: new Date('2030-01-01T12:00:00Z'),
       user: { firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', phoneVerified: false }
     }];
   };
-  const response = await fetch(`${baseUrl}/admin/reservations?status=PENDING_CONFIRMATION`, { headers: headers(token(2, 'ADMIN')) });
+  const response = await fetch(`${baseUrl}/admin/reservations?status=PENDING`, { headers: headers(token(2, 'ADMIN')) });
   assert.equal(response.status, 200);
   const body = await response.json() as any[];
   assert.equal(body[0].id, 55);
   assert.equal(body[0].user.phoneVerified, false);
 });
 
+
+test('admin cancela usuario pendiente y libera número cancelando sus reservas pendientes', async () => {
+  let updateManyArgs: any = null;
+  let deletedUserId: number | null = null;
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabián', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
+  db.$transaction = async (work: any) => work({
+    booking: {
+      updateMany: async (args: any) => { updateManyArgs = args; return { count: 2 }; }
+    },
+    user: {
+      delete: async ({ where }: any) => { deletedUserId = where.id; return { id: where.id }; }
+    }
+  });
+
+  const response = await fetch(`${baseUrl}/admin/users/22/pending-verification`, {
+    method: 'DELETE', headers: headers(token(2, 'SUPERADMIN'))
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(deletedUserId, 22);
+  assert.deepEqual(updateManyArgs.where, { userId: 22, status: 'PENDING' });
+  assert.equal(updateManyArgs.data.status, 'CANCELLED');
+  assert.equal(updateManyArgs.data.cancellationReason, 'Usuario pendiente cancelado por administración');
+  assert.ok(updateManyArgs.data.cancelledAt instanceof Date);
+  const body = await response.json() as any;
+  assert.equal(body.message, 'Usuario pendiente cancelado. El número quedó disponible.');
+  assert.equal(body.cancelledBookings, 2);
+});
+
+test('admin no puede cancelar usuario ya verificado desde pendientes', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+
+  const response = await fetch(`${baseUrl}/admin/users/23/pending-verification`, {
+    method: 'DELETE', headers: headers(token(2, 'SUPERADMIN'))
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { message: 'Solo se pueden cancelar usuarios pendientes de verificación.' });
+});
+
+test('admin no puede cancelar otro administrador desde pendientes', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Admin', lastName: 'Club', phone: '3510000000', role: 'ADMIN', active: true, phoneVerified: false, isBlocked: false });
+
+  const response = await fetch(`${baseUrl}/admin/users/24/pending-verification`, {
+    method: 'DELETE', headers: headers(token(2, 'SUPERADMIN'))
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { message: 'No se puede cancelar un usuario administrador.' });
+});
 test('admin confirma una reserva pendiente sin verificar usuario', async () => {
   let updateData: any = null;
-  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING_CONFIRMATION', userId: 22 });
+  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING', userId: 22 });
   db.booking.update = async ({ where, data }: any) => { updateData = data; return { id: where.id, status: data.status }; };
   const response = await fetch(`${baseUrl}/admin/reservations/55/confirm`, {
-    method: 'PATCH', headers: headers(token(2, 'ADMIN')), body: '{}'
+    method: 'PATCH', headers: headers(token(2, 'SUPERADMIN')), body: '{}'
   });
   assert.equal(response.status, 200);
   assert.deepEqual(updateData, { status: 'CONFIRMED' });
@@ -220,24 +312,25 @@ test('admin confirma una reserva pendiente sin verificar usuario', async () => {
 
 test('admin confirma y verifica usuario en una transaccion', async () => {
   const seen: string[] = [];
-  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING_CONFIRMATION', userId: 22 });
+  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING', userId: 22 });
   db.$transaction = async (work: any) => work({
     booking: { update: async ({ data }: any) => { seen.push(`booking:${data.status}`); return { id: 55, status: data.status, userId: 22 }; } },
-    user: { update: async ({ data }: any) => { seen.push(`user:${data.phoneVerified}`); return { id: 22, phoneVerified: data.phoneVerified }; } }
+    user: { update: async ({ data }: any) => { seen.push(`user:${data.phoneVerified}`); assert.equal(data.status, 'VERIFIED'); return { id: 22, phoneVerified: data.phoneVerified, status: data.status }; } }
   });
   const response = await fetch(`${baseUrl}/admin/reservations/55/confirm-and-verify-user`, {
-    method: 'PATCH', headers: headers(token(2, 'ADMIN')), body: '{}'
+    method: 'PATCH', headers: headers(token(2, 'SUPERADMIN')), body: '{}'
   });
   assert.equal(response.status, 200);
   assert.deepEqual(seen, ['booking:CONFIRMED', 'user:true']);
   const body = await response.json() as any;
   assert.equal(body.reservation.status, 'CONFIRMED');
   assert.equal(body.user.phoneVerified, true);
+  assert.equal(body.user.status, 'VERIFIED');
 });
 
 test('admin cancela una reserva pendiente', async () => {
   let updateData: any = null;
-  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING_CONFIRMATION', userId: 22 });
+  db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING', userId: 22 });
   db.booking.update = async ({ where, data }: any) => { updateData = data; return { id: where.id, ...data }; };
   const response = await fetch(`${baseUrl}/admin/reservations/55/cancel`, {
     method: 'PATCH', headers: headers(token(2, 'ADMIN')),

@@ -7,6 +7,7 @@ import { BookingsPage } from './features/client/bookings-page';
 import { AdminDashboardPage } from './features/admin/admin-dashboard-page';
 import { AdminStatsPage } from './features/admin/admin-stats-page';
 import { AdminBookingFormPage } from './features/admin/admin-booking-form-page';
+import { AdminClientsPage } from './features/admin/admin-clients-page';
 import { adminGuard, authGuard, superAdminGuard } from './core/api';
 
 export const routes: Routes = [
@@ -27,6 +28,6 @@ export const routes: Routes = [
   { path: 'admin/precios', component: AdminPage, canActivate: [superAdminGuard] },
   { path: 'admin/horarios', component: AdminPage, canActivate: [superAdminGuard] },
   { path: 'admin/caja', component: AdminPage, canActivate: [superAdminGuard] },
-  { path: 'admin/clientes', component: AdminPage, canActivate: [superAdminGuard] },
+  { path: 'admin/clientes', component: AdminClientsPage, canActivate: [superAdminGuard] },
   { path: '**', redirectTo: '' }
 ];

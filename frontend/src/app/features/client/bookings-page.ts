@@ -21,13 +21,8 @@ import { Api } from '../../core/api';
             <span class="tag">{{ statusLabel(booking.status) }}</span>
             <h2>{{ booking.startTime | date:'HH:mm' }} · {{ booking.durationMinutes }} min</h2>
             <p>{{ booking.playersCount }} jugadores</p>
-            @if (booking.status === 'PENDING_CONFIRMATION') {
-              <p>Pendiente de confirmación por WhatsApp</p>
-              <p>Ya generamos tu solicitud. Si todavía no enviaste el WhatsApp, tocá el botón.</p>
-            }
           </div>
           <strong>{{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong>
-          @if (!history && booking.status === 'PENDING_CONFIRMATION' && booking.whatsappUrl) { <a class="btn primary" [href]="booking.whatsappUrl" target="_blank" rel="noopener noreferrer">Enviar WhatsApp de nuevo</a> }
           @if (!history) { <button type="button" class="btn danger" (click)="openCancelModal(booking)">Cancelar</button> }
         </article>
       } @empty {
@@ -84,7 +79,7 @@ export class BookingsPage implements OnInit {
   notice = '';
 
   ngOnInit() { this.load(); }
-  statusLabel(status: string) { return ({ PENDING_CONFIRMATION: 'Pendiente de confirmación por WhatsApp', CONFIRMED: 'Confirmado', CANCELLED: 'Cancelado', PLAYED: 'Completado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status; }
+  statusLabel(status: string) { return ({ PENDING: 'Pendiente', CONFIRMED: 'Confirmado', CANCELLED: 'Cancelado', PLAYED: 'Completado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status; }
   load() { this.api.get<any[]>(this.history ? '/bookings/my/history' : '/bookings/my').subscribe(bookings => this.bookings = bookings); }
   openCancelModal(booking: any) { this.selectedBooking = booking; this.cancelled = false; this.error = ''; }
   closeCancelModal() { if (this.cancelling) return; this.selectedBooking = null; this.cancelled = false; this.error = ''; }

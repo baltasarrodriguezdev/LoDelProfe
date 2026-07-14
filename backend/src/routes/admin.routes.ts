@@ -1,11 +1,13 @@
 import { Router } from 'express';
+import bcrypt from 'bcrypt';
 import {
   BookingOrigin,
   BookingStatus,
   CashCategory,
   CashType,
   PaymentStatus,
-  Role
+  Role,
+  UserStatus
 } from '@prisma/client';
 import { z } from 'zod';
 import { DateTime } from 'luxon';
@@ -15,6 +17,7 @@ import { prisma } from '../prisma/client.js';
 import { createBooking, updateBooking } from '../services/booking.service.js';
 import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
+import { ARGENTINA_PHONE_ERROR, localArgentinaPhone, normalizeArgentinaPhone, storedPhoneCandidates } from '../utils/argentina-phone.js';
 
 const r = Router();
 r.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
@@ -22,17 +25,38 @@ r.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
 const bookingSchema = z.object({
   courtId: z.number(),
   userId: z.number().nullable().optional(),
-  clientName: z.string().min(2),
-  clientPhone: z.string().min(6),
+  clientName: z.string().trim().min(2).max(120),
+  clientPhone: z.string().trim().min(6).max(30),
   date: z.string().date(),
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-  durationMinutes: z.number(),
-  playersCount: z.number().default(4),
-  notes: z.string().optional(),
+  durationMinutes: z.number().int().min(1).max(240),
+  playersCount: z.number().int().min(0).max(12).default(4),
+  notes: z.string().max(1000).optional(),
   status: z.nativeEnum(BookingStatus).optional(),
   origin: z.nativeEnum(BookingOrigin).optional(),
   priceTotal: z.number().positive().optional()
-});
+}).strict();
+const courtPatchSchema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  active: z.boolean().optional()
+}).strict();
+const pricePatchSchema = z.object({
+  durationMinutes: z.number().int().min(1).max(240).optional(),
+  price: z.number().positive().optional(),
+  active: z.boolean().optional()
+}).strict();
+const recurringPatchSchema = z.object({
+  clientName: z.string().trim().min(2).max(120).optional(),
+  clientPhone: z.string().trim().min(6).max(30).optional(),
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  durationMinutes: z.number().int().min(1).max(240).optional(),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
+  active: z.boolean().optional(),
+  notes: z.string().max(1000).nullable().optional()
+}).strict();
 
 function reservationInclude() {
   return {
@@ -51,8 +75,8 @@ async function findReservation(id: number) {
 }
 
 function assertPendingReservation(status: BookingStatus) {
-  if (status !== 'PENDING_CONFIRMATION') {
-    throw new HttpError(409, 'Solo se pueden confirmar turnos pendientes de WhatsApp.');
+  if (status !== 'PENDING') {
+    throw new HttpError(409, 'Solo se pueden confirmar turnos pendientes.');
   }
 }
 
@@ -68,7 +92,7 @@ r.get('/users/pending-verification', asyncHandler(async (_req, res) => {
   res.json(await prisma.user.findMany({
     where: { phoneVerified: false, isBlocked: false },
     omit: { passwordHash: true },
-    include: { _count: { select: { bookings: { where: { status: 'PENDING_CONFIRMATION' } } } } },
+    include: { _count: { select: { bookings: { where: { status: 'PENDING' } } } } },
     orderBy: { createdAt: 'asc' }
   }));
 }));
@@ -77,15 +101,72 @@ r.get('/users/:id', asyncHandler(async (req, res) => {
   res.json(await prisma.user.findUnique({ where: { id: +req.params.id }, omit: { passwordHash: true } }));
 }));
 
-r.patch('/users/:id/verify', asyncHandler(async (req, res) => {
+r.post('/users', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  const data = z.object({
+    firstName: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres'),
+    lastName: z.string().trim().min(2, 'El apellido debe tener al menos 2 caracteres'),
+    phone: z.string().transform((value, context) => {
+      const normalized = normalizeArgentinaPhone(value);
+      if (!normalized) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: ARGENTINA_PHONE_ERROR });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
+    password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres')
+  }).parse(req.body);
+  if (await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(data.phone) } } })) {
+    throw new HttpError(409, 'Ese teléfono ya está registrado');
+  }
+  const user = await prisma.user.create({
+    data: {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: localArgentinaPhone(data.phone),
+      passwordHash: await bcrypt.hash(data.password, 12),
+      role: Role.CLIENT,
+      active: true,
+      phoneVerified: false,
+      status: UserStatus.PENDING_VERIFICATION,
+      isBlocked: false
+    },
+    omit: { passwordHash: true }
+  });
+  res.status(201).json(user);
+}));
+
+r.patch('/users/:id/verify', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   res.json(await prisma.user.update({
     where: { id: +req.params.id },
-    data: { phoneVerified: true },
+    data: { phoneVerified: true, status: UserStatus.VERIFIED },
     omit: { passwordHash: true }
   }));
 }));
 
-r.patch('/users/:id', asyncHandler(async (req, res) => {
+r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  const id = +req.params.id;
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new HttpError(404, 'Usuario no encontrado');
+  if (user.role !== 'CLIENT') throw new HttpError(403, 'No se puede cancelar un usuario administrador.');
+  if (user.phoneVerified) throw new HttpError(409, 'Solo se pueden cancelar usuarios pendientes de verificación.');
+
+  const result = await prisma.$transaction(async tx => {
+    const cancelledBookings = await tx.booking.updateMany({
+      where: { userId: id, status: 'PENDING' },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancellationReason: 'Usuario pendiente cancelado por administración'
+      }
+    });
+    await tx.user.delete({ where: { id } });
+    return { cancelledBookings: cancelledBookings.count };
+  });
+
+  res.json({ message: 'Usuario pendiente cancelado. El número quedó disponible.', ...result });
+}));
+
+r.patch('/users/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const data = z.object({
     firstName: z.string().optional(),
     lastName: z.string().optional(),
@@ -95,7 +176,11 @@ r.patch('/users/:id', asyncHandler(async (req, res) => {
     role: z.nativeEnum(Role).optional()
   }).parse(req.body);
   if (data.role && req.auth!.role !== Role.SUPERADMIN) throw new HttpError(403, 'Solo SUPERADMIN puede cambiar roles');
-  res.json(await prisma.user.update({ where: { id: +req.params.id }, data, omit: { passwordHash: true } }));
+  const updateData = {
+    ...data,
+    status: data.phoneVerified === true ? UserStatus.VERIFIED : data.phoneVerified === false ? UserStatus.PENDING_VERIFICATION : undefined
+  };
+  res.json(await prisma.user.update({ where: { id: +req.params.id }, data: updateData, omit: { passwordHash: true } }));
 }));
 
 r.post('/courts', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -104,7 +189,7 @@ r.post('/courts', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
 }));
 
 r.patch('/courts/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await prisma.court.update({ where: { id: +req.params.id }, data: req.body }));
+  res.json(await prisma.court.update({ where: { id: +req.params.id }, data: courtPatchSchema.parse(req.body) }));
 }));
 
 r.post('/prices', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -113,7 +198,7 @@ r.post('/prices', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
 }));
 
 r.patch('/prices/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await prisma.price.update({ where: { id: +req.params.id }, data: req.body }));
+  res.json(await prisma.price.update({ where: { id: +req.params.id }, data: pricePatchSchema.parse(req.body) }));
 }));
 
 r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -222,7 +307,7 @@ r.patch('/reservations/:id/confirm', asyncHandler(async (req, res) => {
   }));
 }));
 
-r.patch('/reservations/:id/confirm-and-verify-user', asyncHandler(async (req, res) => {
+r.patch('/reservations/:id/confirm-and-verify-user', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const booking = await findReservation(id);
   assertPendingReservation(booking.status);
@@ -236,7 +321,7 @@ r.patch('/reservations/:id/confirm-and-verify-user', asyncHandler(async (req, re
     });
     const user = await tx.user.update({
       where: { id: booking.userId! },
-      data: { phoneVerified: true },
+      data: { phoneVerified: true, status: UserStatus.VERIFIED },
       omit: { passwordHash: true }
     });
     return { reservation, user };
@@ -248,7 +333,7 @@ r.patch('/reservations/:id/cancel', asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const data = z.object({ cancellationReason: z.string().max(1000).optional() }).parse(req.body ?? {});
   const booking = await findReservation(id);
-  if (!['PENDING_CONFIRMATION', 'CONFIRMED'].includes(booking.status)) {
+  if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
     throw new HttpError(409, 'Solo se pueden cancelar turnos pendientes o confirmados.');
   }
   res.json(await prisma.booking.update({
@@ -309,21 +394,21 @@ r.patch('/bookings/:id/payment', asyncHandler(async (req, res) => {
 const recurringSchema = z.object({
   courtId: z.number(),
   userId: z.number().nullable().optional(),
-  clientName: z.string(),
-  clientPhone: z.string(),
-  dayOfWeek: z.number(),
-  startTime: z.string(),
-  durationMinutes: z.number(),
-  startDate: z.string(),
-  endDate: z.string(),
-  notes: z.string().optional()
-});
+  clientName: z.string().trim().min(2).max(120),
+  clientPhone: z.string().trim().min(6).max(30),
+  dayOfWeek: z.number().int().min(0).max(6),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  durationMinutes: z.number().int().min(1).max(240),
+  startDate: z.string().date(),
+  endDate: z.string().date(),
+  notes: z.string().max(1000).optional()
+}).strict();
 
-r.get('/recurring-bookings', asyncHandler(async (_req, res) => {
+r.get('/recurring-bookings', authorize(Role.SUPERADMIN), asyncHandler(async (_req, res) => {
   res.json(await prisma.recurringBooking.findMany({ include: { court: true, _count: { select: { bookings: true } } } }));
 }));
 
-r.post('/recurring-bookings', asyncHandler(async (req, res) => {
+r.post('/recurring-bookings', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const data = recurringSchema.parse(req.body);
   const price = await prisma.price.findFirst({ where: { durationMinutes: data.durationMinutes, active: true } });
   if (!price) throw new HttpError(400, 'Duración sin precio');
@@ -352,11 +437,11 @@ r.post('/recurring-bookings', asyncHandler(async (req, res) => {
   res.status(201).json(recurring);
 }));
 
-r.patch('/recurring-bookings/:id', asyncHandler(async (req, res) => {
-  res.json(await prisma.recurringBooking.update({ where: { id: +req.params.id }, data: req.body }));
+r.patch('/recurring-bookings/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  res.json(await prisma.recurringBooking.update({ where: { id: +req.params.id }, data: recurringPatchSchema.parse(req.body) }));
 }));
 
-r.patch('/recurring-bookings/:id/deactivate', asyncHandler(async (req, res) => {
+r.patch('/recurring-bookings/:id/deactivate', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const recurring = await prisma.recurringBooking.findUnique({ where: { id } });
   if (!recurring) throw new HttpError(404, 'Turno fijo no encontrado');
@@ -368,11 +453,11 @@ r.patch('/recurring-bookings/:id/deactivate', asyncHandler(async (req, res) => {
   res.json({ message: 'Turno fijo desactivado correctamente', cancelledBookings: cancelled.count });
 }));
 
-r.get('/cash-movements', asyncHandler(async (_req, res) => {
+r.get('/cash-movements', authorize(Role.SUPERADMIN), asyncHandler(async (_req, res) => {
   res.json(await prisma.cashMovement.findMany({ orderBy: { createdAt: 'desc' } }));
 }));
 
-r.post('/cash-movements', asyncHandler(async (req, res) => {
+r.post('/cash-movements', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const data = z.object({
     type: z.nativeEnum(CashType),
     category: z.nativeEnum(CashCategory),
@@ -384,7 +469,7 @@ r.post('/cash-movements', asyncHandler(async (req, res) => {
 }));
 
 for (const period of ['daily', 'weekly', 'monthly'] as const) {
-  r.get(`/reports/${period}`, asyncHandler(async (_req, res) => {
+  r.get(`/reports/${period}`, authorize(Role.SUPERADMIN), asyncHandler(async (_req, res) => {
     const now = DateTime.now().setZone(config.timezone);
     const start = period === 'daily' ? now.startOf('day') : period === 'weekly' ? now.startOf('week') : now.startOf('month');
     const end = period === 'daily' ? now.endOf('day') : period === 'weekly' ? now.endOf('week') : now.endOf('month');

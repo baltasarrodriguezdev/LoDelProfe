@@ -34,9 +34,12 @@ test('login guarda JWT en cookie HttpOnly y no lo expone en JSON', async () => {
   assert.match(cookie, /^padel_session=/);
   assert.match(cookie, /HttpOnly/i);
   assert.match(cookie, /SameSite=Lax/i);
+  assert.match(cookie, /padel_csrf=/);
   const body = await response.json() as any;
   assert.equal(body.token, undefined);
   assert.equal(body.user.id, 7);
+  assert.equal(body.user.phoneVerified, true);
+  assert.equal(body.user.status, 'VERIFIED');
 
   const me = await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: cookie.split(';')[0] } });
   assert.equal(me.status, 200);
@@ -57,6 +60,22 @@ test('rechaza operaciones mutables desde un origen no autorizado', async () => {
   const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { message: 'Origen no autorizado' });
+});
+
+test('exige token CSRF cuando se usa cookie de sesión', async () => {
+  const cookie = 'padel_session=fake-session; padel_csrf=fake-csrf';
+  const rejected = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { origin: 'http://localhost:4200', cookie }
+  });
+  assert.equal(rejected.status, 403);
+  assert.deepEqual(await rejected.json(), { message: 'Token CSRF inválido' });
+
+  const accepted = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { origin: 'http://localhost:4200', cookie, 'x-csrf-token': 'fake-csrf' }
+  });
+  assert.equal(accepted.status, 204);
 });
 
 test('registro informa errores concretos por campo', async () => {
@@ -89,9 +108,11 @@ test('registro crea usuario no verificado e inicia sesión', async () => {
   const body = await response.json() as any;
   assert.equal(created.phone, '3576524440');
   assert.equal(created.phoneVerified, false);
+  assert.equal(created.status, 'PENDING_VERIFICATION');
   assert.equal(created.isBlocked, false);
   assert.equal(body.user.passwordHash, undefined);
   assert.equal(body.user.phoneVerified, false);
+  assert.equal(body.user.status, 'PENDING_VERIFICATION');
 });
 
 test('registro existente responde 409', async () => {

@@ -10,8 +10,12 @@ enum Role {
   ADMIN
   SUPERADMIN
 }
+enum UserStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+}
 enum BookingStatus {
-  PENDING_CONFIRMATION
+  PENDING
   CONFIRMED
   PLAYED
   CANCELLED
@@ -53,6 +57,7 @@ model User {
   role Role @default(CLIENT)
   active Boolean @default(true)
   phoneVerified Boolean @default(false)
+  status UserStatus @default(PENDING_VERIFICATION)
   isBlocked Boolean @default(false)
   bookings Booking[]
   recurring RecurringBooking[]

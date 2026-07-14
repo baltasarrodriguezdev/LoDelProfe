@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import type { Role } from '@prisma/client';
+import { Role, UserStatus } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
@@ -8,7 +8,10 @@ import { localArgentinaPhone, normalizeArgentinaPhone, storedPhoneCandidates } f
 
 const canonicalPhone = (value: string) => normalizeArgentinaPhone(value)!;
 const storedPhone = (e164Phone: string) => localArgentinaPhone(e164Phone);
-const publicUser = ({ passwordHash: _, ...user }: any) => user;
+const publicUser = ({ passwordHash: _, ...user }: any) => ({
+  ...user,
+  status: user.status ?? (user.phoneVerified === true ? UserStatus.VERIFIED : UserStatus.PENDING_VERIFICATION)
+});
 
 function session(user: { id: number; role: Role; passwordHash: string; [key: string]: unknown }) {
   return {
@@ -30,6 +33,7 @@ export async function register(data: { firstName: string; lastName: string; phon
       phone,
       passwordHash: await bcrypt.hash(data.password, 12),
       phoneVerified: false,
+      status: UserStatus.PENDING_VERIFICATION,
       isBlocked: false,
       active: true
     }
