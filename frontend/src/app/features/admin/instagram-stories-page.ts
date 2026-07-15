@@ -5,15 +5,16 @@ import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
 import { AsyncStatus } from '../../shared/async-state';
 import { finalize } from 'rxjs';
-import { VENUE } from '../../shared/venue';
 
 type StoryTemplate = 'premium' | 'sport' | 'minimal';
+type StoryFont = 'brand' | 'condensed' | 'clean';
 type StoryAsset = { id: string; name: string; type: 'background' | 'logo'; dataUrl: string; createdAt: string };
 type AvailabilitySlot = { startTime: string; endTime: string; available: boolean; reason?: string };
 
 const STORY_W = 1080;
 const STORY_H = 1920;
 const ASSET_KEY = 'padel_story_assets_v1';
+const BOOKING_SITE = 'lodelprofe.com';
 
 @Component({
   standalone: true,
@@ -38,11 +39,14 @@ const ASSET_KEY = 'padel_story_assets_v1';
       <div class="admin-content stories-content">
         <header class="stories-header">
           <div>
-            <span class="eyebrow">MARKETING</span>
-            <h1>Historias Instagram</h1>
-            <p>Genera piezas verticales con la estetica oficial de Lo del Profe y los turnos disponibles del dia.</p>
+            <span class="eyebrow">CONTENIDO SOCIAL</span>
+            <h1>Generador de historias</h1>
+            <p>Disponibilidad real, identidad de Lo del Profe y reservas directas desde la web.</p>
           </div>
-          <button type="button" class="btn primary" [disabled]="downloading" (click)="downloadStory()">{{ downloading ? 'Preparando...' : 'Descargar historia PNG' }}</button>
+          <div class="stories-header-actions">
+            <span class="booking-destination"><small>RESERVAS EN</small><b>{{ bookingSite }}</b></span>
+            <button type="button" class="btn primary" [disabled]="downloading" (click)="downloadStory()">{{ downloading ? 'Preparando...' : 'Descargar PNG' }}</button>
+          </div>
         </header>
 
         @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
@@ -50,7 +54,7 @@ const ASSET_KEY = 'padel_story_assets_v1';
         <section class="story-workbench">
           <form class="story-controls panel" (ngSubmit)="$event.preventDefault()">
             <div class="control-section">
-              <span class="control-kicker">01 CONTENIDO</span>
+              <span class="control-kicker">01 · DISPONIBILIDAD</span>
               <div class="control-grid">
                 <label>Fecha
                   <input type="date" name="date" [(ngModel)]="date" (change)="loadAvailability()">
@@ -67,10 +71,10 @@ const ASSET_KEY = 'padel_story_assets_v1';
             </div>
 
             <div class="control-section">
-              <span class="control-kicker">02 PLANTILLA</span>
+              <span class="control-kicker">02 · DIRECCION VISUAL</span>
               <div class="template-picker" role="radiogroup" aria-label="Plantillas de historia">
                 @for (option of templates; track option.id) {
-                  <button type="button" [class.active]="template === option.id" (click)="setTemplate(option.id)">
+                  <button type="button" role="radio" [attr.aria-checked]="template === option.id" [class.active]="template === option.id" (click)="setTemplate(option.id)">
                     <b>{{ option.name }}</b>
                     <span>{{ option.description }}</span>
                   </button>
@@ -79,23 +83,30 @@ const ASSET_KEY = 'padel_story_assets_v1';
             </div>
 
             <div class="control-section">
-              <span class="control-kicker">03 TEXTO</span>
+              <span class="control-kicker">03 · MENSAJE</span>
+              <label>Tipografía principal
+                <select name="storyFont" [(ngModel)]="storyFont" (change)="drawSoon()">
+                  @for (option of fontOptions; track option.id) {
+                    <option [ngValue]="option.id">{{ option.name }}</option>
+                  }
+                </select>
+              </label>
               <label>Titulo principal
                 <input name="headline" maxlength="42" [(ngModel)]="headline" (ngModelChange)="drawSoon()">
               </label>
               <label>Subtitulo
                 <input name="subhead" maxlength="46" [(ngModel)]="subhead" (ngModelChange)="drawSoon()">
               </label>
-              <label>Llamada a reservar
+              <label>Accion principal
                 <input name="cta" maxlength="36" [(ngModel)]="cta" (ngModelChange)="drawSoon()">
               </label>
-              <label>Contacto
-                <input name="contact" maxlength="44" [(ngModel)]="contact" (ngModelChange)="drawSoon()">
+              <label>Sitio de reservas
+                <input name="website" maxlength="44" [(ngModel)]="website" (ngModelChange)="drawSoon()">
               </label>
             </div>
 
             <div class="control-section">
-              <span class="control-kicker">04 COLOR</span>
+              <span class="control-kicker">04 · PALETA</span>
               <div class="color-grid">
                 <label>Overlay<input type="color" name="overlay" [(ngModel)]="overlayColor" (input)="drawSoon()"></label>
                 <label>Acento<input type="color" name="accent" [(ngModel)]="accentColor" (input)="drawSoon()"></label>
@@ -104,7 +115,7 @@ const ASSET_KEY = 'padel_story_assets_v1';
             </div>
 
             <div class="control-section">
-              <span class="control-kicker">05 IMAGENES</span>
+              <span class="control-kicker">05 · RECURSOS</span>
               <label>Foto de fondo
                 <input type="file" accept="image/png,image/jpeg,image/webp" (change)="uploadAsset($event, 'background')">
                 <small>Recomendado: vertical 1080x1920, JPG/PNG/WebP, maximo 5 MB.</small>
@@ -116,7 +127,10 @@ const ASSET_KEY = 'padel_story_assets_v1';
 
               <div class="asset-gallery">
                 <button type="button" [class.active]="backgroundUrl === defaultBackground" (click)="selectBackground(defaultBackground)">
-                  <img [src]="defaultBackground" alt=""><span>Cancha oficial</span>
+                  <img [src]="defaultBackground" alt=""><span>Paleta y cancha</span>
+                </button>
+                <button type="button" [class.active]="backgroundUrl === courtBackground" (click)="selectBackground(courtBackground)">
+                  <img [src]="courtBackground" alt=""><span>Cancha y pelotas</span>
                 </button>
                 @for (asset of backgroundAssets; track asset.id) {
                   <button type="button" [class.active]="backgroundUrl === asset.dataUrl" (click)="selectBackground(asset.dataUrl)">
@@ -140,8 +154,13 @@ const ASSET_KEY = 'padel_story_assets_v1';
           <section class="story-preview-panel">
             <div class="preview-toolbar">
               <div>
-                <span class="eyebrow">PREVIEW 1080x1920</span>
-                <h2>{{ availableSlots.length ? availableSlots.length + ' turnos disponibles' : 'Dia completo' }}</h2>
+                <span class="eyebrow">VISTA PREVIA · 1080 × 1920</span>
+                <h2>
+                  @if (loadingSlots) { Actualizando horarios }
+                  @else if (availabilityStatus === 'error') { Disponibilidad no cargada }
+                  @else if (availableSlots.length) { {{ availableSlots.length }} turnos disponibles }
+                  @else { Día completo }
+                </h2>
               </div>
               <span>{{ date | date:'EEEE d MMMM':'':'es-AR' }}</span>
             </div>
@@ -164,40 +183,45 @@ const ASSET_KEY = 'padel_story_assets_v1';
   `,
   styles: [`
     @font-face{font-family:'Story Round';src:url('/assets/fonts/Null_Free.otf') format('opentype');font-weight:700;font-style:normal;font-display:swap}
-    .stories-shell{background:linear-gradient(180deg,#e8eee1 0,#f4f2e9 360px)}
-    .stories-content{display:grid;gap:20px}
-    .stories-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
-    .stories-header h1{margin:8px 0 8px;font-size:clamp(3rem,5.5vw,5.2rem);line-height:.92;color:var(--color-green-dark)}
-    .stories-header p{max-width:650px;margin:0;color:#657064}
-    .story-workbench{display:grid;grid-template-columns:minmax(290px,390px) minmax(360px,1fr);gap:22px;align-items:start}
-    .story-controls{display:grid;gap:20px;padding:20px;position:sticky;top:92px}
-    .control-section{display:grid;gap:12px;padding-bottom:18px;border-bottom:1px solid rgba(34,53,38,.12)}
-    .control-section:last-child{border-bottom:0;padding-bottom:0}
-    .control-kicker{font-family:var(--font-display);font-size:.68rem;font-weight:600;letter-spacing:.18em;color:var(--color-olive-gold)}
+    @font-face{font-family:'Realistic Nature';src:url('/assets/fonts/Realistic-Nature.otf') format('opentype');font-weight:400;font-style:normal;font-display:swap}
+    .stories-shell{background:#eef1e8}
+    .stories-content{display:grid;gap:18px}
+    .stories-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:1px solid rgba(34,53,38,.16)}
+    .stories-header h1{margin:6px 0;font-size:3.2rem;line-height:1;color:var(--color-green-dark)}
+    .stories-header p{max-width:620px;margin:0;color:#657064}
+    .stories-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+    .booking-destination{display:grid;gap:1px;min-width:176px;padding:9px 12px;border-left:3px solid #a9bd31;background:#fffdf5;color:#223526}
+    .booking-destination small{font-size:.62rem;font-weight:800}.booking-destination b{font-family:var(--font-display);font-size:1.05rem}
+    .story-workbench{display:grid;grid-template-columns:minmax(320px,400px) minmax(380px,1fr);gap:24px;align-items:start}
+    .story-controls{display:grid;gap:0;padding:0;position:sticky;top:92px;overflow:hidden;border-radius:8px;background:#fffdf5}
+    .control-section{display:grid;gap:12px;padding:18px 20px;border-bottom:1px solid rgba(34,53,38,.12)}
+    .control-section:last-child{border-bottom:0}
+    .control-kicker{font-family:var(--font-display);font-size:.7rem;font-weight:700;color:#73832a}
     .control-grid,.color-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .story-controls label{display:grid;gap:7px;font-size:.72rem;font-weight:800;text-transform:uppercase;color:#637061}
+    .story-controls label{display:grid;gap:7px;font-size:.7rem;font-weight:800;text-transform:uppercase;color:#5c695b}
     .story-controls input,.story-controls select{width:100%}
     .story-controls small{font-size:.68rem;line-height:1.45;text-transform:none;color:#7a847a}
-    .template-picker{display:grid;gap:8px}
-    .template-picker button{display:grid;gap:3px;text-align:left;padding:13px 14px;border:1px solid rgba(34,53,38,.18);border-radius:8px;background:#fffdf5;color:var(--color-green-dark);cursor:pointer}
-    .template-picker button.active{background:var(--color-green-dark);border-color:var(--color-green-dark);color:var(--color-white-soft);box-shadow:inset 0 -4px var(--color-olive-gold)}
-    .template-picker b{font-size:1.05rem}.template-picker span{font-size:.72rem;color:inherit;opacity:.72}
-    .color-grid input{height:42px;padding:3px}
+    .template-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+    .template-picker button{display:grid;align-content:start;gap:4px;min-height:92px;text-align:left;padding:11px;border:1px solid rgba(34,53,38,.18);border-radius:6px;background:#f7f6ef;color:var(--color-green-dark);cursor:pointer}
+    .template-picker button.active{background:var(--color-green-dark);border-color:var(--color-green-dark);color:var(--color-white-soft);box-shadow:inset 0 -4px #a9bd31}
+    .template-picker b{font-size:.92rem;line-height:1.1}.template-picker span{font-size:.64rem;line-height:1.35;color:inherit;opacity:.72}
+    .color-grid{grid-template-columns:repeat(3,1fr)}
+    .color-grid input{height:40px;padding:3px}
     .asset-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-    .asset-gallery button{display:grid;gap:7px;padding:7px;border:1px solid rgba(34,53,38,.16);border-radius:8px;background:#fffdf5;text-align:left;cursor:pointer}
+    .asset-gallery button{display:grid;gap:7px;padding:7px;border:1px solid rgba(34,53,38,.16);border-radius:6px;background:#f7f6ef;text-align:left;cursor:pointer}
     .asset-gallery button.active{border-color:var(--color-green-main);box-shadow:0 0 0 2px rgba(83,111,67,.18)}
-    .asset-gallery img{width:100%;aspect-ratio:9/12;object-fit:cover;border-radius:5px;background:#d9dfd2}
+    .asset-gallery img{width:100%;aspect-ratio:9/12;object-fit:cover;border-radius:4px;background:#d9dfd2}
     .asset-gallery span{font-size:.68rem;color:#657064;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .story-preview-panel{display:grid;gap:14px}
-    .preview-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
-    .preview-toolbar h2{margin:4px 0 0;color:var(--color-green-dark)}
-    .preview-toolbar>span{font-size:.78rem;font-weight:800;text-transform:uppercase;color:#667064}
-    .phone-frame{width:min(100%,430px);margin:auto;padding:14px;border-radius:28px;background:#18281d;box-shadow:0 24px 60px rgba(20,40,27,.22)}
-    canvas{display:block;width:100%;height:auto;border-radius:18px;background:#203a29}
-    .slot-strip{width:min(100%,520px);margin:auto;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;color:#687363}
-    .slot-strip b,.slot-strip span{display:inline-flex;align-items:center;min-height:32px;padding:6px 10px;border-radius:999px;background:#fffdf5;border:1px solid rgba(34,53,38,.12);font-family:var(--font-display);font-size:.82rem;color:var(--color-green-dark)}
-    @media(max-width:1050px){.story-workbench{grid-template-columns:1fr}.story-controls{position:static}.phone-frame{width:min(100%,390px)}}
-    @media(max-width:620px){.stories-header{display:grid}.story-controls{padding:16px}.control-grid,.color-grid,.asset-gallery{grid-template-columns:1fr}.preview-toolbar{display:grid}.phone-frame{padding:10px;border-radius:22px}}
+    .story-preview-panel{display:grid;gap:14px;min-width:0;padding:20px;border-radius:8px;background:#dfe5da}
+    .preview-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid rgba(34,53,38,.14)}
+    .preview-toolbar h2{margin:4px 0 0;font-size:1.5rem;color:var(--color-green-dark)}
+    .preview-toolbar>span{font-size:.74rem;font-weight:800;text-transform:uppercase;color:#667064}
+    .phone-frame{width:min(100%,430px);margin:auto;padding:10px;border-radius:8px;background:#17251b;box-shadow:0 24px 50px rgba(20,40,27,.18)}
+    canvas{display:block;width:100%;height:auto;border-radius:4px;background:#203a29}
+    .slot-strip{width:min(100%,520px);margin:auto;display:flex;justify-content:center;gap:7px;flex-wrap:wrap;color:#687363}
+    .slot-strip b,.slot-strip span{display:inline-flex;align-items:center;min-height:30px;padding:5px 9px;border-radius:4px;background:#fffdf5;border:1px solid rgba(34,53,38,.12);font-family:var(--font-display);font-size:.78rem;color:var(--color-green-dark)}
+    @media(max-width:1120px){.story-workbench{grid-template-columns:1fr}.story-controls{position:static}.phone-frame{width:min(100%,390px)}}
+    @media(max-width:700px){.stories-header{display:grid}.stories-header-actions{justify-content:flex-start}.stories-header h1{font-size:2.45rem}.story-controls{padding:0}.template-picker{grid-template-columns:1fr}.control-grid,.asset-gallery{grid-template-columns:1fr}.color-grid{grid-template-columns:repeat(3,1fr)}.preview-toolbar{display:grid}.story-preview-panel{padding:14px}.phone-frame{padding:7px}}
   `]
 })
 export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
@@ -207,16 +231,19 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   date = this.dateInput(new Date());
   duration = 90;
   template: StoryTemplate = 'premium';
-  headline = 'AGENDA TU TURNO';
-  subhead = 'HOY DISPONIBLE';
-  cta = 'Reserva ahora';
-  contact = `WhatsApp ${VENUE.whatsapp}`;
-  overlayColor = '#173022';
-  accentColor = '#9a974f';
+  storyFont: StoryFont = 'brand';
+  headline = 'agendá tu turno';
+  subhead = 'horarios disponibles';
+  cta = 'reservá online';
+  website = BOOKING_SITE;
+  readonly bookingSite = BOOKING_SITE;
+  overlayColor = '#36542f';
+  accentColor = '#fffdf5';
   textColor = '#fffdf5';
-  backgroundUrl = 'assets/logos/foto-padel-hero.jpg';
+  backgroundUrl = 'assets/logos/fotoIngresar.jpg';
   logoUrl = 'assets/logos/lo-del-profe-stacked.png';
-  defaultBackground = 'assets/logos/foto-padel-hero.jpg';
+  defaultBackground = 'assets/logos/fotoIngresar.jpg';
+  courtBackground = 'assets/logos/foto-padel-hero.jpg';
   defaultLogo = 'assets/logos/lo-del-profe-stacked.png';
   slots: AvailabilitySlot[] = [];
   assets: StoryAsset[] = [];
@@ -226,12 +253,18 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   noticeError = false;
   private drawTimer: ReturnType<typeof setTimeout> | null = null;
   private availabilityRequestId = 0;
+  private availabilityAbort: AbortController | null = null;
   get loadingSlots() { return this.availabilityStatus === 'loading'; }
 
   readonly templates: Array<{ id: StoryTemplate; name: string; description: string }> = [
-    { id: 'premium', name: 'Premium oscuro', description: 'Foto profunda, logo arriba, horarios sobrios.' },
-    { id: 'sport', name: 'Energetico deportivo', description: 'Mas contraste, diagonales y acento competitivo.' },
-    { id: 'minimal', name: 'Minimalista', description: 'Aire, grilla limpia y foco en disponibilidad.' }
+    { id: 'premium', name: 'Agenda verde', description: 'Estilo de la referencia 1.' },
+    { id: 'sport', name: 'Cancha oscura', description: 'Estilo de la referencia 2.' },
+    { id: 'minimal', name: 'Todo listo', description: 'Estilo de la referencia 3.' }
+  ];
+  readonly fontOptions: Array<{ id: StoryFont; name: string }> = [
+    { id: 'brand', name: 'Marca · Null Free' },
+    { id: 'condensed', name: 'Deportiva · Oswald' },
+    { id: 'clean', name: 'Limpia · Manrope' }
   ];
 
   ngOnInit() {
@@ -240,7 +273,12 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit() { this.drawSoon(); }
-  ngOnDestroy() { if (this.drawTimer) clearTimeout(this.drawTimer); }
+  ngOnDestroy() {
+    ++this.availabilityRequestId;
+    this.availabilityAbort?.abort();
+    this.availabilityAbort = null;
+    if (this.drawTimer) clearTimeout(this.drawTimer);
+  }
 
   get availableSlots() { return this.slots.filter(slot => slot.available); }
   get backgroundAssets() { return this.assets.filter(asset => asset.type === 'background'); }
@@ -249,26 +287,30 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   setTemplate(template: StoryTemplate) {
     this.template = template;
     if (template === 'premium') {
-      this.overlayColor = '#173022'; this.accentColor = '#9a974f'; this.headline = 'AGENDA TU TURNO'; this.subhead = 'HOY DISPONIBLE';
+      this.overlayColor = '#36542f'; this.accentColor = '#fffdf5'; this.textColor = '#fffdf5'; this.headline = 'agendá tu turno'; this.subhead = 'horarios disponibles';
     }
     if (template === 'sport') {
-      this.overlayColor = '#102b22'; this.accentColor = '#c8f04b'; this.headline = 'SALE PARTIDO'; this.subhead = 'TURNOS LIBRES';
+      this.overlayColor = '#102817'; this.accentColor = '#fffdf5'; this.textColor = '#fffdf5'; this.headline = 'agendá tu turno'; this.subhead = 'elegí tu horario';
     }
     if (template === 'minimal') {
-      this.overlayColor = '#4f6d3e'; this.accentColor = '#fffdf5'; this.headline = 'TURNOS DE HOY'; this.subhead = 'LO DEL PROFE';
+      this.overlayColor = '#365b39'; this.accentColor = '#fffdf5'; this.textColor = '#fffdf5'; this.headline = 'todo listo para empezar'; this.subhead = 'reservá tu cancha';
     }
     this.drawSoon();
   }
 
   loadAvailability() {
     const requestId = ++this.availabilityRequestId;
+    this.availabilityAbort?.abort();
+    const abortController = new AbortController();
+    this.availabilityAbort = abortController;
     this.availabilityStatus = 'loading';
     this.notice = '';
-    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: 1 }, { noCache: true }).pipe(
+    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
         if (requestId === this.availabilityRequestId && this.availabilityStatus === 'loading') {
           this.availabilityStatus = 'error';
         }
+        if (requestId === this.availabilityRequestId) this.availabilityAbort = null;
       })
     ).subscribe({
       next: data => {
@@ -280,7 +322,7 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
         this.drawSoon();
       },
       error: error => {
-        if (requestId !== this.availabilityRequestId) return;
+        if (requestId !== this.availabilityRequestId || abortController.signal.aborted || error?.name === 'AbortError') return;
         this.availabilityStatus = 'error';
         this.notice = error.error?.message ?? 'No pudimos cargar la disponibilidad.';
         this.noticeError = true;
@@ -349,7 +391,6 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
     await document.fonts.ready;
     const [background, logo] = await Promise.all([this.loadImage(this.backgroundUrl), this.loadImage(this.logoUrl).catch(() => null)]);
     this.paintBackground(ctx, background);
-    if (this.template === 'sport') this.paintSportAccents(ctx);
     if (logo) this.paintLogo(ctx, logo);
     this.paintCopy(ctx);
     this.paintDate(ctx);
@@ -360,126 +401,149 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   private paintBackground(ctx: CanvasRenderingContext2D, image: HTMLImageElement) {
     ctx.clearRect(0, 0, STORY_W, STORY_H);
     this.coverImage(ctx, image, 0, 0, STORY_W, STORY_H);
-    ctx.fillStyle = this.hexToRgba(this.overlayColor, this.template === 'minimal' ? .55 : .68);
+    const overlayAlpha = this.template === 'sport' ? .58 : this.template === 'minimal' ? .36 : .5;
+    ctx.fillStyle = this.hexToRgba(this.overlayColor, overlayAlpha);
     ctx.fillRect(0, 0, STORY_W, STORY_H);
     const gradient = ctx.createLinearGradient(0, 0, 0, STORY_H);
-    gradient.addColorStop(0, 'rgba(0,0,0,.18)');
-    gradient.addColorStop(.42, 'rgba(0,0,0,.04)');
-    gradient.addColorStop(1, 'rgba(0,0,0,.42)');
+    gradient.addColorStop(0, 'rgba(5,20,10,.04)');
+    gradient.addColorStop(.65, 'rgba(5,20,10,.02)');
+    gradient.addColorStop(1, 'rgba(5,20,10,.28)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, STORY_W, STORY_H);
   }
 
   private paintLogo(ctx: CanvasRenderingContext2D, logo: HTMLImageElement) {
-    const width = this.template === 'minimal' ? 210 : 230;
+    const width = 190;
     const height = width * (logo.height / logo.width);
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,.26)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 8;
-    ctx.drawImage(logo, (STORY_W - width) / 2, 132, width, height);
+    ctx.shadowColor = 'rgba(0,0,0,.22)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 4;
+    ctx.drawImage(logo, (STORY_W - width) / 2, 116, width, height);
     ctx.restore();
   }
 
   private paintCopy(ctx: CanvasRenderingContext2D) {
+    const top = this.template === 'minimal' ? 410 : this.template === 'sport' ? 500 : 480;
+    const headlineHeight = this.drawDisplayText(ctx, this.headline.toLowerCase(), STORY_W / 2, top, 790, 132, 112, this.displayFontFamily(), this.textColor);
+    const subheadY = top + headlineHeight + 34;
+    ctx.save();
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = this.textColor;
-    const y = this.template === 'minimal' ? 580 : this.template === 'sport' ? 620 : 650;
-    this.drawRoundText(ctx, this.headline.toLowerCase(), STORY_W / 2, y, this.template === 'minimal' ? 112 : 124, 104);
-    ctx.font = `700 36px "Oswald Local", sans-serif`;
-    ctx.letterSpacing = '6px';
-    ctx.fillStyle = this.template === 'sport' ? this.accentColor : this.textColor;
-    ctx.fillText(this.subhead.toUpperCase(), STORY_W / 2, y + 190);
-    ctx.letterSpacing = '0px';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 28px "Manrope Local", sans-serif`;
+    ctx.fillStyle = this.hexToRgba(this.accentColor, .9);
+    ctx.fillText(this.subhead.toLowerCase(), STORY_W / 2, subheadY);
+    ctx.restore();
   }
 
   private paintSlots(ctx: CanvasRenderingContext2D) {
-    const slots = this.availableSlots.slice(0, 7);
-    const startY = this.template === 'minimal' ? 990 : 1060;
+    const slots = this.availableSlots.slice(0, 6);
+    const startY = 1030;
+
     if (!slots.length) {
-      this.drawRoundText(ctx, 'hoy estamos completos', STORY_W / 2, startY + 110, 78, 76);
-      ctx.font = `700 34px "Oswald Local", sans-serif`;
-      ctx.fillStyle = this.accentColor;
-      ctx.fillText('GRACIAS POR ELEGIRNOS', STORY_W / 2, startY + 280);
+      this.drawDisplayText(ctx, 'agenda completa', STORY_W / 2, startY + 58, 760, 82, 76, this.displayFontFamily(), this.textColor);
       return;
     }
+
     ctx.save();
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
     slots.forEach((slot, index) => {
-      const y = startY + index * 92;
-      const label = `${slot.startTime} - ${slot.endTime}`;
-      if (this.template === 'premium') {
-        this.roundRect(ctx, 220, y - 38, 640, 70, 22, 'rgba(255,253,245,.1)', 'rgba(255,253,245,.22)');
-      }
-      if (this.template === 'sport') {
-        ctx.fillStyle = index % 2 ? 'rgba(255,253,245,.08)' : this.hexToRgba(this.accentColor, .88);
-        this.roundRect(ctx, 185 + (index % 2) * 40, y - 40, 710, 74, 0, ctx.fillStyle, '');
-      }
-      ctx.font = `700 ${this.template === 'minimal' ? 58 : 62}px "Oswald Local", sans-serif`;
-      ctx.fillStyle = this.template === 'sport' && index % 2 === 0 ? '#173022' : this.textColor;
-      ctx.fillText(label, STORY_W / 2, y);
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const x = column === 0 ? 330 : 750;
+      const y = startY + row * 142;
+      ctx.font = `700 68px "${this.displayFontFamily()}", "Oswald Local", sans-serif`;
+      ctx.fillStyle = this.textColor;
+      ctx.fillText(slot.startTime, x, y);
+      ctx.font = `600 20px "Manrope Local", sans-serif`;
+      ctx.fillStyle = this.hexToRgba(this.textColor, .78);
+      ctx.fillText(`hasta ${slot.endTime}`, x, y + 77);
     });
     ctx.restore();
+
+    if (this.availableSlots.length > slots.length) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `700 21px "Manrope Local", sans-serif`;
+      ctx.fillStyle = this.hexToRgba(this.textColor, .82);
+      ctx.fillText(`+ ${this.availableSlots.length - slots.length} horarios en la web`, STORY_W / 2, 1460);
+      ctx.restore();
+    }
   }
 
   private paintDate(ctx: CanvasRenderingContext2D) {
     const date = new Date(`${this.date}T12:00:00`);
-    const label = date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase();
-    const y = this.template === 'minimal' ? 905 : 965;
+    const label = date.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }).toLowerCase();
+    const y = 920;
     ctx.save();
     ctx.textAlign = 'center';
-    ctx.font = `700 30px "Manrope Local", sans-serif`;
-    ctx.letterSpacing = '4px';
-    ctx.fillStyle = this.hexToRgba(this.textColor, .82);
-    ctx.fillText(label, STORY_W / 2, y);
-    ctx.letterSpacing = '0px';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 26px "Manrope Local", sans-serif`;
+    ctx.fillStyle = this.hexToRgba(this.textColor, .9);
+    ctx.fillText(`${label} · ${this.duration} min`, STORY_W / 2, y);
     ctx.restore();
   }
 
   private paintFooter(ctx: CanvasRenderingContext2D) {
+    const website = (this.website || BOOKING_SITE).replace(/^https?:\/\//, '').replace(/\/$/, '').toUpperCase();
+    const y = 1635;
+    ctx.save();
     ctx.textAlign = 'center';
-    ctx.font = `700 42px "Oswald Local", sans-serif`;
-    ctx.fillStyle = this.textColor;
-    ctx.fillText(this.cta.toUpperCase(), STORY_W / 2, 1700);
-    ctx.font = `700 28px "Manrope Local", sans-serif`;
-    ctx.fillStyle = this.hexToRgba(this.textColor, .82);
-    ctx.fillText(this.contact, STORY_W / 2, 1755);
-    ctx.fillStyle = this.accentColor;
-    ctx.fillRect(390, 1810, 300, 8);
-  }
-
-  private paintSportAccents(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.fillStyle = this.hexToRgba(this.accentColor, .9);
-    ctx.translate(0, 0);
-    ctx.rotate(-0.16);
-    ctx.fillRect(-80, 840, 1240, 28);
-    ctx.fillRect(700, 240, 420, 12);
-    ctx.restore();
-  }
-
-  private drawRoundText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, lineHeight: number) {
-    const words = text.split(' ');
-    const lines: string[] = [];
-    let current = '';
-    ctx.font = `700 ${size}px "Story Round", "Oswald Local", sans-serif`;
-    for (const word of words) {
-      const test = current ? `${current} ${word}` : word;
-      if (ctx.measureText(test).width > 760 && current) {
-        lines.push(current);
-        current = word;
-      } else current = test;
+    ctx.textBaseline = 'top';
+    ctx.font = `700 25px "Manrope Local", sans-serif`;
+    ctx.fillStyle = this.hexToRgba(this.textColor, .86);
+    ctx.fillText(this.cta.toLowerCase(), STORY_W / 2, y);
+    let websiteSize = 82;
+    ctx.font = `400 ${websiteSize}px "Realistic Nature", cursive`;
+    while (ctx.measureText(website.toLowerCase()).width > 800 && websiteSize > 34) {
+      websiteSize -= 2;
+      ctx.font = `400 ${websiteSize}px "Realistic Nature", cursive`;
     }
-    if (current) lines.push(current);
-    const firstY = y - ((lines.length - 1) * lineHeight) / 2;
-    ctx.save();
-    ctx.fillStyle = this.textColor;
-    ctx.shadowColor = 'rgba(0,0,0,.22)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 8;
-    lines.forEach((line, index) => ctx.fillText(line, x, firstY + index * lineHeight));
+    ctx.fillStyle = '#fffdf5';
+    ctx.fillText(website.toLowerCase(), STORY_W / 2, y + 54);
     ctx.restore();
+  }
+
+  private drawDisplayText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, size: number, lineHeight: number, font: string, color: string) {
+    const words = text.split(' ');
+    let fontSize = size;
+    let effectiveLineHeight = lineHeight;
+    let lines: string[] = [];
+    do {
+      lines = [];
+      let current = '';
+      ctx.font = `700 ${fontSize}px "${font}", "Oswald Local", sans-serif`;
+      for (const word of words) {
+        const test = current ? `${current} ${word}` : word;
+        if (ctx.measureText(test).width > maxWidth && current) {
+          lines.push(current);
+          current = word;
+        } else current = test;
+      }
+      if (current) lines.push(current);
+      if (lines.some(line => ctx.measureText(line).width > maxWidth) || lines.length > 3) {
+        fontSize -= 4;
+        effectiveLineHeight = Math.round(fontSize * .86);
+      } else break;
+    } while (fontSize > 72);
+
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = color;
+    ctx.shadowColor = 'rgba(0,0,0,.22)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 4;
+    lines.forEach((line, index) => ctx.fillText(line, x, y + index * effectiveLineHeight));
+    ctx.restore();
+    return Math.max(effectiveLineHeight, lines.length * effectiveLineHeight);
+  }
+
+  private displayFontFamily() {
+    if (this.storyFont === 'condensed') return 'Oswald Local';
+    if (this.storyFont === 'clean') return 'Manrope Local';
+    return 'Story Round';
   }
 
   private coverImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
@@ -487,13 +551,6 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
     const sw = w / scale;
     const sh = h / scale;
     ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
-  }
-
-  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string, stroke: string) {
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
   }
 
   private loadImage(src: string) {
