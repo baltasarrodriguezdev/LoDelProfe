@@ -85,11 +85,11 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
               </div>
               @if (modalError) { <p class="notice error-notice modal-alert">{{ modalError }}</p> }
               <div class="booking-modal-footer">
-                <button type="button" class="link cancel-modal" [disabled]="submitting" (click)="closeModal()">Elegir otro horario</button>
+                <button type="button" class="link cancel-modal" [disabled]="submitting()" (click)="closeModal()">Elegir otro horario</button>
                 @if (isPhoneVerified()) {
-                  <button type="button" class="btn primary confirm-booking" [disabled]="submitting" (click)="confirmBooking()">{{ submitting ? 'Reservando...' : 'Confirmar reserva' }}</button>
+                  <button type="button" class="btn primary confirm-booking" [disabled]="submitting()" (click)="confirmBooking()">{{ submitting() ? 'Reservando...' : 'Confirmar reserva' }}</button>
                 } @else {
-                  <button type="button" class="btn primary confirm-booking" [disabled]="submitting" (click)="sendVerificationRequest()">{{ submitting ? 'Enviando...' : 'Enviar solicitud por WhatsApp' }}</button>
+                  <button type="button" class="btn primary confirm-booking" [disabled]="submitting()" (click)="sendVerificationRequest()">{{ submitting() ? 'Enviando...' : 'Enviar solicitud por WhatsApp' }}</button>
                 }
               </div>
             }
@@ -150,7 +150,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   readonly availableSlots = computed(() =>
     this.slots().filter(slot => slot.available === true)
   );
-  submitting = false;
+  readonly submitting = signal(false);
   message = '';
   messageIsError = true;
   modalError = '';
@@ -230,7 +230,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   }
 
   closeModal() {
-    if (this.submitting) return;
+    if (this.submitting()) return;
     const refresh = this.modalState === 'reservationConfirmed' || this.modalState === 'verificationPending';
     this.selectedSlot = null;
     this.modalState = 'confirm';
@@ -254,7 +254,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   }
 
   sendVerificationRequest() {
-    if (!this.auth.user() || !this.selectedSlot || !this.result || this.submitting) return;
+    if (!this.auth.user() || !this.selectedSlot || !this.result || this.submitting()) return;
     if (!Number.isInteger(this.players) || this.players < 1 || this.players > 12) {
       this.modalError = 'La cantidad de jugadores debe estar entre 1 y 12.';
       return;
@@ -264,11 +264,11 @@ export class AvailabilityPage implements OnInit, OnDestroy {
       this.modalError = 'No pudimos abrir WhatsApp. Permit� las ventanas emergentes e intent� nuevamente.';
       return;
     }
-    this.submitting = true;
+    this.submitting.set(true);
     this.modalError = '';
     this.api.post<any>('/bookings', this.bookingPayload()).pipe(
       finalize(() => {
-        this.submitting = false;
+        this.submitting.set(false);
       })
     ).subscribe({
       next: response => {
@@ -293,16 +293,16 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   }
 
   confirmBooking() {
-    if (!this.auth.user() || !this.selectedSlot || this.submitting) return;
+    if (!this.auth.user() || !this.selectedSlot || this.submitting()) return;
     if (!Number.isInteger(this.players) || this.players < 1 || this.players > 12) {
       this.modalError = 'La cantidad de jugadores debe estar entre 1 y 12.';
       return;
     }
-    this.submitting = true;
+    this.submitting.set(true);
     this.modalError = '';
     this.api.post('/bookings', this.bookingPayload()).pipe(
       finalize(() => {
-        this.submitting = false;
+        this.submitting.set(false);
       })
     ).subscribe({
       next: response => {
