@@ -78,6 +78,11 @@ test('rechaza operaciones mutables desde un origen no autorizado', async () => {
   assert.deepEqual(await response.json(), { message: 'Origen no autorizado' });
 });
 
+test('acepta operaciones desde el dominio publico con www', async () => {
+  const response = await fetch(`${baseUrl}/api/auth/logout`, { method: 'POST', headers: { origin: 'https://www.lodelprofe.com' } });
+  assert.equal(response.status, 204);
+});
+
 test('exige token CSRF cuando se usa cookie de sesión', async () => {
   const cookie = 'padel_session=fake-session; padel_csrf=fake-csrf';
   const rejected = await fetch(`${baseUrl}/api/auth/logout`, {

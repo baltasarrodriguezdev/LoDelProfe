@@ -7,7 +7,9 @@ if (production && !process.env.FRONTEND_URL) throw new Error('FRONTEND_URL es ob
 
 const frontendUrls = [
   ...(process.env.FRONTEND_URL ?? 'http://localhost:4200').split(','),
-  ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [])
+  ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+  'https://lodelprofe.com',
+  'https://www.lodelprofe.com'
 ].map(url => url.trim()).filter(Boolean);
 
 export const config = {
