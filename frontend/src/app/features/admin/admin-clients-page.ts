@@ -83,8 +83,8 @@ type Client = {
             </div>
             @if (formError) { <p class="error client-form-error">{{ formError }}</p> }
             <div class="client-form-actions">
-              <button type="button" class="btn ghost" [disabled]="saving" (click)="closeForm()">Cancelar</button>
-              <button type="submit" class="btn primary" [disabled]="saving">{{ saving ? 'Guardando...' : editingClient ? 'Guardar cambios' : 'Agregar cliente' }}</button>
+              <button type="button" class="btn ghost" [disabled]="saving()" (click)="closeForm()">Cancelar</button>
+              <button type="submit" class="btn primary" [disabled]="saving()">{{ saving() ? 'Guardando...' : editingClient ? 'Guardar cambios' : 'Agregar cliente' }}</button>
             </div>
           </form>
         }
@@ -133,7 +133,7 @@ type Client = {
         cancelText="Volver"
         [loadingText]="dialog.loadingText"
         variant="danger"
-        [loading]="confirmLoading"
+        [loading]="confirmLoading()"
         [error]="confirmError"
         (cancel)="closeConfirmDialog()"
         (confirm)="confirmDialogConfirmed()"
@@ -171,7 +171,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   search = '';
   readonly clientsStatus = signal<AsyncStatus>('idle');
   readonly savingClientId = signal<number | null>(null);
-  saving = false;
+  readonly saving = signal(false);
   notice = '';
   noticeError = false;
   showForm = false;
@@ -179,7 +179,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   form: any = { firstName: '', lastName: '', phone: '', password: '' };
   formError = '';
   confirmDialog: { type: 'cancelPending' | 'deactivate'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
-  confirmLoading = false;
+  readonly confirmLoading = signal(false);
   confirmError = '';
   private clientsRequestId = 0;
   private clientsAbort: AbortController | null = null;
@@ -277,7 +277,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   }
 
   closeForm() {
-    if (this.saving) return;
+    if (this.saving()) return;
     this.showForm = false;
     this.editingClient = null;
     this.formError = '';
@@ -293,11 +293,11 @@ export class AdminClientsPage implements OnInit, OnDestroy {
       this.formError = 'Completá teléfono y una contraseña de al menos 8 caracteres.';
       return;
     }
-    this.saving = true;
+    this.saving.set(true);
     const request = this.editingClient
       ? this.api.patch<Client>(`/admin/users/${this.editingClient.id}`, { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim() })
       : this.api.post<Client>('/admin/users', { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim(), phone: this.form.phone.trim(), password: this.form.password });
-    request.pipe(finalize(() => this.saving = false)).subscribe({
+    request.pipe(finalize(() => this.saving.set(false))).subscribe({
       next: client => {
         const wasEditing = !!this.editingClient;
         if (wasEditing) this.clients = this.clients.map(item => item.id === client.id ? client : item);
@@ -371,22 +371,22 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   }
 
   closeConfirmDialog() {
-    if (this.confirmLoading) return;
+    if (this.confirmLoading()) return;
     this.confirmDialog = null;
     this.confirmError = '';
   }
 
   confirmDialogConfirmed() {
-    if (!this.confirmDialog || this.confirmLoading) return;
+    if (!this.confirmDialog || this.confirmLoading()) return;
     if (this.confirmDialog.type === 'cancelPending') this.confirmCancelPending(this.confirmDialog.target);
     else this.confirmDeactivate(this.confirmDialog.target);
   }
 
   private confirmCancelPending(client: Client) {
-    this.confirmLoading = true;
+    this.confirmLoading.set(true);
     this.confirmError = '';
     this.api.delete<any>(`/admin/users/${client.id}/pending-verification`).pipe(
-      finalize(() => this.confirmLoading = false)
+      finalize(() => this.confirmLoading.set(false))
     ).subscribe({
       next: () => {
         this.clients = this.clients.filter(item => item.id !== client.id);
@@ -398,10 +398,10 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   }
 
   private confirmDeactivate(client: Client) {
-    this.confirmLoading = true;
+    this.confirmLoading.set(true);
     this.confirmError = '';
     this.api.patch<Client>(`/admin/users/${client.id}`, { active: false }).pipe(
-      finalize(() => this.confirmLoading = false)
+      finalize(() => this.confirmLoading.set(false))
     ).subscribe({
       next: updated => {
         this.replaceClient({ ...client, ...updated, active: false });

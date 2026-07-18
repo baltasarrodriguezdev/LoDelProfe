@@ -225,7 +225,7 @@ type Booking = {
           <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeDetail()">×</button>
           <span class="eyebrow">DETALLE DEL TURNO</span>
           <h2 id="detail-title">{{ selectedBooking.status === 'BLOCKED' ? 'Horario bloqueado' : selectedBooking.clientName }}</h2>
-          @if (detailLoading) { <p>Cargando información...</p> }
+          @if (detailLoading()) { <p>Cargando información...</p> }
 
           <div class="detail-status-row">
             <span [class]="'status-pill status-' + selectedBooking.status.toLowerCase()">Estado: {{ statusLabel(selectedBooking.status) }}</span>
@@ -261,7 +261,7 @@ type Booking = {
         cancelText="Volver"
         [loadingText]="dialog.loadingText"
         variant="danger"
-        [loading]="confirmLoading"
+        [loading]="confirmLoading()"
         [error]="confirmError"
         (cancel)="closeConfirmDialog()"
         (confirm)="confirmDialogConfirmed()"
@@ -293,9 +293,9 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   notice = '';
   noticeError = false;
   selectedBooking: Booking | null = null;
-  detailLoading = false;
+  readonly detailLoading = signal(false);
   confirmDialog: { type: 'pendingUser' | 'deleteCancelled'; target: any; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
-  confirmLoading = false;
+  readonly confirmLoading = signal(false);
   confirmError = '';
   private bookingsRequestId = 0;
   private detailRequestId = 0;
@@ -410,10 +410,10 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     const abortController = new AbortController();
     this.detailAbort = abortController;
     this.selectedBooking = booking;
-    this.detailLoading = true;
+    this.detailLoading.set(true);
     this.api.get<Booking>(`/admin/bookings/${booking.id}`, undefined, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
-        if (requestId === this.detailRequestId) this.detailLoading = false;
+        if (requestId === this.detailRequestId) this.detailLoading.set(false);
         if (requestId === this.detailRequestId) this.detailAbort = null;
       })
     ).subscribe({
@@ -432,7 +432,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     ++this.detailRequestId;
     this.detailAbort?.abort();
     this.detailAbort = null;
-    this.detailLoading = false;
+    this.detailLoading.set(false);
     this.selectedBooking = null;
   }
   clientFirstName(name: string) { return name.trim().split(/\s+/)[0] ?? ''; }
@@ -518,22 +518,22 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.confirmError = '';
   }
   closeConfirmDialog() {
-    if (this.confirmLoading) return;
+    if (this.confirmLoading()) return;
     this.confirmDialog = null;
     this.confirmError = '';
   }
 
   confirmDialogConfirmed() {
-    if (!this.confirmDialog || this.confirmLoading) return;
+    if (!this.confirmDialog || this.confirmLoading()) return;
     if (this.confirmDialog.type === 'pendingUser') this.confirmCancelPendingUser(this.confirmDialog.target);
     else this.confirmDeleteCancelled(this.confirmDialog.target);
   }
 
   private confirmCancelPendingUser(user: any) {
-    this.confirmLoading = true;
+    this.confirmLoading.set(true);
     this.confirmError = '';
     this.api.delete<any>('/admin/users/' + user.id + '/pending-verification').pipe(
-      finalize(() => this.confirmLoading = false)
+      finalize(() => this.confirmLoading.set(false))
     ).subscribe({
       next: () => {
         this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id);
@@ -552,10 +552,10 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
       this.confirmError = 'No pudimos identificar el turno.';
       return;
     }
-    this.confirmLoading = true;
+    this.confirmLoading.set(true);
     this.confirmError = '';
     this.api.delete<any>(`/admin/bookings/${booking.id}/permanent`).pipe(
-      finalize(() => this.confirmLoading = false)
+      finalize(() => this.confirmLoading.set(false))
     ).subscribe({
       next: response => {
         this.agendaStore.removeBooking(booking.id);

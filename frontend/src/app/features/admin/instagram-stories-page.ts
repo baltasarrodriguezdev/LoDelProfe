@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
@@ -45,7 +45,7 @@ const BOOKING_SITE = 'lodelprofe.com';
           </div>
           <div class="stories-header-actions">
             <span class="booking-destination"><small>RESERVAS EN</small><b>{{ bookingSite }}</b></span>
-            <button type="button" class="btn primary" [disabled]="downloading" (click)="downloadStory()">{{ downloading ? 'Preparando...' : 'Descargar PNG' }}</button>
+            <button type="button" class="btn primary" [disabled]="downloading()" (click)="downloadStory()">{{ downloading() ? 'Preparando...' : 'Descargar PNG' }}</button>
           </div>
         </header>
 
@@ -157,7 +157,7 @@ const BOOKING_SITE = 'lodelprofe.com';
                 <span class="eyebrow">VISTA PREVIA · 1080 × 1920</span>
                 <h2>
                   @if (loadingSlots) { Actualizando horarios }
-                  @else if (availabilityStatus === 'error') { Disponibilidad no cargada }
+                  @else if (availabilityStatus() === 'error') { Disponibilidad no cargada }
                   @else if (availableSlots.length) { {{ availableSlots.length }} turnos disponibles }
                   @else { Día completo }
                 </h2>
@@ -172,7 +172,7 @@ const BOOKING_SITE = 'lodelprofe.com';
                 <span>Cargando disponibilidad...</span>
               } @else if (availableSlots.length) {
                 @for (slot of availableSlots.slice(0, 8); track slot.startTime) { <b>{{ slot.startTime }}</b> }
-              } @else if (availabilityStatus === 'success') {
+              } @else if (availabilityStatus() === 'success') {
                 <span>Sin horarios libres para mostrar.</span>
               }
             </div>
@@ -247,14 +247,14 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   defaultLogo = 'assets/logos/lo-del-profe-stacked.png';
   slots: AvailabilitySlot[] = [];
   assets: StoryAsset[] = [];
-  availabilityStatus: AsyncStatus = 'idle';
-  downloading = false;
+  readonly availabilityStatus = signal<AsyncStatus>('idle');
+  readonly downloading = signal(false);
   notice = '';
   noticeError = false;
   private drawTimer: ReturnType<typeof setTimeout> | null = null;
   private availabilityRequestId = 0;
   private availabilityAbort: AbortController | null = null;
-  get loadingSlots() { return this.availabilityStatus === 'loading'; }
+  get loadingSlots() { return this.availabilityStatus() === 'loading'; }
 
   readonly templates: Array<{ id: StoryTemplate; name: string; description: string }> = [
     { id: 'premium', name: 'Agenda verde', description: 'Estilo de la referencia 1.' },
@@ -303,12 +303,12 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
-    this.availabilityStatus = 'loading';
+    this.availabilityStatus.set('loading');
     this.notice = '';
     this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
-        if (requestId === this.availabilityRequestId && this.availabilityStatus === 'loading') {
-          this.availabilityStatus = 'error';
+        if (requestId === this.availabilityRequestId && this.availabilityStatus() === 'loading') {
+          this.availabilityStatus.set('error');
         }
         if (requestId === this.availabilityRequestId) this.availabilityAbort = null;
       })
@@ -318,12 +318,12 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
         const value = data as any;
         const slots = Array.isArray(data) ? data : value?.slots ?? value?.data?.slots ?? [];
         this.slots = Array.isArray(slots) ? slots : [];
-        this.availabilityStatus = 'success';
+        this.availabilityStatus.set('success');
         this.drawSoon();
       },
       error: error => {
         if (requestId !== this.availabilityRequestId || abortController.signal.aborted || error?.name === 'AbortError') return;
-        this.availabilityStatus = 'error';
+        this.availabilityStatus.set('error');
         this.notice = error.error?.message ?? 'No pudimos cargar la disponibilidad.';
         this.noticeError = true;
         this.drawSoon();
@@ -365,15 +365,15 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   downloadStory() {
     const canvas = this.storyCanvas?.nativeElement;
     if (!canvas) return;
-    this.downloading = true;
+    this.downloading.set(true);
     this.drawStory().then(() => {
       const link = document.createElement('a');
       link.download = `historia-lo-del-profe-${this.date}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
-      this.downloading = false;
+      this.downloading.set(false);
     }).catch(() => {
-      this.downloading = false;
+      this.downloading.set(false);
       this.showError('No pudimos generar el PNG.');
     });
   }

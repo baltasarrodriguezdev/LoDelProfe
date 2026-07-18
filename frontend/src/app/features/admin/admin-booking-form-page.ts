@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
@@ -44,7 +44,7 @@ import { MyBookingsStore } from '../client/my-bookings-store';
                       <b>{{ client.firstName }} {{ client.lastName }}</b><span>{{ client.phone }}</span>
                     </button>
                   } @empty {
-                    <p>{{ resourcesStatus === 'loading' ? 'Cargando clientes...' : 'No hay clientes para esa búsqueda.' }}</p>
+                    <p>{{ resourcesStatus() === 'loading' ? 'Cargando clientes...' : 'No hay clientes para esa búsqueda.' }}</p>
                   }
                 </div>
               </div>
@@ -72,9 +72,9 @@ import { MyBookingsStore } from '../client/my-bookings-store';
           @if (mode === 'BOOKING') {
             <div class="manual-total"><span>Precio del turno</span><strong>{{ form.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
           }
-          @if (warning) { <div class="notice"><strong>Atención</strong><p>{{ warning }}</p><div class="actions"><button type="button" class="btn ghost" (click)="warning = ''">Elegir otro horario</button><button type="button" class="btn primary" [disabled]="saving" (click)="save(true)">Guardar igualmente</button></div></div> }
+          @if (warning) { <div class="notice"><strong>Atención</strong><p>{{ warning }}</p><div class="actions"><button type="button" class="btn ghost" (click)="warning = ''">Elegir otro horario</button><button type="button" class="btn primary" [disabled]="saving()" (click)="save(true)">Guardar igualmente</button></div></div> }
           @if (error) { <p class="notice error-notice">{{ error }}</p> }
-          <button class="btn primary full" [disabled]="saving">{{ saving ? 'Guardando...' : bookingId ? 'Guardar cambios' : mode === 'BLOCK' ? 'Bloquear horario' : 'Guardar turno' }}</button>
+          <button class="btn primary full" [disabled]="saving()">{{ saving() ? 'Guardando...' : bookingId ? 'Guardar cambios' : mode === 'BLOCK' ? 'Bloquear horario' : 'Guardar turno' }}</button>
         </form>
       } @else {
         <div class="panel manual-success">
@@ -114,11 +114,11 @@ export class AdminBookingFormPage implements OnInit {
   prices: any[] = [];
   clients: any[] = [];
   clientSearch = '';
-  saving = false;
+  readonly saving = signal(false);
   created = false;
   error = '';
   warning = '';
-  resourcesStatus: AsyncStatus = 'idle';
+  readonly resourcesStatus = signal<AsyncStatus>('idle');
 
   get successMessage() {
     if (this.mode === 'BLOCK') return 'El horario quedó bloqueado correctamente.';
@@ -132,7 +132,7 @@ export class AdminBookingFormPage implements OnInit {
     this.form.durationMinutes = Number(params.get('durationMinutes') ?? 90);
     this.mode = params.get('mode') === 'block' ? 'BLOCK' : 'BOOKING';
     this.bookingId = Number(params.get('id')) || null;
-    this.resourcesStatus = 'loading';
+    this.resourcesStatus.set('loading');
     forkJoin({
       prices: this.api.get<unknown>('/prices', undefined, { noCache: true }),
       clients: this.api.get<unknown>('/admin/users', undefined, { noCache: true })
@@ -140,12 +140,12 @@ export class AdminBookingFormPage implements OnInit {
       next: ({ prices, clients }) => {
         this.prices = this.normalizeList(prices, 'prices');
         this.clients = this.normalizeList(clients, 'users').filter(client => client.role === 'CLIENT' && client.active);
-        this.resourcesStatus = 'success';
+        this.resourcesStatus.set('success');
         this.syncPrice();
         if (this.bookingId) this.loadBooking(this.bookingId);
       },
       error: response => {
-        this.resourcesStatus = 'error';
+        this.resourcesStatus.set('error');
         this.error = response.error?.message ?? 'No se pudieron cargar los datos del formulario.';
       }
     });
@@ -191,7 +191,7 @@ export class AdminBookingFormPage implements OnInit {
   }
 
   save(adminOverride = false) {
-    if (this.saving) return;
+    if (this.saving()) return;
     this.error = '';
     if (!adminOverride) this.warning = '';
     if (this.mode === 'BOOKING' && this.form.clientMode === 'EXISTING' && !this.form.userId) {
@@ -202,7 +202,7 @@ export class AdminBookingFormPage implements OnInit {
       this.error = 'Complet� fecha, hora y duraci�n.';
       return;
     }
-    this.saving = true;
+    this.saving.set(true);
 
     const bookingData = {
       courtId: 1,
@@ -231,7 +231,7 @@ export class AdminBookingFormPage implements OnInit {
           })
         : this.api.post('/admin/bookings', bookingData);
 
-    request.pipe(finalize(() => this.saving = false)).subscribe({
+    request.pipe(finalize(() => this.saving.set(false))).subscribe({
       next: () => {
         this.created = true;
         this.warning = '';

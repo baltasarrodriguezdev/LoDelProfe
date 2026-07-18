@@ -1,5 +1,4 @@
-import 'zone.js';
-import { LOCALE_ID, provideZoneChangeDetection } from '@angular/core';
+import { LOCALE_ID } from '@angular/core';
 import { registerLocaleData } from '@angular/common';
 import localeEsAr from '@angular/common/locales/es-AR';
 import { bootstrapApplication } from '@angular/platform-browser';
@@ -13,7 +12,6 @@ registerLocaleData(localeEsAr);
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
     { provide: LOCALE_ID, useValue: 'es-AR' }

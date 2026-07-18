@@ -8,7 +8,7 @@
       "sourceRoot": "src",
       "architect": {
         "build": {
-          "builder": "@angular-devkit/build-angular:application",
+          "builder": "@angular/build:application",
           "options": {
             "outputPath": "dist/frontend",
             "browser": "src/main.ts",
@@ -35,13 +35,20 @@
           "defaultConfiguration": "production"
         },
         "serve": {
-          "builder": "@angular-devkit/build-angular:dev-server",
+          "builder": "@angular/build:dev-server",
           "options": { "proxyConfig": "proxy.conf.json" },
           "configurations": {
             "production": { "buildTarget": "frontend:build:production" },
             "development": { "buildTarget": "frontend:build:development" }
           },
           "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json",
+            "buildTarget": "frontend:build:development"
+          }
         }
       }
     }

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit } from '@angular/core';
+import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
@@ -35,8 +35,8 @@ interface DashboardData {
         <span class="period-caption">{{ from | date:'d MMM':'UTC' }} — {{ to | date:'d MMM yyyy':'UTC' }}</span>
       </section>
 
-      @if (loading) { <div class="empty dashboard-loading">Calculando estadísticas...</div> }
-      @else if (dashboard && availabilityStatus === 'success' && agendaStatus === 'success') {
+      @if (loading()) { <div class="empty dashboard-loading">Calculando estadísticas...</div> }
+      @else if (dashboard && availabilityStatus() === 'success' && agendaStatus() === 'success') {
         <section class="dashboard-metrics">
           <article class="metric-card featured"><span>Ocupación</span><b>{{ dashboard.summary.occupancyRate }}%</b><small>del tiempo vendible</small><i class="metric-progress"><i [style.width.%]="dashboard.summary.occupancyRate"></i></i></article>
           <article class="metric-card"><span>Turnos</span><b>{{ dashboard.summary.totalBookings }}</b><small>{{ dashboard.summary.activeBookings }} activos</small></article>
@@ -81,9 +81,9 @@ interface DashboardData {
 export class AdminStatsPage implements OnInit, OnDestroy {
   private api = inject(Api); private router = inject(Router);
   dashboard: DashboardData | null = null; availability: any; todayBookings: any[] = [];
-  dashboardStatus: AsyncStatus = 'idle';
-  availabilityStatus: AsyncStatus = 'idle';
-  agendaStatus: AsyncStatus = 'idle';
+  readonly dashboardStatus = signal<AsyncStatus>('idle');
+  readonly availabilityStatus = signal<AsyncStatus>('idle');
+  readonly agendaStatus = signal<AsyncStatus>('idle');
   error = ''; period = 'today';
   private dashboardRequestId = 0;
   private availabilityRequestId = 0;
@@ -103,34 +103,34 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     this.dashboardAbort?.abort();
     const abortController = new AbortController();
     this.dashboardAbort = abortController;
-    this.dashboardStatus = 'loading';
+    this.dashboardStatus.set('loading');
     this.error = '';
     this.api.get<DashboardData>('/admin/dashboard', { from: this.from, to: this.to }, { noCache: true, abortSignal: abortController.signal }).pipe(
-      finalize(() => { if (requestId === this.dashboardRequestId && this.dashboardStatus === 'loading') this.dashboardStatus = 'error'; if (requestId === this.dashboardRequestId) this.dashboardAbort = null; })
+      finalize(() => { if (requestId === this.dashboardRequestId && this.dashboardStatus() === 'loading') this.dashboardStatus.set('error'); if (requestId === this.dashboardRequestId) this.dashboardAbort = null; })
     ).subscribe({
-      next: data => { if (requestId === this.dashboardRequestId) { this.dashboard = data; this.dashboardStatus = 'success'; } },
-      error: error => { if (requestId === this.dashboardRequestId) { this.error = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.dashboardStatus = 'error'; } }
+      next: data => { if (requestId === this.dashboardRequestId) { this.dashboard = data; this.dashboardStatus.set('success'); } },
+      error: error => { if (requestId === this.dashboardRequestId) { this.error = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.dashboardStatus.set('error'); } }
     });
   }
-  get loading() { return [this.dashboardStatus, this.availabilityStatus, this.agendaStatus].includes('loading'); }
+  readonly loading = computed(() => [this.dashboardStatus(), this.availabilityStatus(), this.agendaStatus()].includes('loading'));
   loadAvailability() {
     if (this.requestedAgendaDate !== this.availabilityDate) this.loadTodayAgenda();
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
-    this.availabilityStatus = 'loading';
+    this.availabilityStatus.set('loading');
     this.api.get<unknown>('/availability', { date: this.availabilityDate, duration: this.availabilityDuration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
-      finalize(() => { if (requestId === this.availabilityRequestId && this.availabilityStatus === 'loading') this.availabilityStatus = 'error'; if (requestId === this.availabilityRequestId) this.availabilityAbort = null; })
+      finalize(() => { if (requestId === this.availabilityRequestId && this.availabilityStatus() === 'loading') this.availabilityStatus.set('error'); if (requestId === this.availabilityRequestId) this.availabilityAbort = null; })
     ).subscribe({
       next: response => {
         if (requestId !== this.availabilityRequestId) return;
         const value = response as any;
         const slots = Array.isArray(response) ? response : value?.slots ?? value?.data?.slots ?? [];
         this.availability = { ...(Array.isArray(response) ? {} : value), slots: Array.isArray(slots) ? slots : [] };
-        this.availabilityStatus = 'success';
+        this.availabilityStatus.set('success');
       },
-      error: error => { if (requestId === this.availabilityRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la disponibilidad.'; this.availabilityStatus = 'error'; } }
+      error: error => { if (requestId === this.availabilityRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la disponibilidad.'; this.availabilityStatus.set('error'); } }
     });
   }
   loadTodayAgenda() {
@@ -142,18 +142,18 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     const start = new Date(`${this.availabilityDate}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-    this.agendaStatus = 'loading';
+    this.agendaStatus.set('loading');
     this.api.get<unknown>('/admin/bookings', { from: start.toISOString(), to: end.toISOString() }, { noCache: true, abortSignal: abortController.signal }).pipe(
-      finalize(() => { if (requestId === this.agendaRequestId && this.agendaStatus === 'loading') this.agendaStatus = 'error'; if (requestId === this.agendaRequestId) this.agendaAbort = null; })
+      finalize(() => { if (requestId === this.agendaRequestId && this.agendaStatus() === 'loading') this.agendaStatus.set('error'); if (requestId === this.agendaRequestId) this.agendaAbort = null; })
     ).subscribe({
       next: response => {
         if (requestId !== this.agendaRequestId) return;
         const value = response as any;
         const bookings = Array.isArray(response) ? response : value?.bookings ?? value?.data?.bookings ?? [];
         this.todayBookings = (Array.isArray(bookings) ? bookings : []).filter(item => item.status !== 'CANCELLED').slice(0, 8);
-        this.agendaStatus = 'success';
+        this.agendaStatus.set('success');
       },
-      error: error => { if (requestId === this.agendaRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la agenda.'; this.agendaStatus = 'error'; } }
+      error: error => { if (requestId === this.agendaRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la agenda.'; this.agendaStatus.set('error'); } }
     });
   }
   openManualBooking(slot: any) { if (!slot.available && slot.reason !== 'DEAD_GAP') return; this.router.navigate(['/admin/turno'], { queryParams: { date: this.availabilityDate, startTime: slot.startTime, durationMinutes: this.availabilityDuration } }); }
