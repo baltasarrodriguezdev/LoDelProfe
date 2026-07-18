@@ -1,7 +1,6 @@
 ﻿import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
 import { Auth } from '../../core/api';
 
 @Component({
@@ -46,7 +45,7 @@ import { Auth } from '../../core/api';
           </label>
           <label>Contraseña<input required minlength="8" type="password" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
           @if (error) { <p class="error">{{ error }}</p> }
-          <button class="btn primary full" [disabled]="loading">{{ loading ? 'Procesando...' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</button>
+          <button type="submit" class="btn primary full" [disabled]="loading">{{ loading ? 'Procesando...' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</button>
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -71,6 +70,7 @@ export class AuthPage {
   onPhoneInput(value: string) { this.form.phone = String(value ?? '').replace(/\D/g, ''); }
 
   submit() {
+    if (this.loading) return;
     this.loading = true;
     this.error = '';
     this.fieldErrors = {};
@@ -78,13 +78,15 @@ export class AuthPage {
     if (!phone) { this.loading = false; return; }
     const payload = { ...this.form, phone };
     const call = this.registerMode ? this.auth.register(payload) : this.auth.login(payload);
-    call.pipe(finalize(() => this.loading = false)).subscribe({
+    call.subscribe({
       next: value => {
+        this.loading = false;
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         if (this.registerMode) sessionStorage.setItem('accountCreatedNotice', '1');
         this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
       },
       error: response => {
+        this.loading = false;
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;
         this.fieldErrors = Object.fromEntries(Object.entries(fields ?? {}).map(([field, messages]) => [field, messages?.[0] ?? 'Dato inválido'])) as typeof this.fieldErrors;
         this.error = Object.keys(this.fieldErrors).length ? '' : this.registrationError(response);
