@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize, firstValueFrom } from 'rxjs';
+import { finalize, firstValueFrom, forkJoin } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { AsyncStatus } from '../../shared/async-state';
 import { VENUE } from '../../shared/venue';
@@ -136,12 +136,12 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   venue = VENUE;
   prices: Price[] = [];
   result: Availability | null = null;
-  courtId = 1;
+  courtId = 0;
   duration = 90;
   players = 4;
   notes = '';
-  today = new Date().toISOString().slice(0, 10);
-  date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  today = this.dateInput(new Date());
+  date = this.today;
   selectedSlot: Slot | null = null;
   modalState: ModalState = 'confirm';
   readonly pricesStatus = signal<AsyncStatus>('idle');
@@ -158,6 +158,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   private lastWhatsappUrl = '';
   private availabilityRequestId = 0;
   private pricesRequestId = 0;
+  private pricesAbort: AbortController | null = null;
   private availabilityAbort: AbortController | null = null;
   get availabilityLoadFailed() {
     return this.pricesStatus() === 'error' || this.availabilityStatus() === 'error';
@@ -195,9 +196,16 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.loadPrices();
   }
 
-  ngOnDestroy() { this.availabilityAbort?.abort(); }
+  ngOnDestroy() {
+    ++this.pricesRequestId;
+    ++this.availabilityRequestId;
+    this.pricesAbort?.abort();
+    this.availabilityAbort?.abort();
+    this.pricesAbort = null;
+    this.availabilityAbort = null;
+  }
 
-  isPhoneVerified() { return this.auth.user()?.phoneVerified === true || this.auth.user()?.status === 'VERIFIED'; }
+  isPhoneVerified() { return this.auth.user()?.phoneVerified === true; }
 
   selectDuration(duration: number) {
     this.duration = duration;
@@ -346,16 +354,35 @@ export class AvailabilityPage implements OnInit, OnDestroy {
       durationLabel: this.durationLabel(this.duration),
       playersCount: this.players,
       formattedPrice: price,
-      registeredPhone: user?.phone ?? ''
+      registeredPhone: user?.phone ?? '',
+      verificationCode: user?.verificationCode ?? undefined
     });
   }
 
   private loadPrices() {
     const requestId = ++this.pricesRequestId;
+    this.pricesAbort?.abort();
+    const abortController = new AbortController();
+    this.pricesAbort = abortController;
     this.pricesStatus.set('loading');
-    this.api.get<unknown>('/prices', undefined, { noCache: true }).subscribe({
-      next: json => {
+    forkJoin({
+      prices: this.api.get<unknown>('/prices', undefined, { noCache: true, abortSignal: abortController.signal }),
+      courts: this.api.get<unknown>('/courts', undefined, { noCache: true, abortSignal: abortController.signal })
+    }).pipe(
+      finalize(() => {
+        if (requestId === this.pricesRequestId) this.pricesAbort = null;
+      })
+    ).subscribe({
+      next: ({ prices: json, courts }) => {
         if (requestId !== this.pricesRequestId) return;
+        const activeCourt = Array.isArray(courts) ? courts[0] as any : null;
+        this.courtId = Number(activeCourt?.id ?? 0);
+        if (!this.courtId) {
+          this.message = 'No hay una cancha activa configurada.';
+          this.messageIsError = true;
+          this.pricesStatus.set('error');
+          return;
+        }
         const activePrices = Array.isArray(json)
           ? json.filter((item: Partial<Price>) => item.active === true)
           : [];
@@ -380,7 +407,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         this.search();
       },
       error: error => {
-        if (requestId !== this.pricesRequestId) return;
+        if (requestId !== this.pricesRequestId || this.isAbortError(error, abortController.signal)) return;
         console.error('[reservas] prices error', error);
         this.message = this.errorMessage(error, 'No pudimos cargar las duraciones disponibles.');
         this.messageIsError = true;
@@ -392,14 +419,15 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   private async loadAvailability() {
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
-    const abortController = new AbortController();
-    this.availabilityAbort = abortController;
     if (!this.date || !this.duration) {
+      this.availabilityAbort = null;
       this.slots.set([]);
       this.availabilityStatus.set('idle');
       return;
     }
 
+    const abortController = new AbortController();
+    this.availabilityAbort = abortController;
     this.availabilityStatus.set('loading');
     try {
       const json = await firstValueFrom(this.api.get<unknown>('/availability', {
@@ -421,7 +449,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
       this.availabilityStatus.set('success');
       this.resumePendingConfirmation();
     } catch (error) {
-      if (requestId !== this.availabilityRequestId) return;
+      if (requestId !== this.availabilityRequestId || this.isAbortError(error, abortController.signal)) return;
       console.error('[reservas] availability error', error);
       this.slots.set([]);
       this.message = this.errorMessage(error, 'No pudimos consultar los horarios.');
@@ -432,6 +460,10 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         this.availabilityAbort = null;
       }
     }
+  }
+  private isAbortError(error: unknown, signal: AbortSignal) {
+    const value = error as { name?: string };
+    return signal.aborted || value?.name === 'AbortError';
   }
   private errorMessage(error: unknown, fallback: string) {
     const value = error as any;
@@ -446,6 +478,13 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     if (normalized.includes('disponible') || normalized.includes('otro turno')) return 'Ese horario ya no está disponible.';
     if (normalized.includes('jugador')) return 'Revisá la cantidad de jugadores.';
     return 'No pudimos confirmar la reserva.';
+  }
+
+  private dateInput(date: Date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private restorePendingBooking() {

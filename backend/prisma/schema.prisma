@@ -14,6 +14,18 @@ enum UserStatus {
   PENDING_VERIFICATION
   VERIFIED
 }
+enum PhoneVerificationMethod {
+  WHATSAPP_MANUAL
+  PHONE_CALL
+  IN_PERSON
+}
+enum PasswordResetStatus {
+  PENDING
+  AUTHORIZED
+  USED
+  CANCELLED
+  EXPIRED
+}
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -59,11 +71,34 @@ model User {
   phoneVerified Boolean @default(false)
   status UserStatus @default(PENDING_VERIFICATION)
   isBlocked Boolean @default(false)
+  verificationCode String? @unique @db.VarChar(20)
+  phoneVerifiedAt DateTime?
+  phoneVerifiedById Int?
+  phoneVerificationMethod PhoneVerificationMethod?
+  securityVersion Int @default(0)
+  releasedAt DateTime?
+  passwordResetRequests PasswordResetRequest[]
   bookings Booking[]
   recurring RecurringBooking[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("users")
+}
+model PasswordResetRequest {
+  id String @id @default(cuid()) @db.VarChar(30)
+  userId Int
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  status PasswordResetStatus @default(PENDING)
+  tokenHash String? @unique @db.Char(64)
+  requestedAt DateTime @default(now())
+  authorizedAt DateTime?
+  authorizedById Int?
+  expiresAt DateTime?
+  usedAt DateTime?
+  cancelledAt DateTime?
+  @@index([status,requestedAt])
+  @@index([userId,status])
+  @@map("password_reset_requests")
 }
 model Court {
   id Int @id @default(autoincrement())
@@ -90,6 +125,8 @@ model BusinessHour {
   dayOfWeek Int @unique
   openTime String @db.VarChar(5)
   closeTime String @db.VarChar(5)
+  breakStartTime String? @db.VarChar(5)
+  breakEndTime String? @db.VarChar(5)
   active Boolean @default(true)
   @@map("business_hours")
 }
@@ -111,6 +148,7 @@ model Booking {
   status BookingStatus @default(CONFIRMED)
   origin BookingOrigin @default(WEB)
   paymentStatus PaymentStatus @default(PENDING)
+  amountPaid Decimal @default(0) @db.Decimal(10,2)
   paymentMethod String?
   notes String? @db.Text
   cancelledAt DateTime?
@@ -122,6 +160,26 @@ model Booking {
   @@index([courtId,startTime,endTime])
   @@index([userId,startTime])
   @@map("bookings")
+}
+
+model VenueSetting {
+  id Int @id @default(1)
+  cancellationCutoffMinutes Int @default(120)
+  updatedAt DateTime @updatedAt
+  @@map("venue_settings")
+}
+
+model AuditLog {
+  id BigInt @id @default(autoincrement())
+  actorId Int?
+  action String @db.VarChar(80)
+  entityType String @db.VarChar(50)
+  entityId String? @db.VarChar(50)
+  details Json?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@index([entityType,entityId])
+  @@map("audit_logs")
 }
 model RecurringBooking {
   id Int @id @default(autoincrement())

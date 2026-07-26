@@ -4,7 +4,11 @@ import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const csrfExemptPaths = new Set(['/auth/login', '/api/auth/login', '/auth/register', '/api/auth/register']);
+const csrfExemptPaths = new Set([
+  '/auth/login', '/api/auth/login', '/auth/register', '/api/auth/register',
+  '/auth/password-reset-requests', '/api/auth/password-reset-requests',
+  '/auth/password-reset', '/api/auth/password-reset'
+]);
 
 export function cookieValue(header: string | undefined, name: string) {
   return header?.split(';')

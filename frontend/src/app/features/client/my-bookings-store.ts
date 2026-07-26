@@ -63,11 +63,13 @@ export class MyBookingsStore {
         );
         if (requestId !== this.bookingsRequestId) return;
 
-        const normalizedBookings = responses.flatMap((response, index) => {
+        const failedResponse = responses.find(response => response.status === 'rejected');
+        if (failedResponse?.status === 'rejected') throw failedResponse.reason;
+
+        const normalizedBookings = responses.flatMap(response => {
           if (response.status === 'fulfilled') {
             return this.normalizeBookings(response.value);
           }
-          console.error('[mis-turnos] bookings partial error', urls[index], response.reason);
           return [];
         });
         const dedupedBookings = this.dedupeBookings(normalizedBookings);
@@ -106,6 +108,7 @@ export class MyBookingsStore {
     this.loaded = false;
     this.loadedUserId = null;
     this.loadedSessionRevision = null;
+    if (this.bookingsStatus() === 'loading') this.bookingsStatus.set('idle');
   }
 
   removeBooking(id: number) {

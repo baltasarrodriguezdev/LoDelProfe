@@ -11,11 +11,13 @@ import { AvailabilityPage } from './availability-page';
 describe('AvailabilityPage zoneless', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  async function setup(postResponse: Subject<any>) {
+  async function setup(postResponse: Subject<any>, selectTestSlot = true) {
     const api = {
       get: vi.fn((path: string) => path === '/prices'
         ? of([{ id: 1, durationMinutes: 90, price: 18000, active: true }])
-        : of({
+        : path === '/courts'
+          ? of([{ id: 1, name: 'Lo del Profe', active: true }])
+          : of({
           date: '2026-07-19',
           durationMinutes: 90,
           price: 18000,
@@ -53,22 +55,31 @@ describe('AvailabilityPage zoneless', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    fixture.componentInstance.date = '2026-07-19';
-    fixture.componentInstance.duration = 90;
-    fixture.componentInstance.result = {
-      date: '2026-07-19',
-      durationMinutes: 90,
-      price: 18000,
-      slots: []
-    };
-    fixture.componentInstance.selectedSlot = {
-      startTime: '18:00',
-      endTime: '19:30',
-      available: true
-    };
-    fixture.detectChanges();
+    if (selectTestSlot) {
+      fixture.componentInstance.date = '2026-07-19';
+      fixture.componentInstance.duration = 90;
+      fixture.componentInstance.result = {
+        date: '2026-07-19',
+        durationMinutes: 90,
+        price: 18000,
+        slots: []
+      };
+      fixture.componentInstance.selectedSlot = {
+        startTime: '18:00',
+        endTime: '19:30',
+        available: true
+      };
+      fixture.detectChanges();
+    }
     return { fixture, myBookingsStore, adminAgendaStore };
   }
+
+  it('muestra el día de hoy por defecto al entrar a reservar', async () => {
+    const postResponse = new Subject<any>();
+    const { fixture } = await setup(postResponse, false);
+
+    expect(fixture.componentInstance.date).toBe(fixture.componentInstance.today);
+  });
 
   it('sale de Enviando y muestra la solicitud pendiente al abrir WhatsApp', async () => {
     const postResponse = new Subject<any>();

@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
 import { Role, UserStatus } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { config } from '../config.js';
@@ -8,14 +9,14 @@ import { localArgentinaPhone, normalizeArgentinaPhone, storedPhoneCandidates } f
 
 const canonicalPhone = (value: string) => normalizeArgentinaPhone(value)!;
 const storedPhone = (e164Phone: string) => localArgentinaPhone(e164Phone);
-const publicUser = ({ passwordHash: _, ...user }: any) => ({
+const publicUser = ({ passwordHash: _, securityVersion: __, ...user }: any) => ({
   ...user,
-  status: user.status ?? (user.phoneVerified === true ? UserStatus.VERIFIED : UserStatus.PENDING_VERIFICATION)
+  status: user.phoneVerified === true ? UserStatus.VERIFIED : UserStatus.PENDING_VERIFICATION
 });
 
 function session(user: { id: number; role: Role; passwordHash: string; [key: string]: unknown }) {
   return {
-    token: jwt.sign({ userId: user.id, role: user.role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] }),
+    token: jwt.sign({ userId: user.id, role: user.role, sessionVersion: Number(user.securityVersion ?? 0) }, config.jwtSecret, { expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'] }),
     user: publicUser(user)
   };
 }
@@ -35,7 +36,8 @@ export async function register(data: { firstName: string; lastName: string; phon
       phoneVerified: false,
       status: UserStatus.PENDING_VERIFICATION,
       isBlocked: false,
-      active: true
+      active: true,
+      verificationCode: `VAL-${randomBytes(4).toString('hex').toUpperCase()}`
     }
   });
   return session(user);

@@ -20,6 +20,7 @@ type Booking = {
   status: string;
   origin?: string;
   paymentStatus: string;
+  amountPaid?: number;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -53,6 +54,7 @@ type Booking = {
         <a routerLink="/admin/turno">Agregar turno</a>
         <a routerLink="/admin/turno" [queryParams]="{ mode: 'block' }">Bloquear horario</a>
         <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
+        @if (auth.user()?.role === 'SUPERADMIN') { <a routerLink="/admin/seguridad">Seguridad</a> }
       </nav>
 
       @if (auth.isAdmin() && auth.user()?.role === 'SUPERADMIN') {
@@ -61,8 +63,10 @@ type Booking = {
           <nav>
             <a routerLink="/admin/precios">Precios</a>
             <a routerLink="/admin/horarios">Horarios</a>
+            <a routerLink="/admin/politicas">Políticas</a>
             <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
             <a routerLink="/admin/clientes">Clientes</a>
+            <a routerLink="/admin/seguridad">Seguridad y accesos</a>
             <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
             <a routerLink="/admin/caja">Caja</a>
             <a routerLink="/admin/estadisticas">Estadísticas</a>
@@ -93,7 +97,7 @@ type Booking = {
               </div>
               <div class="operations-booking__actions">
                 <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
+                @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action pay-action" routerLink="/admin/seguridad">Validar cliente</a> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
             </article>
@@ -115,7 +119,7 @@ type Booking = {
               <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
               <div class="operations-booking__actions">
                 @if (auth.user()?.role === 'SUPERADMIN') {
-                  <button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button>
+                  <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                   <button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button>
                 }
               </div>
@@ -165,7 +169,7 @@ type Booking = {
                   }
                   @if (booking.status === 'PENDING') {
                     <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                    @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
+                    @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action" routerLink="/admin/seguridad">Validar cliente</a> }
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>
@@ -174,7 +178,7 @@ type Booking = {
                   @if (booking.status === 'BLOCKED') {
                     <button type="button" class="small-action" (click)="changeStatus(booking, 'CANCELLED')">Liberar horario</button>
                   }
-                  @if (booking.status === 'CANCELLED') {
+                  @if (booking.status === 'CANCELLED' && auth.user()?.role === 'SUPERADMIN') {
                     <button type="button" class="small-action" (click)="changeStatus(booking, booking.clientName === 'Bloqueo' ? 'BLOCKED' : 'CONFIRMED')">Reactivar</button>
                     <button type="button" class="small-action danger-action" (click)="deleteCancelled(booking)">Eliminar del historial</button>
                   }
@@ -252,6 +256,27 @@ type Booking = {
         </section>
       </div>
     }
+    @if (depositTarget; as booking) {
+      <div class="modal-backdrop" (click)="closeDeposit()">
+        <section class="booking-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title" (click)="$event.stopPropagation()">
+          <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeDeposit()">×</button>
+          <span class="eyebrow">REGISTRAR SEÑA</span>
+          <h2 id="deposit-title">{{ booking.clientName }}</h2>
+          <p>Indicá el importe realmente cobrado. Se registrará también como ingreso en caja.</p>
+          <label>Importe
+            <input type="number" min="1" [max]="booking.priceTotal - 1" [(ngModel)]="depositAmount">
+          </label>
+          <label>Medio de pago
+            <select [(ngModel)]="depositMethod"><option>EFECTIVO</option><option>TRANSFERENCIA</option><option>OTRO</option></select>
+          </label>
+          @if (depositError) { <p class="notice error-notice">{{ depositError }}</p> }
+          <div class="detail-actions">
+            <button type="button" class="btn ghost" [disabled]="paymentMutationId() !== null" (click)="closeDeposit()">Cancelar</button>
+            <button type="button" class="btn primary" [disabled]="paymentMutationId() !== null" (click)="confirmPartial()">Registrar seña</button>
+          </div>
+        </section>
+      </div>
+    }
     @if (confirmDialog; as dialog) {
       <app-confirm-dialog
         [title]="dialog.title"
@@ -277,6 +302,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
 
   selectedDate = this.dateInput(new Date());
   availabilityDuration = 90;
+  courtId = 0;
   bookings = this.agendaStore.bookings;
   pendingReservations: Booking[] = [];
   availability = this.agendaStore.availability;
@@ -290,6 +316,10 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   readonly bookingMutationId = signal<number | null>(null);
   readonly pendingUserMutationId = signal<number | null>(null);
   readonly paymentMutationId = signal<number | null>(null);
+  depositTarget: Booking | null = null;
+  depositAmount: number | null = null;
+  depositMethod = 'EFECTIVO';
+  depositError = '';
   notice = '';
   noticeError = false;
   selectedBooking: Booking | null = null;
@@ -315,11 +345,23 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   readonly visibleSlots = this.agendaStore.visibleSlots;
   get activeBookings() { return this.bookings().filter((item: Booking) => !['CANCELLED', 'BLOCKED'].includes(item.status)); }
   get estimatedTotal() { return this.activeBookings.reduce((total: number, item: Booking) => total + Number(item.priceTotal), 0); }
-  get paidTotal() { return this.activeBookings.filter((item: Booking) => item.paymentStatus === 'PAID').reduce((total: number, item: Booking) => total + Number(item.priceTotal), 0); }
+  get paidTotal() {
+    return this.activeBookings.reduce(
+      (total: number, item: Booking) => total + Number(item.amountPaid ?? (item.paymentStatus === 'PAID' ? item.priceTotal : 0)),
+      0
+    );
+  }
   get pendingTotal() { return Math.max(0, this.estimatedTotal - this.paidTotal); }
 
   ngOnInit() {
-    this.ensureLoaded();
+    this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
+      next: courts => {
+        this.courtId = Number(courts?.[0]?.id ?? 0);
+        if (this.courtId) this.ensureLoaded();
+        else this.showNotice('No hay una cancha activa configurada.', true);
+      },
+      error: error => this.showNotice(error.error?.message ?? 'No se pudo cargar la cancha activa.', true)
+    });
   }
 
   ngOnDestroy() {
@@ -401,7 +443,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   loadAvailability(force = false) {
-    void this.agendaStore.ensureAvailabilityLoaded({ date: this.selectedDate, duration: this.availabilityDuration, courtId: 1 }, force);
+    if (!this.courtId) return;
+    void this.agendaStore.ensureAvailabilityLoaded({ date: this.selectedDate, duration: this.availabilityDuration, courtId: this.courtId }, force);
   }
 
   openDetail(booking: Booking) {
@@ -571,12 +614,36 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
   markPartial(booking: Booking) {
     if (!booking.id || this.paymentMutationId() !== null) return;
+    this.depositTarget = booking;
+    this.depositAmount = null;
+    this.depositMethod = 'EFECTIVO';
+    this.depositError = '';
+  }
+  closeDeposit() {
+    if (this.paymentMutationId() !== null) return;
+    this.depositTarget = null;
+    this.depositAmount = null;
+    this.depositError = '';
+  }
+  confirmPartial() {
+    const booking = this.depositTarget;
+    const amountPaid = Number(this.depositAmount);
+    if (!booking?.id || this.paymentMutationId() !== null) return;
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0 || amountPaid >= Number(booking.priceTotal)) {
+      this.depositError = 'La seña debe ser mayor a cero y menor al total del turno.';
+      return;
+    }
     this.paymentMutationId.set(booking.id);
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
-      paymentStatus: 'PARTIAL', paymentMethod: 'EFECTIVO', createCashMovement: false
+      paymentStatus: 'PARTIAL', amountPaid, paymentMethod: this.depositMethod, createCashMovement: true
     }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
-      next: () => { booking.paymentStatus = 'PARTIAL'; this.showNotice('Seña registrada correctamente.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar la seña.', true)
+      next: response => {
+        booking.paymentStatus = 'PARTIAL';
+        booking.amountPaid = Number(response.amountPaid ?? amountPaid);
+        this.closeDeposit();
+        this.showNotice('Seña registrada correctamente.');
+      },
+      error: error => { this.depositError = error.error?.message ?? 'No se pudo registrar la seña.'; }
     });
   }
   markPaid(booking: Booking) {
@@ -585,7 +652,11 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
       paymentStatus: 'PAID', paymentMethod: 'EFECTIVO', createCashMovement: true
     }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
-      next: () => { booking.paymentStatus = 'PAID'; this.showNotice('Pago registrado correctamente.'); },
+      next: response => {
+        booking.paymentStatus = 'PAID';
+        booking.amountPaid = Number(response.amountPaid ?? booking.priceTotal);
+        this.showNotice('Pago registrado correctamente.');
+      },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar el pago.', true)
     });
   }

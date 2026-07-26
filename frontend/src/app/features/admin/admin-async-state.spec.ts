@@ -20,6 +20,7 @@ describe('estados administrativos zoneless', () => {
       get: vi.fn((path: string) => {
         if (path === '/admin/dashboard') return dashboardResponse.asObservable();
         if (path === '/availability') return availabilityResponse.asObservable();
+        if (path === '/courts') return of([{ id: 1, active: true }]);
         return agendaResponse.asObservable();
       })
     };
@@ -83,7 +84,7 @@ describe('estados administrativos zoneless', () => {
       providers: [
         provideZonelessChangeDetection(),
         provideRouter([]),
-        { provide: Api, useValue: { get: vi.fn(() => of({ slots: [] })) } }
+        { provide: Api, useValue: { get: vi.fn((path: string) => path === '/courts' ? of([{ id: 1, active: true }]) : of({ slots: [] })) } }
       ]
     }).compileComponents();
 

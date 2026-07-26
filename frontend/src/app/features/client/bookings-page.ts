@@ -15,6 +15,7 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
       <span class="eyebrow">MI CUENTA</span>
       <h1>{{ history() ? 'Historial de turnos' : 'Próximos partidos' }}</h1>
       <div class="tabs"><a routerLink="/mis-turnos">Próximos</a><a routerLink="/historial">Historial</a></div>
+      @if (!history()) { <p>Podés cancelar online hasta {{ cancellationCutoffMinutes }} minutos antes del turno.</p> }
     </section>
 
     <section class="cards-list">
@@ -32,7 +33,9 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
               <p>{{ booking.playersCount }} jugadores</p>
             </div>
             <strong>{{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong>
-            @if (!history()) { <button type="button" class="btn danger" (click)="openCancelModal(booking)">Cancelar</button> }
+            @if (!history()) {
+              <button type="button" class="btn danger" [disabled]="!canCancel(booking)" [title]="canCancel(booking) ? 'Cancelar turno' : 'Fuera del plazo de cancelación online'" (click)="openCancelModal(booking)">Cancelar</button>
+            }
           </article>
         } @empty {
           <div class="empty">Todavía no hay turnos para mostrar.</div>
@@ -95,6 +98,7 @@ export class BookingsPage implements OnInit {
   readonly cancelled = signal(false);
   readonly error = signal('');
   readonly notice = signal('');
+  cancellationCutoffMinutes = 120;
 
   constructor() {
     this.router.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(event => {
@@ -102,7 +106,12 @@ export class BookingsPage implements OnInit {
     });
   }
 
-  ngOnInit() { void this.loadBookings(); }
+  ngOnInit() {
+    void this.loadBookings();
+    this.api.get<any>('/booking-policy', undefined, { noCache: true }).subscribe({
+      next: value => this.cancellationCutoffMinutes = Number(value?.cancellationCutoffMinutes ?? 120)
+    });
+  }
 
   statusLabel(status: string) {
     return ({ PENDING: 'Pendiente', CONFIRMED: 'Confirmado', CANCELLED: 'Cancelado', PLAYED: 'Completado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status;
@@ -110,7 +119,15 @@ export class BookingsPage implements OnInit {
 
   loadBookings() { return this.bookingsStore.loadBookings(); }
 
-  openCancelModal(booking: ClientBooking) { this.selectedBooking.set(booking); this.cancelled.set(false); this.error.set(''); }
+  canCancel(booking: ClientBooking) {
+    return new Date(booking.startTime).getTime() - Date.now() >= this.cancellationCutoffMinutes * 60_000;
+  }
+  openCancelModal(booking: ClientBooking) {
+    if (!this.canCancel(booking)) return;
+    this.selectedBooking.set(booking);
+    this.cancelled.set(false);
+    this.error.set('');
+  }
   closeCancelModal() { if (this.cancelling()) return; this.selectedBooking.set(null); this.cancelled.set(false); this.error.set(''); }
 
   confirmCancellation() {

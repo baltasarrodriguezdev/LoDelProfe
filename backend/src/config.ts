@@ -8,6 +8,8 @@ if (production && !process.env.FRONTEND_URL) throw new Error('FRONTEND_URL es ob
 const frontendUrls = [
   ...(process.env.FRONTEND_URL ?? 'http://localhost:4200').split(','),
   ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
+  'https://lodelprofe.com.ar',
+  'https://www.lodelprofe.com.ar',
   'https://lodelprofe.com',
   'https://www.lodelprofe.com'
 ].map(url => url.trim()).filter(Boolean);
@@ -21,6 +23,8 @@ export const config = {
   csrfCookieName: process.env.CSRF_COOKIE_NAME ?? 'padel_csrf',
   authCookieMaxAgeMs: Number(process.env.AUTH_COOKIE_MAX_AGE_MS ?? 604800000),
   frontendUrls,
+  publicAppUrl: (process.env.PUBLIC_APP_URL ?? frontendUrls[0]).replace(/\/$/, ''),
+  passwordResetTtlMinutes: Math.max(5, Math.min(60, Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 15)),
   timezone: process.env.APP_TIMEZONE ?? 'America/Argentina/Buenos_Aires',
   businessWhatsappPhone: process.env.BUSINESS_WHATSAPP_PHONE?.replace(/\D/g, ''),
   booking: {

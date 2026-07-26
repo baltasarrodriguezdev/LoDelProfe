@@ -6,6 +6,7 @@ import { createBooking } from '../services/booking.service.js';
 import { prisma } from '../prisma/client.js';
 import { HttpError } from '../utils/http-error.js';
 import { localDateTime } from '../utils/time.js';
+import { writeAudit } from '../services/audit.service.js';
 
 const r = Router();
 r.use(authenticate);
@@ -25,7 +26,7 @@ r.post('/', asyncHandler(async (req, res) => {
   if (!user) throw new HttpError(404, 'Usuario no encontrado');
   if (user.isBlocked) throw new HttpError(403, 'Tu cuenta está bloqueada. Comunicate con la cancha.');
 
-  const isVerified = user.phoneVerified === true || user.status === 'VERIFIED';
+  const isVerified = user.phoneVerified === true;
   if (!isVerified) {
     const requestedStart = localDateTime(input.date, input.startTime).toJSDate();
     const samePending = await prisma.booking.findFirst({
@@ -59,6 +60,12 @@ r.post('/', asyncHandler(async (req, res) => {
     status: isVerified ? 'CONFIRMED' : 'PENDING',
     origin: 'WEB'
   }, user.id);
+  await writeAudit({
+    actorId: user.id,
+    action: isVerified ? 'BOOKING_WEB_CREATED' : 'BOOKING_REQUESTED',
+    entityType: 'BOOKING',
+    entityId: booking.id
+  });
 
   res.status(201).json(isVerified ? booking : { reservation: booking, alreadyPending: false });
 }));
@@ -84,7 +91,14 @@ r.patch('/:id/cancel', asyncHandler(async (req, res) => {
   if (!['PENDING', 'CONFIRMED'].includes(booking.status) || booking.startTime <= new Date()) {
     throw new HttpError(409, 'Solo se pueden cancelar turnos futuros pendientes o confirmados.');
   }
-  res.json(await prisma.booking.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date() } }));
+  const settings = await prisma.venueSetting.findUnique({ where: { id: 1 } });
+  const cutoffMinutes = settings?.cancellationCutoffMinutes ?? 120;
+  if (booking.startTime.getTime() - Date.now() < cutoffMinutes * 60_000) {
+    throw new HttpError(409, `La cancelación online cierra ${cutoffMinutes} minutos antes del turno. Comunicate con la cancha.`);
+  }
+  const updated = await prisma.booking.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date() } });
+  await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CLIENT_CANCELLED', entityType: 'BOOKING', entityId: id });
+  res.json(updated);
 }));
 
 export default r;

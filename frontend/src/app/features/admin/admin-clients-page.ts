@@ -41,8 +41,10 @@ type Client = {
         <small class="admin-nav-label advanced">CONFIGURACIÓN</small>
         <a routerLink="/admin/precios">Precios</a>
         <a routerLink="/admin/horarios">Horarios</a>
+        <a routerLink="/admin/politicas">Políticas</a>
         <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
         <a routerLink="/admin/clientes" class="active">Clientes</a>
+        <a routerLink="/admin/seguridad">Seguridad y accesos</a>
         <a routerLink="/admin/caja">Caja</a>
         <a routerLink="/admin/estadisticas">Estadísticas</a>
       </aside>
@@ -72,7 +74,7 @@ type Client = {
 
         @if (showForm) {
           <form class="panel client-form" (ngSubmit)="saveForm()">
-            <div class="form-section-title"><span>{{ editingClient ? '02' : '01' }}</span><div><h2>{{ editingClient ? 'Editar cliente' : 'Agregar cliente confirmado' }}</h2><p>{{ editingClient ? 'Actualizá el nombre visible del cliente.' : 'El cliente queda verificado y listo para reservar online.' }}</p></div></div>
+            <div class="form-section-title"><span>{{ editingClient ? '02' : '01' }}</span><div><h2>{{ editingClient ? 'Editar cliente' : 'Agregar cliente' }}</h2><p>{{ editingClient ? 'Actualizá el nombre visible del cliente.' : 'La cuenta quedará pendiente hasta comprobar el teléfono desde Seguridad.' }}</p></div></div>
             <div class="form-grid clients-form-grid">
               <label>Nombre<input name="firstName" required minlength="2" [(ngModel)]="form.firstName"></label>
               <label>Apellido<input name="lastName" required minlength="2" [(ngModel)]="form.lastName"></label>
@@ -105,14 +107,15 @@ type Client = {
                 </div>
                 <div class="client-actions">
                   @if (!client.phoneVerified && client.active && !client.isBlocked) {
-                    <button type="button" class="small-action" (click)="verifyClient(client)">Verificar</button>
+                    <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                     <button type="button" class="small-action danger-action" (click)="askCancelPending(client)">Cancelar registro</button>
                   } @else {
                     <button type="button" class="small-action" (click)="openEdit(client)">Editar</button>
                     @if (client.active && !client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, true)">Bloquear</button> }
                     @if (client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, false)">Desbloquear</button> }
-                    @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Eliminar cliente</button> }
+                    @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Desactivar cliente</button> }
                     @if (!client.active) { <button type="button" class="small-action pay-action" (click)="setActive(client, true)">Reactivar</button> }
+                    @if (!client.active) { <button type="button" class="small-action danger-action" (click)="askReleasePhone(client)">Liberar número</button> }
                   }
                 </div>
               </article>
@@ -178,7 +181,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   editingClient: Client | null = null;
   form: any = { firstName: '', lastName: '', phone: '', password: '' };
   formError = '';
-  confirmDialog: { type: 'cancelPending' | 'deactivate'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
+  confirmDialog: { type: 'cancelPending' | 'deactivate' | 'releasePhone'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
   readonly confirmLoading = signal(false);
   confirmError = '';
   private clientsRequestId = 0;
@@ -361,11 +364,24 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     this.confirmDialog = {
       type: 'deactivate',
       target: client,
-      title: 'Eliminar cliente',
+      title: 'Desactivar cliente',
       message: `¿Querés desactivar a ${client.firstName} ${client.lastName}?`,
       secondaryMessage: 'No se borra su historial ni sus turnos. La cuenta no podrá iniciar sesión hasta reactivarla.',
       confirmText: 'Sí, desactivar',
       loadingText: 'Desactivando...'
+    };
+    this.confirmError = '';
+  }
+
+  askReleasePhone(client: Client) {
+    this.confirmDialog = {
+      type: 'releasePhone',
+      target: client,
+      title: 'Liberar número',
+      message: `¿Querés cerrar la cuenta de ${client.firstName} ${client.lastName} y liberar su número?`,
+      secondaryMessage: 'La cuenta será anonimizada, conservará su historial y no podrá reactivarse. Después se podrá registrar una cuenta nueva con ese número.',
+      confirmText: 'Sí, liberar número',
+      loadingText: 'Liberando...'
     };
     this.confirmError = '';
   }
@@ -379,6 +395,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   confirmDialogConfirmed() {
     if (!this.confirmDialog || this.confirmLoading()) return;
     if (this.confirmDialog.type === 'cancelPending') this.confirmCancelPending(this.confirmDialog.target);
+    else if (this.confirmDialog.type === 'releasePhone') this.confirmReleasePhone(this.confirmDialog.target);
     else this.confirmDeactivate(this.confirmDialog.target);
   }
 
@@ -391,9 +408,9 @@ export class AdminClientsPage implements OnInit, OnDestroy {
       next: () => {
         this.clients = this.clients.filter(item => item.id !== client.id);
         this.confirmDialog = null;
-        this.showNotice('Usuario pendiente cancelado. El n?mero ya est? disponible.');
+        this.showNotice('Usuario pendiente cancelado. El número ya está disponible.');
       },
-      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intent? nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intentá nuevamente.'; }
     });
   }
 
@@ -408,7 +425,22 @@ export class AdminClientsPage implements OnInit, OnDestroy {
         this.confirmDialog = null;
         this.showNotice('Cliente desactivado. Conservamos su historial.');
       },
-      error: () => { this.confirmError = 'No pudimos actualizar el cliente. Intent? nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos actualizar el cliente. Intentá nuevamente.'; }
+    });
+  }
+
+  private confirmReleasePhone(client: Client) {
+    this.confirmLoading.set(true);
+    this.confirmError = '';
+    this.api.post<any>(`/admin/users/${client.id}/release-phone`, { confirmation: 'LIBERAR' }).pipe(
+      finalize(() => this.confirmLoading.set(false))
+    ).subscribe({
+      next: () => {
+        this.clients = this.clients.filter(item => item.id !== client.id);
+        this.confirmDialog = null;
+        this.showNotice('Cuenta cerrada. El número ya está disponible para un registro nuevo.');
+      },
+      error: error => { this.confirmError = error.error?.message ?? 'No pudimos liberar el número.'; }
     });
   }
 

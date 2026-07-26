@@ -74,6 +74,8 @@ export class AdminAgendaStore {
       return;
     }
     const requestId = ++this.bookingsRequestId;
+    const requestUserId = this.auth.user()?.id ?? null;
+    const requestSessionRevision = this.auth.sessionRevision();
     this.agendaAbort?.abort();
     const abortController = new AbortController();
     this.agendaAbort = abortController;
@@ -85,11 +87,15 @@ export class AdminAgendaStore {
     try {
       const response = await firstValueFrom(this.api.get<unknown>('/admin/bookings', { from: from.toISOString(), to: to.toISOString() }, { noCache: true, abortSignal: abortController.signal }));
       if (requestId !== this.bookingsRequestId) return;
+      if (!this.sameSession(requestUserId, requestSessionRevision)) {
+        this.agendaStatus.set('idle');
+        return;
+      }
       const normalizedBookings = this.normalizeBookings(response);
       this.bookings.set(normalizedBookings);
       this.loadedAgendaKey = { ...key };
-      this.loadedUserId = this.auth.user()?.id ?? null;
-      this.loadedSessionRevision = this.auth.sessionRevision();
+      this.loadedUserId = requestUserId;
+      this.loadedSessionRevision = requestSessionRevision;
       this.agendaStatus.set('success');
     } catch (error) {
       if (requestId !== this.bookingsRequestId) return;
@@ -120,6 +126,8 @@ export class AdminAgendaStore {
       return;
     }
     const requestId = ++this.availabilityRequestId;
+    const requestUserId = this.auth.user()?.id ?? null;
+    const requestSessionRevision = this.auth.sessionRevision();
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
@@ -128,11 +136,15 @@ export class AdminAgendaStore {
     try {
       const response = await firstValueFrom(this.api.get<unknown>('/availability', { date: key.date, duration: key.duration, courtId: key.courtId }, { noCache: true, abortSignal: abortController.signal }));
       if (requestId !== this.availabilityRequestId) return;
+      if (!this.sameSession(requestUserId, requestSessionRevision)) {
+        this.availabilityStatus.set('idle');
+        return;
+      }
       const normalizedSlots = this.normalizeSlots(response);
       this.availability.set(Array.isArray(response) ? { slots: normalizedSlots } : { ...(response as any), slots: normalizedSlots });
       this.loadedAvailabilityKey = { ...key };
-      this.loadedUserId = this.auth.user()?.id ?? null;
-      this.loadedSessionRevision = this.auth.sessionRevision();
+      this.loadedUserId = requestUserId;
+      this.loadedSessionRevision = requestSessionRevision;
       this.availabilityStatus.set('success');
     } catch (error) {
       if (requestId !== this.availabilityRequestId) return;
@@ -146,8 +158,18 @@ export class AdminAgendaStore {
   }
 
   invalidate() {
+    ++this.bookingsRequestId;
+    ++this.availabilityRequestId;
+    this.agendaAbort?.abort();
+    this.availabilityAbort?.abort();
+    this.agendaAbort = null;
+    this.availabilityAbort = null;
+    this.agendaInFlight = null;
+    this.availabilityInFlight = null;
     this.loadedAgendaKey = null;
     this.loadedAvailabilityKey = null;
+    if (this.agendaStatus() === 'loading') this.agendaStatus.set('idle');
+    if (this.availabilityStatus() === 'loading') this.availabilityStatus.set('idle');
   }
 
   clear() {
@@ -219,6 +241,11 @@ export class AdminAgendaStore {
       (this.loadedUserId !== null && this.loadedUserId !== userId)
       || (this.loadedSessionRevision !== null && this.loadedSessionRevision !== sessionRevision)
     ) this.clear();
+  }
+
+  private sameSession(userId: number | null, sessionRevision: number) {
+    return (this.auth.user()?.id ?? null) === userId
+      && this.auth.sessionRevision() === sessionRevision;
   }
 
   private errorMessage(error: unknown, fallback: string) {

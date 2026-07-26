@@ -47,6 +47,7 @@ import { Auth } from '../../core/api';
           <label>Contraseña<input required minlength="8" type="password" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
           @if (error) { <p class="error">{{ error }}</p> }
           <button type="submit" class="btn primary full" [disabled]="loading()">{{ loading() ? 'Procesando...' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</button>
+          @if (!registerMode) { <p class="switch"><a routerLink="/recuperar-contrasena">Olvidé mi contraseña</a></p> }
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -84,7 +85,11 @@ export class AuthPage {
         this.loading.set(false);
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         if (this.registerMode) sessionStorage.setItem('accountCreatedNotice', '1');
-        this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
+        if (this.registerMode) {
+          this.router.navigate(['/validar-telefono'], { queryParams: requestedUrl ? { returnUrl: requestedUrl } : undefined });
+        } else {
+          this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
+        }
       },
       error: response => {
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;

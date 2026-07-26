@@ -246,6 +246,7 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   courtBackground = 'assets/logos/foto-padel-hero.jpg';
   defaultLogo = 'assets/logos/lo-del-profe-stacked.png';
   slots: AvailabilitySlot[] = [];
+  courtId = 0;
   assets: StoryAsset[] = [];
   readonly availabilityStatus = signal<AsyncStatus>('idle');
   readonly downloading = signal(false);
@@ -269,7 +270,20 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     this.loadAssets();
-    this.loadAvailability();
+    this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
+      next: courts => {
+        this.courtId = Number(courts?.[0]?.id ?? 0);
+        if (this.courtId) this.loadAvailability();
+        else {
+          this.notice = 'No hay una cancha activa configurada.';
+          this.noticeError = true;
+        }
+      },
+      error: error => {
+        this.notice = error.error?.message ?? 'No se pudo cargar la cancha activa.';
+        this.noticeError = true;
+      }
+    });
   }
 
   ngAfterViewInit() { this.drawSoon(); }
@@ -299,13 +313,14 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   loadAvailability() {
+    if (!this.courtId) return;
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
     this.availabilityStatus.set('loading');
     this.notice = '';
-    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
+    this.api.get<unknown>('/availability', { date: this.date, duration: this.duration, courtId: this.courtId }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => {
         if (requestId === this.availabilityRequestId && this.availabilityStatus() === 'loading') {
           this.availabilityStatus.set('error');

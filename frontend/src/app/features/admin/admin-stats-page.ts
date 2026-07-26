@@ -26,7 +26,7 @@ interface DashboardData {
       </header>
 
       <nav class="admin-shortcuts">
-        <a routerLink="/admin/agenda-diaria">Agenda</a><a routerLink="/admin/turnos-fijos">Turnos fijos</a><a routerLink="/admin/clientes">Clientes</a><a routerLink="/admin/precios">Precios</a><a routerLink="/admin/horarios">Horarios</a><a routerLink="/admin/caja">Caja</a>
+        <a routerLink="/admin/agenda-diaria">Agenda</a><a routerLink="/admin/turnos-fijos">Turnos fijos</a><a routerLink="/admin/clientes">Clientes</a><a routerLink="/admin/precios">Precios</a><a routerLink="/admin/horarios">Horarios</a><a routerLink="/admin/politicas">Políticas</a><a routerLink="/admin/caja">Caja</a>
       </nav>
 
       <section class="period-panel">
@@ -84,7 +84,10 @@ export class AdminStatsPage implements OnInit, OnDestroy {
   readonly dashboardStatus = signal<AsyncStatus>('idle');
   readonly availabilityStatus = signal<AsyncStatus>('idle');
   readonly agendaStatus = signal<AsyncStatus>('idle');
-  error = ''; period = 'today';
+  dashboardError = '';
+  availabilityError = '';
+  agendaError = '';
+  period = 'today';
   private dashboardRequestId = 0;
   private availabilityRequestId = 0;
   private agendaRequestId = 0;
@@ -93,10 +96,21 @@ export class AdminStatsPage implements OnInit, OnDestroy {
   private availabilityAbort: AbortController | null = null;
   private agendaAbort: AbortController | null = null;
   from = this.dateInput(new Date()); to = this.dateInput(new Date());
-  availabilityDate = this.dateInput(new Date()); availabilityDuration = 90;
+  availabilityDate = this.dateInput(new Date()); availabilityDuration = 90; courtId = 0;
 
-  ngOnInit() { this.loadDashboard(); this.loadAvailability(); }
+  ngOnInit() {
+    this.loadDashboard();
+    this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
+      next: courts => {
+        this.courtId = Number(courts?.[0]?.id ?? 0);
+        if (this.courtId) this.loadAvailability();
+        else this.availabilityError = 'No hay una cancha activa configurada.';
+      },
+      error: error => this.availabilityError = error.error?.message ?? 'No se pudo cargar la cancha activa.'
+    });
+  }
   ngOnDestroy() { this.dashboardAbort?.abort(); this.availabilityAbort?.abort(); this.agendaAbort?.abort(); }
+  get error() { return this.dashboardError || this.availabilityError || this.agendaError; }
   setPeriod(period: string) { this.period = period; const today = new Date(); const start = new Date(today); if (period === '7') start.setDate(start.getDate() - 6); if (period === '30') start.setDate(start.getDate() - 29); this.from = this.dateInput(start); this.to = this.dateInput(today); this.loadDashboard(); }
   loadDashboard() {
     const requestId = ++this.dashboardRequestId;
@@ -104,23 +118,25 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     const abortController = new AbortController();
     this.dashboardAbort = abortController;
     this.dashboardStatus.set('loading');
-    this.error = '';
+    this.dashboardError = '';
     this.api.get<DashboardData>('/admin/dashboard', { from: this.from, to: this.to }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => { if (requestId === this.dashboardRequestId && this.dashboardStatus() === 'loading') this.dashboardStatus.set('error'); if (requestId === this.dashboardRequestId) this.dashboardAbort = null; })
     ).subscribe({
       next: data => { if (requestId === this.dashboardRequestId) { this.dashboard = data; this.dashboardStatus.set('success'); } },
-      error: error => { if (requestId === this.dashboardRequestId) { this.error = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.dashboardStatus.set('error'); } }
+      error: error => { if (requestId === this.dashboardRequestId) { this.dashboardError = error.error?.message ?? 'No se pudieron cargar las estadísticas.'; this.dashboardStatus.set('error'); } }
     });
   }
   readonly loading = computed(() => [this.dashboardStatus(), this.availabilityStatus(), this.agendaStatus()].includes('loading'));
   loadAvailability() {
-    if (this.requestedAgendaDate !== this.availabilityDate) this.loadTodayAgenda();
+    if (!this.courtId) return;
+    if (this.requestedAgendaDate !== this.availabilityDate || ['idle', 'error'].includes(this.agendaStatus())) this.loadTodayAgenda();
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
     this.availabilityStatus.set('loading');
-    this.api.get<unknown>('/availability', { date: this.availabilityDate, duration: this.availabilityDuration, courtId: 1 }, { noCache: true, abortSignal: abortController.signal }).pipe(
+    this.availabilityError = '';
+    this.api.get<unknown>('/availability', { date: this.availabilityDate, duration: this.availabilityDuration, courtId: this.courtId }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => { if (requestId === this.availabilityRequestId && this.availabilityStatus() === 'loading') this.availabilityStatus.set('error'); if (requestId === this.availabilityRequestId) this.availabilityAbort = null; })
     ).subscribe({
       next: response => {
@@ -130,7 +146,7 @@ export class AdminStatsPage implements OnInit, OnDestroy {
         this.availability = { ...(Array.isArray(response) ? {} : value), slots: Array.isArray(slots) ? slots : [] };
         this.availabilityStatus.set('success');
       },
-      error: error => { if (requestId === this.availabilityRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la disponibilidad.'; this.availabilityStatus.set('error'); } }
+      error: error => { if (requestId === this.availabilityRequestId) { this.availabilityError = error.error?.message ?? 'No se pudo cargar la disponibilidad.'; this.availabilityStatus.set('error'); } }
     });
   }
   loadTodayAgenda() {
@@ -143,6 +159,7 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     this.agendaStatus.set('loading');
+    this.agendaError = '';
     this.api.get<unknown>('/admin/bookings', { from: start.toISOString(), to: end.toISOString() }, { noCache: true, abortSignal: abortController.signal }).pipe(
       finalize(() => { if (requestId === this.agendaRequestId && this.agendaStatus() === 'loading') this.agendaStatus.set('error'); if (requestId === this.agendaRequestId) this.agendaAbort = null; })
     ).subscribe({
@@ -153,7 +170,7 @@ export class AdminStatsPage implements OnInit, OnDestroy {
         this.todayBookings = (Array.isArray(bookings) ? bookings : []).filter(item => item.status !== 'CANCELLED').slice(0, 8);
         this.agendaStatus.set('success');
       },
-      error: error => { if (requestId === this.agendaRequestId) { this.error = error.error?.message ?? 'No se pudo cargar la agenda.'; this.agendaStatus.set('error'); } }
+      error: error => { if (requestId === this.agendaRequestId) { this.agendaError = error.error?.message ?? 'No se pudo cargar la agenda.'; this.agendaStatus.set('error'); } }
     });
   }
   openManualBooking(slot: any) { if (!slot.available && slot.reason !== 'DEAD_GAP') return; this.router.navigate(['/admin/turno'], { queryParams: { date: this.availabilityDate, startTime: slot.startTime, durationMinutes: this.availabilityDuration } }); }

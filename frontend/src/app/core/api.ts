@@ -76,6 +76,7 @@ export class Auth {
   readonly sessionStatus = signal<AsyncStatus>('idle');
   private refreshInFlight: Promise<void> | null = null;
   private sessionInitialized = false;
+  private authStateVersion = 0;
 
   login(body: unknown) {
     return this.api.post<any>('/auth/login', body).pipe(tap(x => this.save(x)));
@@ -86,6 +87,7 @@ export class Auth {
   }
 
   save(x: any) {
+    ++this.authStateVersion;
     this.setUser(x.user);
     this.sessionInitialized = true;
     this.sessionStatus.set('success');
@@ -101,22 +103,30 @@ export class Auth {
       return Promise.resolve();
     }
     this.sessionStatus.set('loading');
+    const authStateVersion = this.authStateVersion;
+    let sessionResolved = false;
     this.refreshInFlight = (async () => {
       try {
         const user = await firstValueFrom(this.api.get<any>('/auth/me', undefined, { noCache: true }));
+        if (authStateVersion !== this.authStateVersion) return;
         this.setUser(user);
         this.sessionStatus.set('success');
+        sessionResolved = true;
       } catch (error) {
+        if (authStateVersion !== this.authStateVersion) return;
         const status = (error as HttpErrorResponse)?.status;
         if ([401, 403].includes(status)) {
           if (this.user() === previous) this.clearUser();
           this.sessionStatus.set('success');
+          sessionResolved = true;
         } else {
           console.error('[auth] refresh session error', error);
           this.sessionStatus.set('error');
         }
       } finally {
-        this.sessionInitialized = true;
+        if (authStateVersion === this.authStateVersion) {
+          this.sessionInitialized = sessionResolved;
+        }
         this.refreshInFlight = null;
       }
     })();
@@ -124,6 +134,7 @@ export class Auth {
   }
 
   logout() {
+    ++this.authStateVersion;
     this.api.post('/auth/logout', {}).subscribe({
       next: () => this.finishLogout(),
       error: () => this.finishLogout()
@@ -146,6 +157,8 @@ export class Auth {
 
   private finishLogout() {
     this.clearUser();
+    this.sessionInitialized = true;
+    this.sessionStatus.set('success');
     this.router.navigateByUrl('/');
   }
 
@@ -167,7 +180,7 @@ export const authGuard = async (_: unknown, state: RouterStateSnapshot) => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.user()
+  return auth.sessionStatus() === 'success' && auth.user()
     ? true
     : router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
 };
@@ -176,12 +189,12 @@ export const adminGuard = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.isAdmin() ? true : router.createUrlTree(['/']);
+  return auth.sessionStatus() === 'success' && auth.isAdmin() ? true : router.createUrlTree(['/']);
 };
 
 export const superAdminGuard = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.user()?.role === 'SUPERADMIN' ? true : router.createUrlTree(['/admin']);
+  return auth.sessionStatus() === 'success' && auth.user()?.role === 'SUPERADMIN' ? true : router.createUrlTree(['/admin']);
 };
