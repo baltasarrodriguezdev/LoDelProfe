@@ -181,48 +181,6 @@ const BOOKING_SITE = 'lodelprofe.com';
       </div>
     </section>
   `,
-  styles: [`
-    @font-face{font-family:'Story Round';src:url('/assets/fonts/Null_Free.otf') format('opentype');font-weight:700;font-style:normal;font-display:swap}
-    @font-face{font-family:'Realistic Nature';src:url('/assets/fonts/Realistic-Nature.otf') format('opentype');font-weight:400;font-style:normal;font-display:swap}
-    .stories-shell{background:#eef1e8}
-    .stories-content{display:grid;gap:18px}
-    .stories-header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:1px solid rgba(34,53,38,.16)}
-    .stories-header h1{margin:6px 0;font-size:3.2rem;line-height:1;color:var(--color-green-dark)}
-    .stories-header p{max-width:620px;margin:0;color:#657064}
-    .stories-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
-    .booking-destination{display:grid;gap:1px;min-width:176px;padding:9px 12px;border-left:3px solid #a9bd31;background:#fffdf5;color:#223526}
-    .booking-destination small{font-size:.62rem;font-weight:800}.booking-destination b{font-family:var(--font-display);font-size:1.05rem}
-    .story-workbench{display:grid;grid-template-columns:minmax(320px,400px) minmax(380px,1fr);gap:24px;align-items:start}
-    .story-controls{display:grid;gap:0;padding:0;position:sticky;top:92px;overflow:hidden;border-radius:8px;background:#fffdf5}
-    .control-section{display:grid;gap:12px;padding:18px 20px;border-bottom:1px solid rgba(34,53,38,.12)}
-    .control-section:last-child{border-bottom:0}
-    .control-kicker{font-family:var(--font-display);font-size:.7rem;font-weight:700;color:#73832a}
-    .control-grid,.color-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .story-controls label{display:grid;gap:7px;font-size:.7rem;font-weight:800;text-transform:uppercase;color:#5c695b}
-    .story-controls input,.story-controls select{width:100%}
-    .story-controls small{font-size:.68rem;line-height:1.45;text-transform:none;color:#7a847a}
-    .template-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
-    .template-picker button{display:grid;align-content:start;gap:4px;min-height:92px;text-align:left;padding:11px;border:1px solid rgba(34,53,38,.18);border-radius:6px;background:#f7f6ef;color:var(--color-green-dark);cursor:pointer}
-    .template-picker button.active{background:var(--color-green-dark);border-color:var(--color-green-dark);color:var(--color-white-soft);box-shadow:inset 0 -4px #a9bd31}
-    .template-picker b{font-size:.92rem;line-height:1.1}.template-picker span{font-size:.64rem;line-height:1.35;color:inherit;opacity:.72}
-    .color-grid{grid-template-columns:repeat(3,1fr)}
-    .color-grid input{height:40px;padding:3px}
-    .asset-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-    .asset-gallery button{display:grid;gap:7px;padding:7px;border:1px solid rgba(34,53,38,.16);border-radius:6px;background:#f7f6ef;text-align:left;cursor:pointer}
-    .asset-gallery button.active{border-color:var(--color-green-main);box-shadow:0 0 0 2px rgba(83,111,67,.18)}
-    .asset-gallery img{width:100%;aspect-ratio:9/12;object-fit:cover;border-radius:4px;background:#d9dfd2}
-    .asset-gallery span{font-size:.68rem;color:#657064;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .story-preview-panel{display:grid;gap:14px;min-width:0;padding:20px;border-radius:8px;background:#dfe5da}
-    .preview-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid rgba(34,53,38,.14)}
-    .preview-toolbar h2{margin:4px 0 0;font-size:1.5rem;color:var(--color-green-dark)}
-    .preview-toolbar>span{font-size:.74rem;font-weight:800;text-transform:uppercase;color:#667064}
-    .phone-frame{width:min(100%,430px);margin:auto;padding:10px;border-radius:8px;background:#17251b;box-shadow:0 24px 50px rgba(20,40,27,.18)}
-    canvas{display:block;width:100%;height:auto;border-radius:4px;background:#203a29}
-    .slot-strip{width:min(100%,520px);margin:auto;display:flex;justify-content:center;gap:7px;flex-wrap:wrap;color:#687363}
-    .slot-strip b,.slot-strip span{display:inline-flex;align-items:center;min-height:30px;padding:5px 9px;border-radius:4px;background:#fffdf5;border:1px solid rgba(34,53,38,.12);font-family:var(--font-display);font-size:.78rem;color:var(--color-green-dark)}
-    @media(max-width:1120px){.story-workbench{grid-template-columns:1fr}.story-controls{position:static}.phone-frame{width:min(100%,390px)}}
-    @media(max-width:700px){.stories-header{display:grid}.stories-header-actions{justify-content:flex-start}.stories-header h1{font-size:2.45rem}.story-controls{padding:0}.template-picker{grid-template-columns:1fr}.control-grid,.asset-gallery{grid-template-columns:1fr}.color-grid{grid-template-columns:repeat(3,1fr)}.preview-toolbar{display:grid}.story-preview-panel{padding:14px}.phone-frame{padding:7px}}
-  `]
 })
 export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   private api = inject(Api);

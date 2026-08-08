@@ -21,18 +21,19 @@ type AvailabilitySlot = {
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <section class="admin-form-page">
-      <a class="back-link" routerLink="/admin">← Volver al panel</a>
-      <div class="admin-form-heading">
-        <span class="eyebrow">AGENDA</span>
-        <h1>{{ bookingId ? 'Editar turno.' : mode === 'BLOCK' ? 'Bloquear horario.' : 'Nuevo turno.' }}</h1>
-        <p>{{ bookingId ? 'Actualizá los datos del turno y guardá los cambios.' : mode === 'BLOCK' ? 'Reservá un bloque para mantenimiento, cierre o evento privado.' : 'Cargá una reserva web, de WhatsApp o tomada manualmente.' }}</p>
-      </div>
+      <div class="admin-form-container">
+        <a class="back-link" routerLink="/admin">← Volver al panel</a>
+        <div class="admin-form-heading">
+          <span class="eyebrow">AGENDA</span>
+          <h1>{{ bookingId ? 'Editar turno.' : mode === 'BLOCK' ? 'Bloquear horario.' : 'Nuevo turno.' }}</h1>
+          <p>{{ bookingId ? 'Actualizá los datos del turno y guardá los cambios.' : mode === 'BLOCK' ? 'Reservá un bloque para mantenimiento, cierre o evento privado.' : 'Cargá una reserva web, de WhatsApp o tomada manualmente.' }}</p>
+        </div>
 
       @if (!created) {
         @if (!bookingId) {
-          <div class="booking-mode-switch" role="group" aria-label="Tipo de carga">
-            <button type="button" [class.active]="mode === 'BOOKING'" (click)="setMode('BOOKING')">Crear turno</button>
-            <button type="button" [class.active]="mode === 'BLOCK'" (click)="setMode('BLOCK')">Bloquear horario</button>
+          <div class="booking-mode-switch page-mode-switch" role="group" aria-label="Tipo de carga">
+            <button type="button" [class.active]="mode === 'BOOKING'" [attr.aria-pressed]="mode === 'BOOKING'" (click)="setMode('BOOKING')">Crear turno</button>
+            <button type="button" [class.active]="mode === 'BLOCK'" [attr.aria-pressed]="mode === 'BLOCK'" (click)="setMode('BLOCK')">Bloquear horario</button>
           </div>
         }
 
@@ -40,15 +41,15 @@ type AvailabilitySlot = {
           @if (mode === 'BOOKING') {
             <div class="form-section-title"><span>01</span><div><h2>Cliente</h2><p>Datos básicos para identificar y contactar a la persona.</p></div></div>
             <div class="booking-mode-switch client-mode-switch" role="group" aria-label="Tipo de cliente">
-              <button type="button" [class.active]="form.clientMode === 'EXISTING'" (click)="setClientMode('EXISTING')">Cliente existente</button>
-              <button type="button" [class.active]="form.clientMode === 'MANUAL'" (click)="setClientMode('MANUAL')">Carga manual</button>
+              <button type="button" [class.active]="form.clientMode === 'EXISTING'" [attr.aria-pressed]="form.clientMode === 'EXISTING'" (click)="setClientMode('EXISTING')">Cliente existente</button>
+              <button type="button" [class.active]="form.clientMode === 'MANUAL'" [attr.aria-pressed]="form.clientMode === 'MANUAL'" (click)="setClientMode('MANUAL')">Carga manual</button>
             </div>
             @if (form.clientMode === 'EXISTING') {
               <div class="client-picker-field">
-                <label>Buscar cliente<input type="search" placeholder="Nombre, apellido o telefono" [(ngModel)]="clientSearch" name="clientSearch"></label>
+                <label>Buscar cliente<input type="search" autocomplete="off" placeholder="Nombre, apellido o teléfono…" [(ngModel)]="clientSearch" name="clientSearch"></label>
                 <div class="client-picker-list">
                   @for (client of filteredClients; track client.id) {
-                    <button type="button" [class.selected]="form.userId === client.id" (click)="selectClient(client)">
+                    <button type="button" [class.selected]="form.userId === client.id" [attr.aria-pressed]="form.userId === client.id" (click)="selectClient(client)">
                       <b>{{ client.firstName }} {{ client.lastName }}</b><span>{{ client.phone }}</span>
                     </button>
                   } @empty {
@@ -67,15 +68,15 @@ type AvailabilitySlot = {
 
           <div class="form-section-title"><span>{{ mode === 'BOOKING' ? '02' : '01' }}</span><div><h2>{{ mode === 'BLOCK' ? 'Bloqueo' : 'Turno' }}</h2><p>La disponibilidad se valida nuevamente antes de guardar.</p></div></div>
           <div class="form-grid three">
-            <label>Fecha<input required type="date" [(ngModel)]="form.date" name="date" (ngModelChange)="onScheduleChange()"></label>
-            <label class="slot-field">Hora de inicio
+            <label class="schedule-field">Fecha<input required type="date" [(ngModel)]="form.date" name="date" (ngModelChange)="onScheduleChange()"></label>
+            <label class="schedule-field slot-field">Hora de inicio
               <select required [(ngModel)]="form.startTime" name="startTime" [disabled]="availabilityStatus() === 'loading' || selectableSlots.length === 0">
                 @for (slot of selectableSlots; track slot.startTime) {
                   <option [value]="slot.startTime">{{ slot.startTime }} — {{ slot.endTime }}</option>
                 }
               </select>
               @if (availabilityStatus() === 'loading') {
-                <small>Buscando horarios disponibles...</small>
+                <small>Buscando horarios disponibles…</small>
               } @else if (availabilityStatus() === 'error') {
                 <small class="slot-error">{{ availabilityError }}</small>
               } @else if (selectableSlots.length === 0) {
@@ -84,19 +85,19 @@ type AvailabilitySlot = {
                 <small>{{ selectableSlots.length }} {{ selectableSlots.length === 1 ? 'horario disponible' : 'horarios disponibles' }}</small>
               }
             </label>
-            <label>Duración<select [(ngModel)]="form.durationMinutes" name="durationMinutes" (ngModelChange)="onDurationChange()"><option [ngValue]="60">60 minutos</option><option [ngValue]="90">90 minutos</option><option [ngValue]="120">120 minutos</option></select></label>
+            <label class="schedule-field">Duración<select [(ngModel)]="form.durationMinutes" name="durationMinutes" (ngModelChange)="onDurationChange()"><option [ngValue]="60">60 minutos</option><option [ngValue]="90">90 minutos</option><option [ngValue]="120">120 minutos</option></select></label>
             @if (mode === 'BOOKING') {
-              <label>Precio<input required type="number" min="1" [(ngModel)]="form.priceTotal" name="priceTotal"></label>
-              <label>Jugadores<input required type="number" min="1" max="12" [(ngModel)]="form.playersCount" name="playersCount"></label>
+              <label class="financial-field">Precio<input required type="number" min="1" [(ngModel)]="form.priceTotal" name="priceTotal"></label>
+              <label class="financial-field">Jugadores<input required type="number" min="1" max="12" [(ngModel)]="form.playersCount" name="playersCount"></label>
             }
-            <label class="wide">Observación <small>(opcional)</small><textarea maxlength="1000" [(ngModel)]="form.notes" name="notes" [placeholder]="mode === 'BLOCK' ? 'Ej. mantenimiento de la cancha' : 'Información útil para el turno'"></textarea></label>
+            <label class="wide notes-field">Observación <small>(opcional)</small><textarea maxlength="1000" [(ngModel)]="form.notes" name="notes" [placeholder]="mode === 'BLOCK' ? 'Ej. mantenimiento de la cancha…' : 'Información útil para el turno…'"></textarea></label>
           </div>
 
           @if (mode === 'BOOKING') {
             <div class="manual-total"><span>Precio del turno</span><strong>{{ form.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></div>
           }
           @if (error) { <p class="notice error-notice">{{ error }}</p> }
-          <button class="btn primary full" [disabled]="saving() || availabilityStatus() === 'loading' || selectableSlots.length === 0">{{ saving() ? 'Guardando...' : bookingId ? 'Guardar cambios' : mode === 'BLOCK' ? 'Bloquear horario' : 'Guardar turno' }}</button>
+          <button type="submit" class="btn primary full" [disabled]="saving() || availabilityStatus() === 'loading' || selectableSlots.length === 0">{{ saving() ? 'Guardando…' : bookingId ? 'Guardar cambios' : mode === 'BLOCK' ? 'Bloquear horario' : 'Guardar turno' }}</button>
         </form>
       } @else {
         <div class="panel manual-success">
@@ -107,20 +108,9 @@ type AvailabilitySlot = {
           <div class="actions"><a class="btn primary" routerLink="/admin">Volver al panel</a><button class="btn ghost" (click)="reset()">Crear otro</button></div>
         </div>
       }
+      </div>
     </section>
   `,
-  styles: [`
-    .client-mode-switch{margin:12px 0 16px;max-width:430px}
-    .client-picker-field{display:grid;gap:10px;margin:0 0 18px}
-    .client-picker-field label{display:grid;gap:7px;font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)}
-    .client-picker-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
-    .client-picker-list button{min-height:54px;padding:10px 12px;border:1px solid rgba(34,53,38,.14);border-radius:9px;background:#fffdf5;color:var(--color-green-dark);display:grid;gap:3px;text-align:left;cursor:pointer}
-    .client-picker-list button.selected{border-color:var(--color-green-main);background:#edf2e7;box-shadow:0 0 0 2px rgba(83,111,67,.14)}
-    .client-picker-list b{font-family:var(--font-display);font-size:.96rem;font-weight:600}
-    .client-picker-list span,.client-picker-list p{margin:0;color:#6f7a70;font-size:.75rem}
-    .slot-field small{min-height:1.1em;color:#6f7a70;font-size:.7rem;font-weight:600;line-height:1.35;text-transform:none}
-    .slot-field .slot-error{color:var(--danger)}
-  `]
 })
 export class AdminBookingFormPage implements OnInit, OnDestroy {
   private api = inject(Api);

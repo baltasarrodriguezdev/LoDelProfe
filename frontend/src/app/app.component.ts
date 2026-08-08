@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { Auth } from './core/api';
+import { APP_TAILWIND_CLASSES, APP_TAILWIND_FEATURE_CLASSES, APP_TAILWIND_PUBLIC_CLASSES } from './shared/tailwind-classes';
 import { VENUE } from './shared/venue';
 
 @Component({
@@ -8,9 +9,12 @@ import { VENUE } from './shared/venue';
   standalone: true,
   imports: [RouterOutlet, RouterLink],
   template: `
+    <div [attr.class]="tailwindClasses">
+    <div [attr.class]="tailwindPublicClasses">
+    <div [attr.class]="tailwindFeatureClasses">
     @if (!isAuthPage()) {
-      <header class="site-header">
-        <div class="site-header__inner">
+      <header class="site-header" [class.home-header]="isHomePage()">
+        <div class="site-header-inner">
           <a class="brand brand-logo" routerLink="/" aria-label="Lo del Profe, inicio"><img src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe"></a>
           <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'" aria-controls="primary-navigation" (click)="mobileMenuOpen = !mobileMenuOpen"><span></span><span></span><span></span></button>
           <nav id="primary-navigation" aria-label="Navegación principal" [class.open]="mobileMenuOpen">
@@ -29,40 +33,46 @@ import { VENUE } from './shared/venue';
 
     @if (!isAuthPage()) {
       <footer class="footer">
-        <div class="footer__container">
-          <section class="footer__brand" aria-label="Lo del Profe">
-            <img class="footer__logo" src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe">
-            <strong class="footer__title">Cancha de pádel</strong>
+        <div class="footer-container">
+          <section class="footer-brand" aria-label="Lo del Profe">
+            <img class="footer-logo" src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe">
+            <strong class="footer-title">Cancha de pádel</strong>
             <p>Pádel, amigos y buenos partidos.</p>
           </section>
-          <nav class="footer__nav" aria-label="Navegación del pie de página">
-            <span class="footer__eyebrow">Navegación</span>
-            <div class="footer__links">
+          <nav class="footer-nav" aria-label="Navegación del pie de página">
+            <span class="footer-eyebrow">Navegación</span>
+            <div class="footer-links">
               @if (auth.user()) {
-                <a class="footer__link" routerLink="/reservar">Reservar</a>
-                <a class="footer__link" routerLink="/mis-turnos">Mis turnos</a>
+                <a class="footer-link" routerLink="/reservar">Reservar</a>
+                <a class="footer-link" routerLink="/mis-turnos">Mis turnos</a>
               } @else {
-                <a class="footer__link" routerLink="/">Inicio</a>
-                <a class="footer__link" routerLink="/ingresar">Ingresar</a>
+                <a class="footer-link" routerLink="/">Inicio</a>
+                <a class="footer-link" routerLink="/ingresar">Ingresar</a>
               }
-              <a class="footer__link" routerLink="/" fragment="como-llegar">Cómo llegar</a>
+              <a class="footer-link" routerLink="/" fragment="como-llegar">Cómo llegar</a>
             </div>
           </nav>
-          <section class="footer__contact">
-            <span class="footer__eyebrow">Cómo llegar</span>
+          <section class="footer-contact">
+            <span class="footer-eyebrow">Cómo llegar</span>
             <p>Villa Concepción del Tío, Córdoba</p>
-            <a class="footer__map-link" [href]="venue.mapsUrl" target="_blank" rel="noopener noreferrer">Abrir en Google Maps <span>↗</span></a>
+            <a class="footer-map-link" [href]="venue.mapsUrl" target="_blank" rel="noopener noreferrer">Abrir en Google Maps <span>↗</span></a>
           </section>
         </div>
-        <div class="footer__bottom">
+        <div class="footer-bottom">
           <span>© 2026 Lo del Profe. Todos los derechos reservados.</span>
           <span>Reservas simples. Partidos grandes.</span>
         </div>
       </footer>
     }
+    </div>
+    </div>
+    </div>
   `
 })
 export class AppComponent {
+  readonly tailwindClasses = APP_TAILWIND_CLASSES;
+  readonly tailwindPublicClasses = APP_TAILWIND_PUBLIC_CLASSES;
+  readonly tailwindFeatureClasses = APP_TAILWIND_FEATURE_CLASSES;
   auth = inject(Auth);
   private router = inject(Router);
   venue = VENUE;
@@ -103,5 +113,9 @@ export class AppComponent {
 
   isAuthPage() {
     return ['/ingresar', '/login', '/registro'].some(path => this.router.url.startsWith(path));
+  }
+
+  isHomePage() {
+    return this.router.url.split(/[?#]/)[0] === '/';
   }
 }

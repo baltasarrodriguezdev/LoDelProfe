@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Oswald Local";
+  src: url("./assets/fonts/Oswald-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope Local";
+  src: url("./assets/fonts/Manrope-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Story Round";
+  src: url("./assets/fonts/Null_Free.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Realistic Nature";
+  src: url("./assets/fonts/Realistic-Nature.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --color-brand-green: #536f43;
+  --color-brand-dark: #223526;
+  --color-brand-cream: #f5f1e5;
+  --color-brand-paper: #fffdf5;
+  --color-brand-gold: #9a974f;
+  --color-brand-muted: #687363;
+  --color-brand-danger: #b53c32;
+  --color-brand-text: #14281b;
+  --color-brand-border: rgba(31, 51, 38, .18);
+  --font-display: "Oswald Local", sans-serif;
+  --font-body: "Manrope Local", sans-serif;
+}

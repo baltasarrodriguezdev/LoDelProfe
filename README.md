@@ -4,7 +4,7 @@ MVP de gestión de turnos para una cancha de pádel. Incluye portal de clientes,
 
 ## Stack
 
-- Angular standalone y CSS mobile first.
+- Angular standalone y Tailwind CSS 4 para toda la interfaz.
 - Node.js, Express y TypeScript.
 - MySQL 8, Prisma ORM.
 - JWT, bcrypt y roles `CLIENT`, `ADMIN`, `SUPERADMIN`.

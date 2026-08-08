@@ -87,15 +87,15 @@ type Booking = {
           @for (booking of pendingReservations; track booking.id) {
             <article class="operations-booking">
               <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>{{ booking.startTime | date:'dd/MM' }}</small></time>
-              <div class="operations-booking__main">
-                <div class="operations-booking__labels">
+              <div class="operations-booking-main">
+                <div class="operations-booking-labels">
                   <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
                   @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
                 </div>
                 <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
                 <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }}</p>
               </div>
-              <div class="operations-booking__actions">
+              <div class="operations-booking-actions">
                 <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
                 @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action pay-action" routerLink="/admin/seguridad">Validar cliente</a> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
@@ -116,8 +116,8 @@ type Booking = {
           } @else {
           @for (user of pendingUsers; track user.id) {
             <article class="operations-booking">
-              <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
-              <div class="operations-booking__actions">
+              <div class="operations-booking-main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
+              <div class="operations-booking-actions">
                 @if (auth.user()?.role === 'SUPERADMIN') {
                   <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                   <button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button>
@@ -130,14 +130,14 @@ type Booking = {
       </section>
 
       <section class="operations-summary" aria-label="Resumen de hoy">
-        <article><span>Turnos de hoy</span><strong>{{ activeBookings.length }}</strong></article>
-        <article><span>Total estimado</span><strong>{{ estimatedTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
-        <article><span>Cobrado</span><strong>{{ paidTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
-        <article><span>Pendiente</span><strong>{{ pendingTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Turnos de hoy</span><strong class="summary-value">{{ activeBookings.length }}</strong></article>
+        <article><span class="summary-label">Total estimado</span><strong class="summary-value">{{ estimatedTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Cobrado</span><strong class="summary-value">{{ paidTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Pendiente</span><strong class="summary-value">{{ pendingTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
       </section>
 
       <section class="operations-agenda">
-        <div class="section-heading">
+        <div class="section-heading operations-agenda-heading">
           <div><span class="eyebrow">HOY EN LA CANCHA</span><h2>Próximos turnos de hoy</h2></div>
           <label class="operations-date-picker">Cambiar fecha<input type="date" [(ngModel)]="selectedDate" (change)="loadAll()"></label>
         </div>
@@ -149,8 +149,8 @@ type Booking = {
             @for (booking of bookings(); track booking.id) {
               <article class="operations-booking" [class.cancelled]="booking.status === 'CANCELLED'" [class.blocked]="booking.status === 'BLOCKED'">
                 <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>a {{ booking.endTime | date:'HH:mm' }}</small></time>
-                <div class="operations-booking__main">
-                  <div class="operations-booking__labels">
+                <div class="operations-booking-main">
+                  <div class="operations-booking-labels">
                     <span [class]="'status-pill status-' + booking.status.toLowerCase()">{{ statusLabel(booking.status) }}</span>
                     <span class="origin-pill">{{ originLabel(booking.origin) }}</span>
                     <span [class.paid]="booking.paymentStatus === 'PAID'" class="payment-pill">{{ paymentLabel(booking.paymentStatus) }}</span>
@@ -162,7 +162,7 @@ type Booking = {
                     @if (booking.status !== 'BLOCKED') { <span> · {{ booking.playersCount }} jugadores · {{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</span> }
                   </p>
                 </div>
-                <div class="operations-booking__actions">
+                <div class="operations-booking-actions">
                   <button type="button" class="small-action detail-action" (click)="openDetail(booking)">Ver detalle</button>
                   @if (booking.status !== 'BLOCKED' && booking.clientPhone) {
                     <a class="small-action whatsapp-action" [href]="whatsappUrl(booking.clientPhone)" target="_blank" rel="noopener noreferrer">WhatsApp</a>
@@ -201,9 +201,11 @@ type Booking = {
         <div class="section-heading">
           <div><span class="eyebrow">DISPONIBILIDAD</span><h2>Horarios del día</h2></div>
           <div class="availability-controls">
+            <label class="availability-duration">Duración
             <select [(ngModel)]="availabilityDuration" (change)="loadAvailability()">
               <option [ngValue]="60">60 min</option><option [ngValue]="90">90 min</option><option [ngValue]="120">120 min</option>
             </select>
+            </label>
           </div>
         </div>
         <p class="section-help">Tocá un horario disponible para cargar un turno. Los horarios pasados y los que no encajan con la duración elegida se muestran por separado.</p>
@@ -215,7 +217,7 @@ type Booking = {
           } @else {
           @for (slot of visibleSlots(); track slot.startTime) {
             <button type="button" [class.occupied]="!slot.available" [class.blocked]="slotState(slot) === 'Bloqueado'" [class.past]="slot.reason === 'PAST'" [class.duration-gap]="slot.reason === 'DEAD_GAP'" (click)="openSlot(slot)">
-              <b>{{ slot.startTime }}</b><span>{{ slotState(slot) }}</span>
+              <b class="slot-time">{{ slot.startTime }}</b><span class="slot-state">{{ slotState(slot) }}</span>
             </button>
           } @empty { <div class="empty">No hay horarios para esta fecha.</div> }
           }

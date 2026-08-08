@@ -8,10 +8,10 @@ import { VENUE } from '../../shared/venue';
   imports: [RouterLink],
   template: `
     <section class="hero hero-poster">
-      <div class="hero-poster__bg" aria-hidden="true">
+      <div class="hero-poster-bg" aria-hidden="true">
         <img src="assets/logos/foto-padel-hero.jpg" alt="">
       </div>
-      <div class="hero-poster__overlay" aria-hidden="true"></div>
+      <div class="hero-poster-overlay" aria-hidden="true"></div>
       <div class="hero-copy hero-content">
         <span class="eyebrow hero-eyebrow">CANCHA DE PÁDEL · VILLA CONCEPCIÓN</span>
         <h1 class="hero-title">EL PARTIDO<br>EMPIEZA <em>ACÁ.</em></h1>
@@ -44,3 +44,8 @@ export class HomePage {
   venue = VENUE;
   mapUrl = this.sanitizer.bypassSecurityTrustResourceUrl(VENUE.embedUrl);
 }
+
+
+const numero : number = 2000;
+
+numero.toFixed

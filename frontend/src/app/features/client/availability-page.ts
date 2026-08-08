@@ -19,7 +19,6 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
 @Component({
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
-  styleUrl: './availability-page.css',
   template: `
     <section class="page-head availability-head">
       <span class="eyebrow">RESERVAS</span>
@@ -30,7 +29,25 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
     <section class="turn-grid-layout">
       <aside class="panel turn-filters">
         <div class="filter-step"><span>01</span><label>Fecha<input type="date" [min]="today" [(ngModel)]="date" (change)="search()"></label></div>
-        <div class="filter-step duration-step"><span>02</span><div><label>Duración del turno</label><div class="duration-options">@for (price of prices; track price.id) { <button type="button" [class.selected]="duration === price.durationMinutes" (click)="selectDuration(price.durationMinutes)"><b>{{ durationLabel(price.durationMinutes) }}</b><small>{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small></button> }</div></div></div>
+        <div class="filter-step duration-step">
+          <span>02</span>
+          <div>
+            <label>Duración del turno</label>
+            <div class="duration-options" role="group" aria-label="Duración del turno">
+              @for (price of prices; track price.id) {
+                <button
+                  type="button"
+                  [class.selected]="duration === price.durationMinutes"
+                  [attr.aria-pressed]="duration === price.durationMinutes"
+                  (click)="selectDuration(price.durationMinutes)"
+                >
+                  <b class="duration-label">{{ durationLabel(price.durationMinutes) }}</b>
+                  <small class="duration-price">{{ price.price | currency:'ARS':'symbol':'1.0-0' }}</small>
+                </button>
+              }
+            </div>
+          </div>
+        </div>
       </aside>
 
       <div class="turn-results" aria-live="polite">
@@ -40,7 +57,7 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
         } @else if (availableSlots().length > 0) {
           <div class="start-time-grid">
             @for (slot of availableSlots(); track slot.startTime) {
-              <button type="button" [class.selected]="selectedSlot === slot" (click)="openConfirmation(slot)"><span>INICIO</span><b>{{ slot.startTime }}</b><small>hasta {{ slot.endTime }}</small></button>
+              <button type="button" [class.selected]="selectedSlot === slot" [attr.aria-pressed]="selectedSlot === slot" (click)="openConfirmation(slot)"><span>INICIO</span><b>{{ slot.startTime }}</b><small>hasta {{ slot.endTime }}</small></button>
             }
           </div>
         } @else if (availabilityLoadFailed) {

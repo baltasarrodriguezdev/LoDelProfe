@@ -62,11 +62,12 @@ type Client = {
         @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
         <section class="clients-toolbar panel">
-          <label>Buscar cliente<input type="search" placeholder="Nombre, apellido o teléfono" [(ngModel)]="search"></label>
-          <div class="client-tabs" role="tablist" aria-label="Estados de clientes">
+          <label class="clients-search">Buscar cliente<input type="search" name="clientSearch" autocomplete="off" placeholder="Nombre, apellido o teléfono…" [(ngModel)]="search"></label>
+          <div class="client-tabs" role="group" aria-label="Filtrar clientes por estado">
             @for (tab of tabs; track tab.id) {
-              <button type="button" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">
-                <span>{{ tab.label }}</span><b>{{ count(tab.id) }}</b>
+              <button type="button" [class.active]="activeTab === tab.id" [attr.aria-pressed]="activeTab === tab.id" (click)="activeTab = tab.id">
+                <span class="client-tab-label">{{ tab.label }}</span>
+                <b class="client-tab-count">{{ count(tab.id) }}</b>
               </button>
             }
           </div>
@@ -143,28 +144,6 @@ type Client = {
       />
     }
   `,
-  styles: [`
-    .clients-admin-shell{background:linear-gradient(180deg,#e8eee1 0,#f4f2e9 330px)}
-    .clients-admin-content{display:grid;gap:18px}
-    .clients-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:8px}
-    .clients-header h1{margin:8px 0 6px;font-size:clamp(3rem,5vw,4.9rem);color:var(--color-green-dark)}
-    .clients-header p{max-width:560px;margin:0;color:#657064}
-    .clients-toolbar{display:grid;grid-template-columns:minmax(240px,340px) 1fr;gap:18px;align-items:end;padding:18px}
-    .clients-toolbar label{display:grid;gap:7px;font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)}
-    .client-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:4px;border:1px solid rgba(34,53,38,.12);border-radius:11px;background:#edf2e8}
-    .client-tabs button{min-width:0;min-height:46px;padding:8px;border:0;border-radius:8px;background:transparent;color:#607062;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
-    .client-tabs button.active{background:var(--color-green-dark);color:var(--color-white-soft);box-shadow:0 5px 14px rgba(34,53,38,.14)}
-    .client-tabs span{font-family:var(--font-display);font-size:.76rem;font-weight:600}.client-tabs b{min-width:22px;padding:2px 6px;border-radius:999px;background:#fff;color:var(--color-green-dark);font-size:.68rem}
-    .client-form{padding:21px}.clients-form-grid{max-width:860px}.client-form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:16px}.client-form-error{margin:12px 0 0}
-    .clients-list{display:grid;gap:9px}.client-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--line);border-radius:11px;background:var(--color-white-soft);box-shadow:0 5px 18px rgba(34,53,38,.045)}
-    .client-row.inactive{opacity:.68;background:#f0efe9}.client-row.blocked{border-left:5px solid #a2473e;background:#fff4f1}
-    .client-avatar{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:var(--color-green-dark);color:var(--color-white-soft);font-family:var(--font-display);font-size:1.25rem;font-weight:700}
-    .client-main{min-width:0}.client-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-title-row h2{margin:0;font-size:1.38rem;color:var(--color-green-dark)}.client-main p{margin:4px 0 0;font-size:.78rem;color:#6f7a70}
-    .client-status{display:inline-flex;padding:4px 8px;border-radius:999px;font-family:var(--font-display);font-size:.61rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase}.client-status.pending{background:#fff0c9;color:#775d17}.client-status.confirmed{background:#dfebdc;color:#326044}.client-status.inactive{background:#e4e3dd;color:#767d76}.client-status.blocked{background:#f1ded9;color:#934d42}
-    .client-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px;max-width:390px}.client-actions .small-action{min-height:38px}
-    @media(max-width:980px){.clients-header{display:grid}.clients-header .btn{width:100%}.clients-toolbar{grid-template-columns:1fr}.client-tabs{grid-template-columns:repeat(3,1fr)}.client-row{grid-template-columns:46px 1fr}.client-avatar{width:46px;height:46px}.client-actions{grid-column:1/-1;max-width:none;justify-content:flex-start}}
-    @media(max-width:560px){.clients-admin-content{padding-inline:14px}.client-tabs{grid-template-columns:1fr 1fr}.client-row{grid-template-columns:1fr}.client-avatar{display:none}.client-actions{display:grid;grid-template-columns:1fr 1fr}.client-actions .small-action{width:100%}.client-form-actions{display:grid}.client-form-actions .btn{width:100%}}
-  `]
 })
 export class AdminClientsPage implements OnInit, OnDestroy {
   private api = inject(Api);
