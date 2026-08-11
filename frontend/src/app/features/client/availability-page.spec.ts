@@ -23,7 +23,8 @@ describe('AvailabilityPage zoneless', () => {
           price: 18000,
           slots: []
         })),
-      post: vi.fn(() => postResponse.asObservable())
+      post: vi.fn(() => postResponse.asObservable()),
+      patch: vi.fn(() => of({ status: 'CANCELLED' }))
     };
     const auth = {
       user: signal({
@@ -36,7 +37,7 @@ describe('AvailabilityPage zoneless', () => {
         role: 'CLIENT'
       })
     };
-    const myBookingsStore = { upsertBooking: vi.fn() };
+    const myBookingsStore = { upsertBooking: vi.fn(), updateBookingStatus: vi.fn(), loadBookings: vi.fn(() => Promise.resolve()) };
     const adminAgendaStore = { invalidate: vi.fn() };
 
     await TestBed.configureTestingModule({
@@ -71,7 +72,7 @@ describe('AvailabilityPage zoneless', () => {
       };
       fixture.detectChanges();
     }
-    return { fixture, myBookingsStore, adminAgendaStore };
+    return { fixture, api, myBookingsStore, adminAgendaStore };
   }
 
   it('muestra el día de hoy por defecto al entrar a reservar', async () => {
@@ -92,16 +93,40 @@ describe('AvailabilityPage zoneless', () => {
     expect(fixture.componentInstance.submitting()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Enviando...');
 
-    postResponse.next({ reservation: { id: 21 }, alreadyPending: false });
+    const holdExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    postResponse.next({ reservation: { id: 21, holdExpiresAt }, alreadyPending: false });
     postResponse.complete();
     await fixture.whenStable();
 
     expect(fixture.componentInstance.submitting()).toBe(false);
     expect(fixture.componentInstance.modalState).toBe('verificationPending');
-    expect(fixture.nativeElement.textContent).toContain('Tu solicitud quedó pendiente');
+    expect(fixture.nativeElement.textContent).toContain('Guardamos tu horario');
+    expect(fixture.nativeElement.textContent).toContain('Tiempo restante');
+    expect(fixture.componentInstance.holdRemainingSeconds()).toBeGreaterThan(590);
     expect(popup.location.href).toContain('https://wa.me/');
     expect(myBookingsStore.upsertBooking).toHaveBeenCalledOnce();
     expect(adminAgendaStore.invalidate).toHaveBeenCalledOnce();
+  });
+
+  it('permite cancelar la retención y libera el horario', async () => {
+    const postResponse = new Subject<any>();
+    const popup = { location: { href: '' }, close: vi.fn() };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    const { fixture, api, myBookingsStore, adminAgendaStore } = await setup(postResponse);
+
+    fixture.componentInstance.sendVerificationRequest();
+    postResponse.next({ reservation: { id: 21, holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString() } });
+    postResponse.complete();
+    await fixture.whenStable();
+
+    fixture.componentInstance.cancelPendingHold();
+    await fixture.whenStable();
+
+    expect(api.patch).toHaveBeenCalledWith('/bookings/21/cancel', {});
+    expect(myBookingsStore.updateBookingStatus).toHaveBeenCalledWith(21, 'CANCELLED');
+    expect(adminAgendaStore.invalidate).toHaveBeenCalled();
+    expect(fixture.componentInstance.modalState).toBe('holdReleased');
+    expect(fixture.nativeElement.textContent).toContain('Solicitud cancelada');
   });
 
   it('rehabilita el botón y muestra el error cuando falla la reserva', async () => {

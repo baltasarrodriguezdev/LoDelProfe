@@ -1,6 +1,8 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime, firstValueFrom, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 
 export type ClientBooking = {
@@ -11,12 +13,16 @@ export type ClientBooking = {
   playersCount: number;
   priceTotal: number;
   status: string;
+  holdExpiresAt?: string | null;
+  cancellationReason?: string | null;
 };
 
 @Injectable({ providedIn: 'root' })
 export class MyBookingsStore {
   private api = inject(Api);
   private auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   private bookingsRequestId = 0;
   private loaded = false;
   private loadedUserId: number | null = null;
@@ -28,6 +34,20 @@ export class MyBookingsStore {
   readonly bookingsError = signal('');
   readonly bookingsStatus = signal<AsyncStatus>('idle');
   readonly loadingBookings = computed(() => this.bookingsStatus() === 'loading');
+
+  constructor() {
+    merge(
+      this.realtime.listen([
+        'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
+        'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.auth.user() && (this.loaded || this.bookings().length > 0 || this.bookingsStatus() !== 'idle')) {
+        void this.loadBookings(true);
+      }
+    });
+  }
 
   readonly upcomingBookings = computed(() =>
     this.bookings().filter(booking => this.isUpcoming(booking))

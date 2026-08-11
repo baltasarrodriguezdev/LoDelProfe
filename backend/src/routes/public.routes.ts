@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma/client.js';
 import { availability, freeAvailability } from '../services/booking.service.js';
 import { asyncHandler } from '../utils/async-handler.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -22,7 +23,10 @@ router.get('/business-hours', asyncHandler(async (_req, res) => {
 
 router.get('/booking-policy', asyncHandler(async (_req, res) => {
   const settings = await prisma.venueSetting.findUnique({ where: { id: 1 } });
-  res.json({ cancellationCutoffMinutes: settings?.cancellationCutoffMinutes ?? 120 });
+  res.json({
+    cancellationCutoffMinutes: settings?.cancellationCutoffMinutes ?? 120,
+    pendingHoldMinutes: config.booking.pendingHoldMinutes
+  });
 }));
 
 router.get('/availability', asyncHandler(async (req, res) => {

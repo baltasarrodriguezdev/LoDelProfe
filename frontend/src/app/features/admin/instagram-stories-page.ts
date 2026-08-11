@@ -1,9 +1,11 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, DestroyRef, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Api } from '../../core/api';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 
 type StoryTemplate = 'premium' | 'sport' | 'minimal';
 type StoryFont = 'brand' | 'condensed' | 'clean';
@@ -168,6 +170,8 @@ const BOOKING_SITE = 'lodelprofe.com';
 })
 export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   private api = inject(Api);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   @ViewChild('storyCanvas') storyCanvas?: ElementRef<HTMLCanvasElement>;
 
   date = this.dateInput(new Date());
@@ -212,6 +216,21 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     this.loadAssets();
+    this.loadCourt();
+    merge(
+      this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'object') {
+        const event = change as RealtimeEvent;
+        if (event.type === 'AVAILABILITY_CHANGED' && !this.realtime.affectsAvailability(event, this.date, this.courtId)) return;
+        if (event.type !== 'CONFIGURATION_CHANGED') return this.loadAvailability();
+      }
+      this.loadCourt();
+    });
+  }
+
+  private loadCourt() {
     this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
       next: courts => {
         this.courtId = Number(courts?.[0]?.id ?? 0);

@@ -5,6 +5,7 @@ import { prisma } from '../prisma/client.js';
 import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
 import { storedPhoneCandidates } from '../utils/argentina-phone.js';
+import { publishAdminChange, publishUserChange } from '../realtime/events.js';
 
 const genericRequestMessage = 'Si el teléfono corresponde a una cuenta habilitada, la solicitud aparecerá en administración.';
 const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -16,6 +17,7 @@ const whatsappPhone = (stored: string) => {
 export async function requestPasswordReset(e164Phone: string) {
   const startedAt = Date.now();
   const user = await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164Phone) } } });
+  let changed = false;
 
   if (user?.active && !user.isBlocked && user.phoneVerified) {
     const existing = await prisma.passwordResetRequest.findFirst({
@@ -32,11 +34,13 @@ export async function requestPasswordReset(e164Phone: string) {
         });
       }
       await prisma.passwordResetRequest.create({ data: { userId: user.id } });
+      changed = true;
     }
   }
 
   const remaining = 250 - (Date.now() - startedAt);
   if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+  if (changed) await publishAdminChange('PASSWORD_RESET_CHANGED', 'PASSWORD_RESETS');
   return { message: genericRequestMessage };
 }
 
@@ -74,6 +78,7 @@ export async function authorizePasswordReset(id: string, adminId: number) {
   });
   if (!authorized.count) throw new HttpError(409, 'La solicitud ya no está pendiente.');
 
+  await publishAdminChange('PASSWORD_RESET_CHANGED', 'PASSWORD_RESETS');
   const resetUrl = `${config.publicAppUrl}/restablecer-contrasena#token=${token}`;
   const message = `Hola ${request.user.firstName}. Autorizamos tu solicitud para cambiar la contraseña de Lo del Profe.\n\nAbrí este enlace personal antes de ${expiresAt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: config.timezone })}:\n${resetUrl}\n\nEl enlace funciona una sola vez. Si no hiciste esta solicitud, ignorá el mensaje y avisale a la cancha.`;
   return {
@@ -89,6 +94,7 @@ export async function cancelPasswordReset(id: string) {
     data: { status: PasswordResetStatus.CANCELLED, cancelledAt: new Date() }
   });
   if (!updated.count) throw new HttpError(409, 'La solicitud ya no está pendiente.');
+  await publishAdminChange('PASSWORD_RESET_CHANGED', 'PASSWORD_RESETS');
   return { message: 'Solicitud de recuperación cancelada.' };
 }
 
@@ -111,5 +117,9 @@ export async function resetPassword(token: string, password: string) {
       data: { passwordHash, securityVersion: { increment: 1 } }
     });
   });
+  await Promise.all([
+    publishAdminChange('PASSWORD_RESET_CHANGED', 'PASSWORD_RESETS'),
+    publishUserChange('USER_UPDATED', request.userId)
+  ]);
   return { message: 'Contraseña actualizada. Ya podés ingresar con tu nueva clave.' };
 }

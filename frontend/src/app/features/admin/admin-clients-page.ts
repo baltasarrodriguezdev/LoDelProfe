@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 import { Api } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
@@ -125,6 +127,8 @@ type Client = {
 })
 export class AdminClientsPage implements OnInit, OnDestroy {
   private api = inject(Api);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   clients: Client[] = [];
   activeTab: ClientStatus = 'pending';
@@ -152,7 +156,16 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     { id: 'all', label: 'Todos' }
   ];
 
-  ngOnInit() { this.loadClients(); }
+  ngOnInit() {
+    this.loadClients();
+    merge(
+      this.realtime.listen([
+        'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'BOOKING_CREATED',
+        'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadClients());
+  }
   ngOnDestroy() { this.clientsAbort?.abort(); }
 
   get clientRows() { return this.clients.filter(client => client.role === 'CLIENT'); }

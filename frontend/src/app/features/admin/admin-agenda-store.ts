@@ -1,6 +1,8 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime, firstValueFrom, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 
 export type AdminBooking = {
@@ -13,6 +15,8 @@ export type AdminBooking = {
   playersCount: number;
   priceTotal: number;
   status: string;
+  holdExpiresAt?: string | null;
+  cancellationReason?: string | null;
   origin?: string;
   paymentStatus: string;
   notes?: string;
@@ -30,6 +34,8 @@ type AvailabilityKey = { date: string; duration: number; courtId: number };
 export class AdminAgendaStore {
   private api = inject(Api);
   private auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   private bookingsRequestId = 0;
   private availabilityRequestId = 0;
   private loadedAgendaKey: AgendaKey | null = null;
@@ -54,6 +60,25 @@ export class AdminAgendaStore {
     const value = this.availability();
     return Array.isArray(value) ? value : value?.slots ?? value?.data?.slots ?? [];
   });
+
+  constructor() {
+    merge(
+      this.realtime.listen([
+        'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
+        'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED',
+        'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED', 'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.reloadLoaded());
+  }
+
+  private reloadLoaded() {
+    if (!this.auth.isAdmin()) return;
+    const agendaKey = this.loadedAgendaKey && { ...this.loadedAgendaKey };
+    const availabilityKey = this.loadedAvailabilityKey && { ...this.loadedAvailabilityKey };
+    if (agendaKey) void this.ensureAgendaLoaded(agendaKey, true);
+    if (availabilityKey) void this.ensureAvailabilityLoaded(availabilityKey, true);
+  }
 
   ensureAgendaLoaded(key: AgendaKey, force = false) {
     this.resetForUserChange();

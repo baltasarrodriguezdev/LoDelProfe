@@ -93,8 +93,8 @@ export class Auth {
     this.sessionStatus.set('success');
   }
 
-  refreshSession() {
-    if (this.sessionInitialized) return Promise.resolve();
+  refreshSession(force = false) {
+    if (this.sessionInitialized && !force) return Promise.resolve();
     if (this.refreshInFlight) return this.refreshInFlight;
     const previous = this.user();
     if (!previous && !cookieValue(CSRF_COOKIE)) {
@@ -109,7 +109,8 @@ export class Auth {
       try {
         const user = await firstValueFrom(this.api.get<any>('/auth/me', undefined, { noCache: true }));
         if (authStateVersion !== this.authStateVersion) return;
-        this.setUser(user);
+        const unchanged = force && JSON.stringify(user) === JSON.stringify(this.user());
+        if (!unchanged) this.setUser(user);
         this.sessionStatus.set('success');
         sessionResolved = true;
       } catch (error) {

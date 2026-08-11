@@ -21,6 +21,8 @@ import {
   bookingTransactionOptions,
   createBooking,
   createBookingInTransaction,
+  expirePendingBookings,
+  expiredPendingCancellationReason,
   transitionBookingStatus,
   updateBooking
 } from '../services/booking.service.js';
@@ -30,9 +32,35 @@ import { ARGENTINA_PHONE_ERROR, localArgentinaPhone, normalizeArgentinaPhone, st
 import { businessIntervals, localDateTime } from '../utils/time.js';
 import * as passwordReset from '../services/password-reset.service.js';
 import { writeAudit } from '../services/audit.service.js';
+import {
+  publishAdminChange,
+  publishBookingChange,
+  publishConfigurationChange,
+  publishRealtimeEvent,
+  publishUserChange,
+  type RealtimeEventType
+} from '../realtime/events.js';
 
 const r = Router();
 r.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
+
+function bookingEventForStatus(status: BookingStatus, previousStatus?: BookingStatus): Extract<RealtimeEventType,
+  'BOOKING_CONFIRMED' | 'BOOKING_CANCELLED' | 'BOOKING_STATUS_CHANGED' | 'SCHEDULE_BLOCKED' | 'SCHEDULE_UNBLOCKED'> {
+  if (status === BookingStatus.CONFIRMED) return 'BOOKING_CONFIRMED';
+  if (status === BookingStatus.BLOCKED) return 'SCHEDULE_BLOCKED';
+  if (status === BookingStatus.CANCELLED && previousStatus === BookingStatus.BLOCKED) return 'SCHEDULE_UNBLOCKED';
+  if (status === BookingStatus.CANCELLED) return 'BOOKING_CANCELLED';
+  return 'BOOKING_STATUS_CHANGED';
+}
+
+async function publishRecurringInvalidation(courtId: number, userId?: number | null) {
+  const resource = { resource: 'RECURRING_BOOKINGS' as const, courtId };
+  await Promise.all([
+    publishRealtimeEvent({ audience: 'PUBLIC', type: 'AVAILABILITY_CHANGED', resource }),
+    publishRealtimeEvent({ audience: 'ADMIN', type: 'RECURRING_BOOKING_CHANGED', resource }),
+    ...(userId ? [publishRealtimeEvent({ audience: 'USER' as const, targetUserId: userId, type: 'BOOKING_UPDATED' as const, resource })] : [])
+  ]);
+}
 
 const manualVerificationSchema = z.discriminatedUnion('method', [
   z.object({ method: z.literal(PhoneVerificationMethod.WHATSAPP_MANUAL), senderPhone: z.string().min(6).max(30), code: z.string().trim().min(6).max(20) }),
@@ -147,6 +175,7 @@ function reservationInclude() {
 }
 
 async function findReservation(id: number) {
+  await expirePendingBookings({ bookingId: id });
   const booking = await prisma.booking.findUnique({
     where: { id },
     include: reservationInclude()
@@ -155,9 +184,15 @@ async function findReservation(id: number) {
   return booking;
 }
 
-function assertPendingReservation(status: BookingStatus) {
-  if (status !== 'PENDING') {
+function assertPendingReservation(booking: { status: BookingStatus; cancellationReason: string | null; holdExpiresAt: Date | null }) {
+  if (booking.status !== 'PENDING') {
+    if (booking.status === 'CANCELLED' && booking.cancellationReason === expiredPendingCancellationReason) {
+      throw new HttpError(409, 'La retención de este turno ya venció y el horario fue liberado.');
+    }
     throw new HttpError(409, 'Solo se pueden confirmar turnos pendientes.');
+  }
+  if (!booking.holdExpiresAt || booking.holdExpiresAt <= new Date()) {
+    throw new HttpError(409, 'La retención de este turno ya venció y el horario fue liberado.');
   }
 }
 
@@ -170,6 +205,7 @@ r.get('/users', asyncHandler(async (req, res) => {
 }));
 
 r.get('/users/pending-verification', asyncHandler(async (_req, res) => {
+  await expirePendingBookings();
   res.json(await prisma.user.findMany({
     where: { role: Role.CLIENT, active: true, phoneVerified: false, isBlocked: false },
     omit: { passwordHash: true, securityVersion: true },
@@ -214,11 +250,15 @@ r.post('/users', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
     },
     omit: { passwordHash: true, securityVersion: true }
   });
+  await publishUserChange('USER_CREATED', user.id);
   res.status(201).json(user);
 }));
 
 r.patch('/users/:id/verify', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await verifyUserIdentity(prisma, +req.params.id, req.auth!.userId, manualVerificationSchema.parse(req.body)));
+  const id = +req.params.id;
+  const result = await verifyUserIdentity(prisma, id, req.auth!.userId, manualVerificationSchema.parse(req.body));
+  await publishUserChange('USER_VERIFICATION_CHANGED', id);
+  res.json(result);
 }));
 
 r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -228,6 +268,10 @@ r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHan
   if (user.role !== 'CLIENT') throw new HttpError(403, 'No se puede cancelar un usuario administrador.');
   if (user.phoneVerified) throw new HttpError(409, 'Solo se pueden cancelar usuarios pendientes de verificación.');
 
+  const affectedBookings = await prisma.booking.findMany({
+    where: { userId: id, status: 'PENDING' },
+    select: { id: true, courtId: true, userId: true, startTime: true, status: true, holdExpiresAt: true }
+  });
   const result = await prisma.$transaction(async tx => {
     const cancelledBookings = await tx.booking.updateMany({
       where: { userId: id, status: 'PENDING' },
@@ -241,6 +285,10 @@ r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHan
     return { cancelledBookings: cancelledBookings.count };
   });
 
+  await Promise.all([
+    publishUserChange('USER_UPDATED', id),
+    ...affectedBookings.map(booking => publishBookingChange('BOOKING_CANCELLED', { ...booking, status: 'CANCELLED' }))
+  ]);
   res.json({ message: 'Usuario pendiente cancelado. El número quedó disponible.', ...result });
 }));
 
@@ -266,6 +314,7 @@ r.patch('/users/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) 
     entityId: id,
     details: data
   });
+  await publishUserChange('USER_UPDATED', id);
   res.json(updated);
 }));
 
@@ -312,6 +361,7 @@ r.post('/users/:id/release-phone', authorize(Role.SUPERADMIN), asyncHandler(asyn
     }, tx);
     return updated;
   });
+  await publishUserChange('USER_UPDATED', id);
   res.json({ message: 'La cuenta fue cerrada y el número quedó disponible.', user: released });
 }));
 
@@ -320,7 +370,9 @@ r.post('/courts', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   if (data.active && await prisma.court.findFirst({ where: { active: true } })) {
     throw new HttpError(409, 'El sistema está configurado para una sola cancha activa.');
   }
-  res.status(201).json(await prisma.court.create({ data }));
+  const court = await prisma.court.create({ data });
+  await publishConfigurationChange('COURTS');
+  res.status(201).json(court);
 }));
 
 r.patch('/courts/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -329,16 +381,22 @@ r.patch('/courts/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res)
   if (data.active && await prisma.court.findFirst({ where: { active: true, id: { not: id } } })) {
     throw new HttpError(409, 'Sólo puede existir una cancha activa.');
   }
-  res.json(await prisma.court.update({ where: { id }, data }));
+  const court = await prisma.court.update({ where: { id }, data });
+  await publishConfigurationChange('COURTS');
+  res.json(court);
 }));
 
 r.post('/prices', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const data = z.object({ durationMinutes: z.number(), price: z.number(), active: z.boolean().default(true) }).parse(req.body);
-  res.status(201).json(await prisma.price.create({ data }));
+  const price = await prisma.price.create({ data });
+  await publishConfigurationChange('PRICES');
+  res.status(201).json(price);
 }));
 
 r.patch('/prices/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await prisma.price.update({ where: { id: +req.params.id }, data: pricePatchSchema.parse(req.body) }));
+  const price = await prisma.price.update({ where: { id: +req.params.id }, data: pricePatchSchema.parse(req.body) });
+  await publishConfigurationChange('PRICES');
+  res.json(price);
 }));
 
 r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -373,6 +431,7 @@ r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, re
     entityId: 1,
     details: { days: rows.length }
   });
+  await publishConfigurationChange('BUSINESS_HOURS');
   res.json(rows);
 }));
 
@@ -401,6 +460,7 @@ r.put('/booking-policy', authorize(Role.SUPERADMIN), asyncHandler(async (req, re
     entityId: 1,
     details: data
   });
+  await publishConfigurationChange('BOOKING_POLICY');
   res.json(settings);
 }));
 
@@ -411,6 +471,7 @@ r.get('/audit-logs', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) =
 }));
 
 r.get('/bookings', asyncHandler(async (req, res) => {
+  await expirePendingBookings();
   const status = req.query.status ? z.nativeEnum(BookingStatus).parse(req.query.status) : undefined;
   res.json(await prisma.booking.findMany({
     where: {
@@ -426,6 +487,7 @@ r.get('/bookings', asyncHandler(async (req, res) => {
 }));
 
 r.get('/reservations', asyncHandler(async (req, res) => {
+  await expirePendingBookings();
   const status = req.query.status ? z.nativeEnum(BookingStatus).parse(req.query.status) : undefined;
   res.json(await prisma.booking.findMany({
     where: { status },
@@ -460,6 +522,7 @@ r.get('/bookings/:id', asyncHandler(async (req, res) => {
 r.post('/bookings', asyncHandler(async (req, res) => {
   const booking = await createBooking(bookingSchema.parse(req.body), req.auth!.userId);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CREATED', entityType: 'BOOKING', entityId: booking.id });
+  await publishBookingChange('BOOKING_CREATED', booking);
   res.status(201).json(booking);
 }));
 
@@ -490,19 +553,25 @@ r.post('/blocks', asyncHandler(async (req, res) => {
     adminOverride: true
   }, req.auth!.userId);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_BLOCKED', entityType: 'BOOKING', entityId: booking.id });
+  await publishBookingChange('SCHEDULE_BLOCKED', booking);
   res.status(201).json(booking);
 }));
 
 r.patch('/bookings/:id', asyncHandler(async (req, res) => {
   const id = +req.params.id;
+  const previous = await prisma.booking.findUnique({ where: { id } });
+  if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await updateBooking(id, bookingSchema.partial().parse(req.body));
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_UPDATED', entityType: 'BOOKING', entityId: id });
+  await publishBookingChange('BOOKING_UPDATED', updated, previous);
   res.json(updated);
 }));
 
 r.patch('/bookings/:id/status', asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const status = z.nativeEnum(BookingStatus).parse(req.body.status);
+  const previous = await prisma.booking.findUnique({ where: { id } });
+  if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await transitionBookingStatus(id, status);
   await writeAudit({
     actorId: req.auth!.userId,
@@ -510,34 +579,40 @@ r.patch('/bookings/:id/status', asyncHandler(async (req, res) => {
     entityType: 'BOOKING',
     entityId: id
   });
+  await publishBookingChange(bookingEventForStatus(updated.status, previous.status), updated, previous);
   res.json(updated);
 }));
 
 r.patch('/reservations/:id/confirm', asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const booking = await findReservation(id);
-  assertPendingReservation(booking.status);
-  await transitionBookingStatus(id, 'CONFIRMED');
+  assertPendingReservation(booking);
+  const updated = await transitionBookingStatus(id, 'CONFIRMED');
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CONFIRMED', entityType: 'BOOKING', entityId: id });
+  await publishBookingChange('BOOKING_CONFIRMED', updated, booking);
   res.json(await findReservation(id));
 }));
 
 r.patch('/reservations/:id/confirm-and-verify-user', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
   const id = +req.params.id;
   const booking = await findReservation(id);
-  assertPendingReservation(booking.status);
+  assertPendingReservation(booking);
   if (!booking.userId) throw new HttpError(409, 'El turno no tiene un usuario asociado para verificar.');
 
   const verification = manualVerificationSchema.parse(req.body);
   const result = await prisma.$transaction(async tx => {
     const reservation = await tx.booking.update({
       where: { id },
-      data: { status: 'CONFIRMED' },
+      data: { status: 'CONFIRMED', holdExpiresAt: null },
       include: reservationInclude()
     });
     const verified = await verifyUserIdentity(tx, booking.userId!, req.auth!.userId, verification);
     return { reservation, ...verified };
   });
+  await Promise.all([
+    publishBookingChange('BOOKING_CONFIRMED', result.reservation, booking),
+    publishUserChange('USER_VERIFICATION_CHANGED', booking.userId!)
+  ]);
   res.json(result);
 }));
 
@@ -554,13 +629,17 @@ r.patch('/reservations/:id/cancel', asyncHandler(async (req, res) => {
     include: reservationInclude()
   });
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CANCELLED', entityType: 'BOOKING', entityId: id, details: data });
+  await publishBookingChange('BOOKING_CANCELLED', updated, booking);
   res.json(updated);
 }));
 
 r.delete('/bookings/:id', asyncHandler(async (req, res) => {
   const id = +req.params.id;
+  const previous = await prisma.booking.findUnique({ where: { id } });
+  if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await transitionBookingStatus(id, 'CANCELLED');
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CANCELLED', entityType: 'BOOKING', entityId: id });
+  await publishBookingChange(bookingEventForStatus(updated.status, previous.status), updated, previous);
   res.json(updated);
 }));
 
@@ -574,6 +653,7 @@ r.delete('/bookings/:id/permanent', authorize(Role.SUPERADMIN), asyncHandler(asy
     prisma.booking.delete({ where: { id } })
   ]);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_PERMANENTLY_DELETED', entityType: 'BOOKING', entityId: id });
+  await publishBookingChange('BOOKING_UPDATED', booking);
   res.json({ message: 'Turno eliminado del historial' });
 }));
 
@@ -633,6 +713,8 @@ r.patch('/bookings/:id/payment', asyncHandler(async (req, res) => {
     }, tx);
     return updated;
   });
+  await publishBookingChange('BOOKING_PAYMENT_CHANGED', booking, existing);
+  if (delta > 0) await publishAdminChange('CASH_MOVEMENT_CREATED', 'CASH');
   res.json(booking);
 }));
 
@@ -693,6 +775,7 @@ r.post('/recurring-bookings', authorize(Role.SUPERADMIN), asyncHandler(async (re
     }, tx);
     return row;
   }, bookingTransactionOptions);
+  await publishRecurringInvalidation(recurring.courtId, recurring.userId);
   res.status(201).json(recurring);
 }));
 
@@ -745,6 +828,7 @@ r.patch('/recurring-bookings/:id', authorize(Role.SUPERADMIN), asyncHandler(asyn
     }, tx);
     return row;
   }, bookingTransactionOptions);
+  await publishRecurringInvalidation(updated.courtId, updated.userId);
   res.json(updated);
 }));
 
@@ -767,6 +851,7 @@ r.patch('/recurring-bookings/:id/deactivate', authorize(Role.SUPERADMIN), asyncH
     entityId: id,
     details: { cancelledBookings: cancelled.count }
   });
+  await publishRecurringInvalidation(recurring.courtId, recurring.userId);
   res.json({ message: 'Turno fijo desactivado correctamente', cancelledBookings: cancelled.count });
 }));
 
@@ -790,6 +875,7 @@ r.post('/cash-movements', authorize(Role.SUPERADMIN), asyncHandler(async (req, r
     entityId: movement.id,
     details: { type: data.type, category: data.category, amount: data.amount }
   });
+  await publishAdminChange('CASH_MOVEMENT_CREATED', 'CASH');
   res.status(201).json(movement);
 }));
 

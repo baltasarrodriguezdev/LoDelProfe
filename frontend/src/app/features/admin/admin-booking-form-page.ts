@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
-import { finalize, forkJoin } from 'rxjs';
+import { debounceTime, finalize, forkJoin, merge } from 'rxjs';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { AdminAgendaStore } from './admin-agenda-store';
 import { MyBookingsStore } from '../client/my-bookings-store';
@@ -117,6 +119,8 @@ export class AdminBookingFormPage implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private agendaStore = inject(AdminAgendaStore);
   private myBookingsStore = inject(MyBookingsStore);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   mode: 'BOOKING' | 'BLOCK' = 'BOOKING';
   bookingId: number | null = null;
@@ -173,6 +177,23 @@ export class AdminBookingFormPage implements OnInit, OnDestroy {
       error: response => {
         this.resourcesStatus.set('error');
         this.error = response.error?.message ?? 'No se pudieron cargar los datos del formulario.';
+      }
+    });
+    merge(
+      this.realtime.listen([
+        'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
+        'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
+        'CONFIGURATION_CHANGED', 'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (this.saving()) return;
+      if (typeof change !== 'object' || ['CONFIGURATION_CHANGED', 'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED'].includes((change as RealtimeEvent).type)) {
+        this.refreshReferenceData();
+      } else if (this.bookingId && (change as RealtimeEvent).resource.bookingId === this.bookingId) {
+        this.loadBooking(this.bookingId);
+      } else {
+        this.loadAvailability();
       }
     });
   }
@@ -333,6 +354,25 @@ export class AdminBookingFormPage implements OnInit, OnDestroy {
         this.loadAvailability();
       },
       error: response => this.error = response.error?.message ?? 'No se pudo cargar el turno.'
+    });
+  }
+
+  private refreshReferenceData() {
+    forkJoin({
+      prices: this.api.get<unknown>('/prices', undefined, { noCache: true }),
+      clients: this.api.get<unknown>('/admin/users', undefined, { noCache: true }),
+      courts: this.api.get<unknown>('/courts', undefined, { noCache: true })
+    }).subscribe({
+      next: ({ prices, clients, courts }) => {
+        this.prices = this.normalizeList(prices, 'prices');
+        this.clients = this.normalizeList(clients, 'users').filter(client => client.role === 'CLIENT' && client.active);
+        const activeCourtId = Number(this.normalizeList(courts, 'courts')[0]?.id ?? 0);
+        if (!this.form.courtId || !this.normalizeList(courts, 'courts').some(court => Number(court.id) === Number(this.form.courtId))) {
+          this.form.courtId = activeCourtId;
+        }
+        this.syncPrice();
+        this.loadAvailability();
+      }
     });
   }
 

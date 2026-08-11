@@ -120,6 +120,9 @@ export const APP_TAILWIND_PUBLIC_CLASSES = `
   [&_.booking-card]:grid [&_.booking-card]:grid-cols-[75px_1fr_auto_auto] [&_.booking-card]:items-center [&_.booking-card]:gap-6 [&_.booking-card]:rounded-xl [&_.booking-card]:border [&_.booking-card]:border-brand-border [&_.booking-card]:bg-white [&_.booking-card]:p-5
   [&_.date-block]:grid [&_.date-block]:h-[68px] [&_.date-block]:place-content-center [&_.date-block]:rounded-lg [&_.date-block]:bg-brand-dark [&_.date-block]:text-center [&_.date-block]:text-white
   [&_.date-block_b]:text-[2rem] [&_.date-block_b]:leading-[.8] [&_.date-block_span]:text-[.7rem] [&_.date-block_span]:uppercase
+  [&_.booking-card-actions]:grid [&_.booking-card-actions]:min-w-[170px] [&_.booking-card-actions]:gap-2 [&_.booking-card-actions_.btn]:w-full
+  [&_.client-hold-status]:mt-3 [&_.client-hold-status]:grid [&_.client-hold-status]:w-fit [&_.client-hold-status]:max-w-full [&_.client-hold-status]:grid-cols-[auto_auto] [&_.client-hold-status]:items-center [&_.client-hold-status]:gap-x-3 [&_.client-hold-status]:gap-y-0.5 [&_.client-hold-status]:rounded-lg [&_.client-hold-status]:border [&_.client-hold-status]:border-brand-gold/50 [&_.client-hold-status]:bg-[#f6f0d9] [&_.client-hold-status]:px-3 [&_.client-hold-status]:py-2 [&_.client-hold-status_span]:text-xs [&_.client-hold-status_span]:font-bold [&_.client-hold-status_span]:text-[#675318] [&_.client-hold-status_strong]:row-span-2 [&_.client-hold-status_strong]:font-display [&_.client-hold-status_strong]:text-2xl [&_.client-hold-status_strong]:tabular-nums [&_.client-hold-status_strong]:text-brand-dark [&_.client-hold-status_small]:text-[.68rem] [&_.client-hold-status_small]:text-brand-muted
+  [&_.tag.expired-tag]:bg-red-50 [&_.tag.expired-tag]:text-brand-danger
 
   [&_.turn-grid-layout]:mx-auto [&_.turn-grid-layout]:mb-20 [&_.turn-grid-layout]:grid [&_.turn-grid-layout]:w-[min(calc(100%-48px),1200px)] [&_.turn-grid-layout]:grid-cols-[320px_1fr] [&_.turn-grid-layout]:rounded-[18px] [&_.turn-grid-layout]:border [&_.turn-grid-layout]:border-brand-border [&_.turn-grid-layout]:bg-brand-paper
   [&_.turn-filters]:grid [&_.turn-filters]:content-start [&_.turn-filters]:gap-7 [&_.turn-filters]:rounded-none [&_.turn-filters]:border-0 [&_.turn-filters]:border-r [&_.turn-filters]:border-brand-border [&_.turn-filters]:p-7 [&_.turn-filters]:shadow-none
@@ -156,6 +159,11 @@ export const APP_TAILWIND_PUBLIC_CLASSES = `
   [&_.booking-success]:py-3 [&_.booking-success]:text-center [&_.booking-success_h2]:text-[3rem]
   [&_.success-check]:mx-auto [&_.success-check]:mb-4 [&_.success-check]:grid [&_.success-check]:size-16 [&_.success-check]:place-items-center [&_.success-check]:rounded-full [&_.success-check]:bg-brand-gold [&_.success-check]:text-4xl [&_.success-check]:font-bold [&_.success-check]:text-brand-dark [&_.success-check]:shadow-[8px_8px_0_var(--color-brand-dark)]
   [&_.success-actions]:mt-5 [&_.success-actions]:flex [&_.success-actions]:justify-center [&_.success-actions]:gap-3
+  [&_.hold-clock-mark]:mx-auto [&_.hold-clock-mark]:mb-4 [&_.hold-clock-mark]:grid [&_.hold-clock-mark]:size-16 [&_.hold-clock-mark]:place-items-center [&_.hold-clock-mark]:rounded-full [&_.hold-clock-mark]:border-4 [&_.hold-clock-mark]:border-brand-gold [&_.hold-clock-mark]:bg-brand-dark [&_.hold-clock-mark]:font-display [&_.hold-clock-mark]:text-2xl [&_.hold-clock-mark]:font-bold [&_.hold-clock-mark]:text-brand-paper [&_.hold-clock-mark]:shadow-[8px_8px_0_var(--color-brand-gold)]
+  [&_.hold-countdown]:mx-auto [&_.hold-countdown]:my-5 [&_.hold-countdown]:grid [&_.hold-countdown]:w-full [&_.hold-countdown]:max-w-[420px] [&_.hold-countdown]:gap-1 [&_.hold-countdown]:rounded-xl [&_.hold-countdown]:border [&_.hold-countdown]:border-brand-gold/60 [&_.hold-countdown]:bg-brand-dark [&_.hold-countdown]:px-5 [&_.hold-countdown]:py-4 [&_.hold-countdown]:text-brand-paper [&_.hold-countdown_span]:font-display [&_.hold-countdown_span]:text-[.7rem] [&_.hold-countdown_span]:font-semibold [&_.hold-countdown_span]:uppercase [&_.hold-countdown_span]:tracking-[.14em] [&_.hold-countdown_strong]:text-[clamp(2.5rem,10vw,4rem)] [&_.hold-countdown_strong]:leading-none [&_.hold-countdown_strong]:tabular-nums [&_.hold-countdown_small]:font-body [&_.hold-countdown_small]:text-xs [&_.hold-countdown_small]:text-brand-cream/75
+  [&_.hold-actions]:mt-5 [&_.hold-actions]:grid [&_.hold-actions]:grid-cols-2 [&_.hold-actions]:gap-3 [&_.hold-actions_.btn]:w-full
+  [&_.pending-chip]:text-[#775d17]
+  [&_.hold-released-mark]:mx-auto [&_.hold-released-mark]:mb-4 [&_.hold-released-mark]:grid [&_.hold-released-mark]:size-16 [&_.hold-released-mark]:place-items-center [&_.hold-released-mark]:rounded-full [&_.hold-released-mark]:bg-[#e7eedf] [&_.hold-released-mark]:text-4xl [&_.hold-released-mark]:font-bold [&_.hold-released-mark]:text-brand-green
   [&_.cancel-summary]:my-5 [&_.cancel-summary]:grid [&_.cancel-summary]:grid-cols-[1.6fr_1fr_1fr] [&_.cancel-summary]:overflow-hidden [&_.cancel-summary]:rounded-xl [&_.cancel-summary]:border [&_.cancel-summary]:border-red-200 [&_.cancel-summary]:bg-red-50
   [&_.cancel-summary>div]:grid [&_.cancel-summary>div]:gap-1 [&_.cancel-summary>div]:border-r [&_.cancel-summary>div]:border-red-200 [&_.cancel-summary>div]:p-3
   [&_.cancel-actions]:grid [&_.cancel-actions]:grid-cols-2 [&_.cancel-actions]:gap-3
@@ -308,6 +316,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   [&_.operations-booking]:grid [&_.operations-booking]:grid-cols-[86px_minmax(0,1fr)_minmax(205px,auto)] [&_.operations-booking]:items-center [&_.operations-booking]:gap-4 [&_.operations-booking]:rounded-xl [&_.operations-booking]:border [&_.operations-booking]:border-brand-border [&_.operations-booking]:border-l-[5px] [&_.operations-booking]:border-l-brand-green [&_.operations-booking]:bg-brand-paper [&_.operations-booking]:px-5 [&_.operations-booking]:py-[18px] [&_.operations-booking]:shadow-[0_6px_18px_rgba(34,53,38,.045)]
   [&_.operations-booking.cancelled]:border-l-[#b8b8b1] [&_.operations-booking.cancelled]:bg-[#f0efe9] [&_.operations-booking.cancelled]:opacity-65
   [&_.operations-booking.blocked]:border-l-brand-gold [&_.operations-booking.blocked]:bg-[#f4f1df]
+  [&_.operations-booking.pending-hold-card]:border-l-brand-gold [&_.operations-booking.pending-hold-card]:bg-[#fffdf4]
   [&_.operations-booking>time]:grid [&_.operations-booking>time]:leading-none
   [&_.operations-booking>time>b]:text-[2.15rem] [&_.operations-booking>time>b]:font-semibold [&_.operations-booking>time>b]:text-brand-dark
   [&_.operations-booking>time>small]:mt-1.5 [&_.operations-booking>time>small]:font-body [&_.operations-booking>time>small]:text-[.68rem] [&_.operations-booking>time>small]:font-semibold [&_.operations-booking>time>small]:text-brand-muted
@@ -315,6 +324,8 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   [&_.operations-booking-labels]:flex [&_.operations-booking-labels]:flex-wrap [&_.operations-booking-labels]:items-center [&_.operations-booking-labels]:gap-1.5
   [&_.operations-booking-actions]:flex [&_.operations-booking-actions]:flex-wrap [&_.operations-booking-actions]:justify-end [&_.operations-booking-actions]:gap-1.5
   [&_.status-pill]:inline-flex [&_.status-pill]:rounded-full [&_.status-pill]:px-2 [&_.status-pill]:py-1 [&_.status-pill]:font-display [&_.status-pill]:text-[.62rem] [&_.status-pill]:font-semibold [&_.status-pill]:uppercase [&_.status-pill]:tracking-[.06em]
+  [&_.hold-pill]:inline-flex [&_.hold-pill]:rounded-full [&_.hold-pill]:border [&_.hold-pill]:border-brand-gold/60 [&_.hold-pill]:bg-[#f6f0d9] [&_.hold-pill]:px-2 [&_.hold-pill]:py-1 [&_.hold-pill]:font-display [&_.hold-pill]:text-[.64rem] [&_.hold-pill]:font-semibold [&_.hold-pill]:tabular-nums [&_.hold-pill]:text-[#675318]
+  [&_.hold-pill.urgent]:border-brand-danger/40 [&_.hold-pill.urgent]:bg-red-50 [&_.hold-pill.urgent]:text-brand-danger
   [&_.origin-pill]:inline-flex [&_.origin-pill]:rounded-full [&_.origin-pill]:border [&_.origin-pill]:border-brand-border [&_.origin-pill]:px-2 [&_.origin-pill]:py-1 [&_.origin-pill]:font-display [&_.origin-pill]:text-[.62rem] [&_.origin-pill]:font-semibold [&_.origin-pill]:uppercase [&_.origin-pill]:tracking-[.06em] [&_.origin-pill]:text-brand-muted
   [&_.payment-pill]:inline-flex [&_.payment-pill]:rounded-full [&_.payment-pill]:bg-[#f5e9be] [&_.payment-pill]:px-2 [&_.payment-pill]:py-1 [&_.payment-pill]:font-display [&_.payment-pill]:text-[.62rem] [&_.payment-pill]:font-semibold [&_.payment-pill]:uppercase [&_.payment-pill]:tracking-[.06em] [&_.payment-pill]:text-[#76611b]
   [&_.payment-pill.paid]:bg-[#dcebd9] [&_.payment-pill.paid]:text-[#376044]
@@ -445,7 +456,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   max-[768px]:[&_.page-head]:px-[18px] max-[768px]:[&_.page-head]:pt-10
   max-[769px]:[&_.turn-grid-layout]:w-[calc(100%-28px)] max-[769px]:[&_.turn-grid-layout]:grid-cols-1
   max-[769px]:[&_.turn-filters]:border-r-0 max-[769px]:[&_.turn-filters]:border-b max-[769px]:[&_.turn-results]:p-5
-  max-[768px]:[&_.cards-list]:px-4 max-[768px]:[&_.booking-card]:grid-cols-[58px_1fr] max-[768px]:[&_.booking-card>strong]:col-start-2 max-[768px]:[&_.booking-card>.btn]:col-start-2
+  max-[769px]:[&_.cards-list]:px-4 max-[769px]:[&_.booking-card]:grid-cols-[58px_1fr] max-[769px]:[&_.booking-card>strong]:col-start-2 max-[769px]:[&_.booking-card>.btn]:col-start-2 max-[769px]:[&_.booking-card-actions]:col-start-2 max-[769px]:[&_.booking-card-actions]:w-full
   max-[768px]:[&_.booking-modal]:w-full max-[768px]:[&_.booking-modal]:p-5
   max-[768px]:[&_.form-grid]:grid-cols-1 max-[768px]:[&_.form-grid.three]:grid-cols-1 max-[768px]:[&_.form-grid_.wide]:col-auto
   max-[768px]:[&_.admin-form-page]:px-4 max-[768px]:[&_.admin-form-page]:py-8 max-[768px]:[&_.manual-booking-form]:p-5
@@ -458,7 +469,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   max-[600px]:[&_.hero-content]:w-full max-[600px]:[&_.hero-content]:justify-end max-[600px]:[&_.hero-content]:px-6 max-[600px]:[&_.hero-content]:pt-24 max-[600px]:[&_.hero-content]:pb-8
   max-[600px]:[&_.hero-title]:text-[clamp(3.3rem,15vw,4.8rem)] max-[600px]:[&_.hero-actions]:grid max-[600px]:[&_.hero-actions]:grid-cols-2
   max-[600px]:[&_.hero-details]:grid-cols-1 max-[600px]:[&_.hero-details>div]:grid-cols-[105px_1fr] max-[600px]:[&_.hero-details>div]:border-r-0 max-[600px]:[&_.hero-details>div]:border-b
-  max-[600px]:[&_.booking-summary]:grid-cols-1 max-[600px]:[&_.cancel-summary]:grid-cols-1 max-[600px]:[&_.cancel-actions]:grid-cols-1
+  max-[600px]:[&_.booking-summary]:grid-cols-1 max-[600px]:[&_.cancel-summary]:grid-cols-1 max-[600px]:[&_.cancel-actions]:grid-cols-1 max-[600px]:[&_.hold-actions]:grid-cols-1
   max-[600px]:[&_.operations-date-picker]:w-full max-[600px]:[&_.operations-booking]:grid-cols-[58px_minmax(0,1fr)] max-[600px]:[&_.operations-booking]:gap-3 max-[600px]:[&_.operations-booking]:px-3 max-[600px]:[&_.operations-booking]:py-4 max-[600px]:[&_.operations-booking-actions]:col-span-full max-[600px]:[&_.operations-booking-actions]:grid max-[600px]:[&_.operations-booking-actions]:grid-cols-2
   max-[600px]:[&_.advanced-menu_nav]:grid max-[600px]:[&_.advanced-menu_nav]:grid-cols-2
   max-[600px]:[&_.clients-toolbar]:p-4 max-[600px]:[&_.client-tabs_button]:flex-[1_1_132px] max-[600px]:[&_.client-row]:grid-cols-[46px_minmax(0,1fr)] max-[600px]:[&_.client-avatar]:size-[46px] max-[600px]:[&_.client-actions]:col-span-full max-[600px]:[&_.client-actions]:max-w-none max-[600px]:[&_.client-actions]:justify-start
@@ -477,6 +488,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   max-[520px]:[&_.client-row]:grid-cols-1 max-[520px]:[&_.client-avatar]:hidden max-[520px]:[&_.client-actions]:grid max-[520px]:[&_.client-actions]:grid-cols-2 max-[520px]:[&_.client-actions_.small-action]:w-full max-[520px]:[&_.client-form-actions]:grid max-[520px]:[&_.client-form-actions_.btn]:w-full
   max-[520px]:[&_.confirm-dialog]:rounded-[18px] max-[520px]:[&_.confirm-dialog]:px-5 max-[520px]:[&_.confirm-dialog]:py-[26px] max-[520px]:[&_.confirm-dialog_h2]:text-[2rem] max-[520px]:[&_.confirm-dialog-actions]:grid-cols-1
   max-[520px]:[&_.expected]:grid-cols-1 max-[520px]:[&_.modal-actions]:grid-cols-1
+  max-[520px]:[&_.client-hold-status]:grid-cols-1 max-[520px]:[&_.client-hold-status_strong]:row-auto
   max-[420px]:[&_.operations-summary]:grid-cols-1 max-[420px]:[&_.operations-summary_article]:min-h-[96px] max-[420px]:[&_.operations-summary_article]:p-4
   max-[420px]:[&_.operations-booking-actions]:grid-cols-1 max-[420px]:[&_.advanced-menu_nav]:grid-cols-1
   max-[420px]:[&_.duration-options]:gap-1.5 max-[420px]:[&_.duration-options_button]:min-h-[78px] max-[420px]:[&_.duration-options_button]:px-1.5 max-[420px]:[&_.duration-label]:text-[.78rem] max-[420px]:[&_.duration-price]:text-[.62rem]

@@ -1,10 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 
 interface DashboardData {
   summary: { totalBookings: number; activeBookings: number; occupancyRate: number; cancelledCount: number; cancellationRate: number; noShowCount: number; blockedHours: number; newClients: number };
@@ -92,6 +94,7 @@ const HEIGHT_PERCENT_CLASSES = [
 })
 export class AdminStatsPage implements OnInit, OnDestroy {
   private api = inject(Api); private router = inject(Router);
+  private realtime = inject(RealtimeService); private destroyRef = inject(DestroyRef);
   dashboard: DashboardData | null = null; availability: any; todayBookings: any[] = [];
   readonly dashboardStatus = signal<AsyncStatus>('idle');
   readonly availabilityStatus = signal<AsyncStatus>('idle');
@@ -112,6 +115,23 @@ export class AdminStatsPage implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.loadDashboard();
+    this.loadCourt();
+    merge(
+      this.realtime.listen([
+        'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
+        'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED',
+        'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED', 'CONFIGURATION_CHANGED',
+        'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      this.loadDashboard();
+      if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
+        && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
+      else if (this.courtId) this.loadAvailability();
+    });
+  }
+  private loadCourt() {
     this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
       next: courts => {
         this.courtId = Number(courts?.[0]?.id ?? 0);

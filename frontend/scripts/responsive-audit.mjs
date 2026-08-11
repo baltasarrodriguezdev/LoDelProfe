@@ -216,22 +216,28 @@ function slug(route) {
   return route === '/' ? 'inicio' : route.replace(/^\//, '').replace(/[/?=&]+/g, '-');
 }
 
-async function loginAsAdmin(client, sessionId) {
-  const phone = process.env.RESP_ADMIN_PHONE;
-  const password = process.env.RESP_ADMIN_PASSWORD;
+async function login(client, sessionId, phone, password) {
   if (!phone || !password) return false;
   return evaluate(client, sessionId, `(async () => {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(${JSON.stringify({ phone: process.env.RESP_ADMIN_PHONE, password: process.env.RESP_ADMIN_PASSWORD })})
+      body: JSON.stringify(${JSON.stringify({ phone, password })})
     });
     if (!response.ok) return false;
     const data = await response.json();
     localStorage.setItem('user', JSON.stringify(data.user));
     return true;
   })()`);
+}
+
+function loginAsUser(client, sessionId) {
+  return login(client, sessionId, process.env.RESP_USER_PHONE, process.env.RESP_USER_PASSWORD);
+}
+
+function loginAsAdmin(client, sessionId) {
+  return login(client, sessionId, process.env.RESP_ADMIN_PHONE, process.env.RESP_ADMIN_PASSWORD);
 }
 
 async function main() {
@@ -292,14 +298,27 @@ async function main() {
       await captureInteraction(client, sessionId, report, { route: '/reservar', width: 390, state: 'guest-modal-open', screenshot: 'reservar-modal-390.png' });
     }
 
+    const userAuthenticated = await loginAsUser(client, sessionId);
+    if (userAuthenticated) {
+      for (const width of widths) {
+        await setViewport(client, sessionId, width);
+        for (const route of authenticatedRoutes) {
+          await navigate(client, sessionId, `${baseUrl}${route}`);
+          const result = await inspectLayout(client, sessionId);
+          report.push({ route, width, state: 'authenticated', ...result });
+          if (screenshotWidths.has(width)) await screenshot(client, sessionId, `${slug(route)}-${width}.png`);
+        }
+      }
+    }
+
     const adminAuthenticated = await loginAsAdmin(client, sessionId);
     if (adminAuthenticated) {
       for (const width of widths) {
         await setViewport(client, sessionId, width);
-        for (const route of [...authenticatedRoutes, ...adminRoutes]) {
+        for (const route of adminRoutes) {
           await navigate(client, sessionId, `${baseUrl}${route}`);
           const result = await inspectLayout(client, sessionId);
-          report.push({ route, width, state: route.startsWith('/admin') ? 'admin' : 'authenticated', ...result });
+          report.push({ route, width, state: 'admin', ...result });
           if (screenshotWidths.has(width)) await screenshot(client, sessionId, `${slug(route)}-${width}.png`);
         }
       }
@@ -343,6 +362,7 @@ async function main() {
     await writeFile(join(outputDir, 'responsive-report.json'), JSON.stringify({
       generatedAt: new Date().toISOString(),
       baseUrl,
+      userAuthenticated,
       adminAuthenticated,
       widths,
       totalChecks: report.length,
@@ -350,7 +370,7 @@ async function main() {
       checks: report
     }, null, 2));
 
-    console.log(JSON.stringify({ totalChecks: report.length, failures: failures.length, adminAuthenticated }));
+    console.log(JSON.stringify({ totalChecks: report.length, failures: failures.length, userAuthenticated, adminAuthenticated }));
     if (failures.length) process.exitCode = 1;
   } finally {
     client?.close();

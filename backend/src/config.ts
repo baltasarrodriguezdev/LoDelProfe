@@ -25,11 +25,17 @@ export const config = {
   frontendUrls,
   publicAppUrl: (process.env.PUBLIC_APP_URL ?? frontendUrls[0]).replace(/\/$/, ''),
   passwordResetTtlMinutes: Math.max(5, Math.min(60, Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 15)),
+  realtime: {
+    redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
+    redisChannel: process.env.REALTIME_REDIS_CHANNEL ?? 'lo-del-profe:realtime:v1',
+    heartbeatMs: Math.max(10_000, Number(process.env.REALTIME_HEARTBEAT_MS) || 30_000)
+  },
   timezone: process.env.APP_TIMEZONE ?? 'America/Argentina/Buenos_Aires',
   businessWhatsappPhone: process.env.BUSINESS_WHATSAPP_PHONE?.replace(/\D/g, ''),
   booking: {
     slotStepMinutes: 30,
     minBookableMinutes: 60,
+    pendingHoldMinutes: 10,
     avoidDeadGaps: true,
     allowAdminOverride: true
   }

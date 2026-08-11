@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 import { Api } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 
 type PendingUser = { id: number; firstName: string; lastName: string; phone: string; verificationCode?: string | null; createdAt: string };
 type ResetRequest = { id: string; requestedAt: string; user: { id: number; firstName: string; lastName: string; phone: string } };
@@ -55,16 +57,29 @@ type AuditLog = { id: string; action: string; entityType: string; entityId?: str
 })
 export class AdminSecurityPage implements OnInit, OnDestroy {
   private api = inject(Api);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   users: PendingUser[] = []; resets: ResetRequest[] = []; auditLogs: AuditLog[] = [];
   verificationTarget: PendingUser | null = null;
   verificationForm = { method: 'WHATSAPP_MANUAL', senderPhone: '', code: '', confirmedIdentity: false };
   verificationError = ''; notice = ''; noticeError = false;
   readonly verifying = signal(false); readonly resetMutation = signal<string | null>(null);
   readonly usersLoading = signal(false); readonly usersLoadError = signal('');
-  private refreshTimer: ReturnType<typeof setInterval> | null = null;
-
-  ngOnInit() { this.loadUsers(); this.loadResets(); this.loadAuditLogs(); this.refreshTimer = setInterval(() => this.loadUsers(), 15_000); }
-  ngOnDestroy() { if (this.refreshTimer) clearInterval(this.refreshTimer); }
+  ngOnInit() {
+    this.loadUsers(); this.loadResets(); this.loadAuditLogs();
+    merge(
+      this.realtime.listen([
+        'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
+        'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
+        'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
+        'CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.loadUsers(); this.loadResets(); this.loadAuditLogs();
+    });
+  }
+  ngOnDestroy() {}
   loadUsers() {
     if (this.usersLoading()) return;
     this.usersLoading.set(true); this.usersLoadError.set('');

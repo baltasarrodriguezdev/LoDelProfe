@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { AdminAgendaStore } from './admin-agenda-store';
@@ -23,6 +25,7 @@ type Booking = {
   amountPaid?: number;
   notes?: string;
   createdAt?: string;
+  holdExpiresAt?: string | null;
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
@@ -85,18 +88,19 @@ type Booking = {
             <div class='empty'>No se pudieron cargar los turnos pendientes.</div>
           } @else {
           @for (booking of pendingReservations; track booking.id) {
-            <article class="operations-booking">
+            <article class="operations-booking pending-hold-card">
               <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>{{ booking.startTime | date:'dd/MM' }}</small></time>
               <div class="operations-booking-main">
                 <div class="operations-booking-labels">
                   <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
+                  <span class="hold-pill" [class.urgent]="holdRemainingSeconds(booking) <= 120">Vence en {{ holdRemainingLabel(booking) }}</span>
                   @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
                 </div>
                 <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
-                <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }}</p>
+                <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }} · se libera {{ booking.holdExpiresAt | date:'HH:mm' }}</p>
               </div>
               <div class="operations-booking-actions">
-                <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
+                <button type="button" class="small-action" [disabled]="isHoldExpired(booking) || bookingMutationId() !== null" (click)="confirmPending(booking)">Confirmar</button>
                 @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action pay-action" routerLink="/admin/seguridad">Validar cliente</a> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
@@ -301,6 +305,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
   public auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   selectedDate = this.dateInput(new Date());
   availabilityDuration = 90;
@@ -315,6 +321,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   readonly availabilityError = this.agendaStore.availabilityError;
   readonly pendingReservationsStatus = signal<AsyncStatus>('idle');
   readonly pendingUsersStatus = signal<AsyncStatus>('idle');
+  readonly holdClock = signal(Date.now());
   readonly bookingMutationId = signal<number | null>(null);
   readonly pendingUserMutationId = signal<number | null>(null);
   readonly paymentMutationId = signal<number | null>(null);
@@ -336,6 +343,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   private pendingReservationsAbort: AbortController | null = null;
   private pendingUsersAbort: AbortController | null = null;
   private detailAbort: AbortController | null = null;
+  private holdTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshedExpiredHolds = new Set<number>();
 
   get formattedDate() {
     const value = new Intl.DateTimeFormat('es-AR', {
@@ -356,6 +365,25 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   get pendingTotal() { return Math.max(0, this.estimatedTotal - this.paidTotal); }
 
   ngOnInit() {
+    this.holdTimer = setInterval(() => this.tickPendingHolds(), 1000);
+    this.loadCourt();
+    merge(
+      this.realtime.listen([
+        'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
+        'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
+        'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
+        'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED', 'CASH_MOVEMENT_CREATED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
+        && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
+      this.loadPendingReservations();
+      this.loadPendingUsers();
+    });
+  }
+
+  private loadCourt() {
     this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
       next: courts => {
         this.courtId = Number(courts?.[0]?.id ?? 0);
@@ -367,9 +395,27 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    if (this.holdTimer) clearInterval(this.holdTimer);
+    this.holdTimer = null;
     this.pendingReservationsAbort?.abort();
     this.pendingUsersAbort?.abort();
     this.detailAbort?.abort();
+  }
+
+  holdRemainingSeconds(booking: Booking) {
+    const expiresAt = Date.parse(booking.holdExpiresAt ?? '');
+    return Number.isFinite(expiresAt)
+      ? Math.max(0, Math.ceil((expiresAt - this.holdClock()) / 1000))
+      : 0;
+  }
+
+  holdRemainingLabel(booking: Booking) {
+    const seconds = this.holdRemainingSeconds(booking);
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  isHoldExpired(booking: Booking) {
+    return booking.status === 'PENDING' && (!booking.holdExpiresAt || this.holdRemainingSeconds(booking) <= 0);
   }
 
   loadAll() {
@@ -714,6 +760,14 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.loadPendingReservations();
     this.loadPendingUsers();
     this.loadAvailability(true);
+  }
+
+  private tickPendingHolds() {
+    this.holdClock.set(Date.now());
+    const expired = this.pendingReservations.filter(booking => this.isHoldExpired(booking) && !this.refreshedExpiredHolds.has(booking.id));
+    if (!expired.length) return;
+    expired.forEach(booking => this.refreshedExpiredHolds.add(booking.id));
+    this.reloadOperationalViews();
   }
 
   private bookingAt(time: string) {

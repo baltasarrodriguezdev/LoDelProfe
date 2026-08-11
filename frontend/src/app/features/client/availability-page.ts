@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize, firstValueFrom, forkJoin } from 'rxjs';
+import { debounceTime, finalize, firstValueFrom, forkJoin, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
@@ -12,9 +14,9 @@ import { MyBookingsStore } from './my-bookings-store';
 
 type Price = { id: number; durationMinutes: number; price: number; active: boolean };
 type Slot = { startTime: string; endTime: string; available: boolean; reason?: string | null; message?: string | null };
-type Availability = { date: string; durationMinutes: number; price: number | null; reason?: string; message?: string; slots: Slot[] };
+type Availability = { date: string; durationMinutes: number; price: number | null; reason?: string; message?: string; nextChangeAt?: string | null; slots: Slot[] };
 type PendingBooking = { date: string; startTime: string; endTime: string; duration: number; price: number | null; players: number };
-type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
+type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending' | 'holdReleased';
 
 @Component({
   standalone: true,
@@ -121,20 +123,37 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending';
                 <a class="btn ghost" routerLink="/">Volver al inicio</a>
               </div>
             </div>
-          } @else {
+          } @else if (modalState === 'verificationPending') {
             <div class="booking-success unified-success">
-              <span class="success-check">✓</span>
-              <span class="eyebrow">SOLICITUD PENDIENTE</span>
-              <h2 id="confirm-title">Tu solicitud quedó pendiente</h2>
-              <p>Te abrimos WhatsApp para validar tu número y solicitar tu primer turno. Cuando la cancha revise el mensaje, confirmará tu cuenta y tu reserva.</p>
+              <span class="hold-clock-mark" aria-hidden="true">10</span>
+              <span class="eyebrow">RETENCIÓN TEMPORAL</span>
+              <h2 id="confirm-title">Guardamos tu horario</h2>
+              <p>Enviá ahora el mensaje de WhatsApp. La cancha debe validarlo antes de que termine la cuenta regresiva.</p>
+              <div class="hold-countdown" role="timer" aria-live="polite">
+                <span>Tiempo restante</span>
+                <strong>{{ holdRemainingLabel }}</strong>
+                <small>Se libera automáticamente a las {{ holdEndsAtLabel }}</small>
+              </div>
               <div class="booking-summary pending-summary">
                 <div><span>Día</span><strong>{{ formattedDate }}</strong></div>
                 <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
                 <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
-                <div><span>Estado</span><strong class="pending-chip">Pendiente de confirmación</strong></div>
+                <div><span>Estado</span><strong class="pending-chip">Esperando WhatsApp</strong></div>
               </div>
-              <button type="button" class="btn primary full" (click)="closeModal()">Entendido</button>
-              <button type="button" class="link cancel-modal resend-whatsapp" (click)="openWhatsappAgain()">Abrir WhatsApp nuevamente</button>
+              @if (modalError) { <p class="notice error-notice modal-alert">{{ modalError }}</p> }
+              <div class="hold-actions">
+                <button type="button" class="btn primary" (click)="openWhatsappAgain()">Abrir WhatsApp nuevamente</button>
+                <button type="button" class="btn ghost" [disabled]="submitting()" (click)="cancelPendingHold()">{{ submitting() ? 'Liberando...' : 'Cancelar solicitud' }}</button>
+              </div>
+              <button type="button" class="link cancel-modal resend-whatsapp" (click)="closeModal()">Cerrar y verla en Mis turnos</button>
+            </div>
+          } @else {
+            <div class="booking-success unified-success hold-released-state">
+              <span class="hold-released-mark" aria-hidden="true">↻</span>
+              <span class="eyebrow">HORARIO LIBERADO</span>
+              <h2 id="confirm-title">{{ holdReleaseReason === 'expired' ? 'La solicitud venció' : 'Solicitud cancelada' }}</h2>
+              <p>{{ holdReleaseReason === 'expired' ? 'Pasaron los 10 minutos sin confirmación. El horario volvió a estar disponible para otros jugadores.' : 'Liberamos el horario. Ya podés elegir otro turno cuando quieras.' }}</p>
+              <button type="button" class="btn primary full" (click)="closeModal()">Elegir otro horario</button>
             </div>
           }
         </section>
@@ -148,6 +167,8 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   private router = inject(Router);
   private myBookingsStore = inject(MyBookingsStore);
   private adminAgendaStore = inject(AdminAgendaStore);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   private readonly pendingKey = 'pendingBooking';
 
   venue = VENUE;
@@ -168,19 +189,33 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.slots().filter(slot => slot.available === true)
   );
   readonly submitting = signal(false);
+  readonly holdRemainingSeconds = signal(0);
   message = '';
   messageIsError = true;
   modalError = '';
   private pendingBooking: PendingBooking | null = null;
   private lastWhatsappUrl = '';
+  private pendingReservationId: number | null = null;
+  private holdExpiresAt: string | null = null;
+  holdReleaseReason: 'expired' | 'cancelled' = 'expired';
+  private holdTimer: ReturnType<typeof setInterval> | null = null;
   private availabilityRequestId = 0;
   private pricesRequestId = 0;
   private pricesAbort: AbortController | null = null;
   private availabilityAbort: AbortController | null = null;
+  private availabilityRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   get availabilityLoadFailed() {
     return this.pricesStatus() === 'error' || this.availabilityStatus() === 'error';
   }
   get selectedPrice() { return this.pendingBooking?.price ?? this.result?.price ?? null; }
+  get holdRemainingLabel() {
+    const seconds = this.holdRemainingSeconds();
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+  get holdEndsAtLabel() {
+    if (!this.holdExpiresAt) return '';
+    return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(new Date(this.holdExpiresAt));
+  }
 
   get modalTitle() {
     if (!this.auth.user()) return 'Reservá tu turno';
@@ -190,7 +225,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
 
   get modalText() {
     if (!this.auth.user()) return 'Para reservar desde la web, ingresá o creá tu cuenta.';
-    if (!this.isPhoneVerified()) return 'Para validar tu número, te vamos a abrir WhatsApp con los datos de tu cuenta y del turno. La reserva quedará pendiente hasta que la cancha la confirme.';
+    if (!this.isPhoneVerified()) return 'Para validar tu número, abriremos WhatsApp y guardaremos el horario durante 10 minutos mientras enviás el mensaje.';
     return 'Revisá los datos antes de guardar la reserva.';
   }
 
@@ -211,6 +246,20 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   ngOnInit() {
     this.restorePendingBooking();
     this.loadPrices();
+    merge(
+      this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'object') {
+        const event = change as RealtimeEvent;
+        if (event.type === 'AVAILABILITY_CHANGED' && !this.realtime.affectsAvailability(event, this.date, this.courtId)) return;
+        if (event.type !== 'CONFIGURATION_CHANGED') {
+          void this.loadAvailability();
+          return;
+        }
+      }
+      this.loadPrices();
+    });
   }
 
   ngOnDestroy() {
@@ -220,6 +269,8 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.availabilityAbort?.abort();
     this.pricesAbort = null;
     this.availabilityAbort = null;
+    this.stopHoldCountdown();
+    this.clearAvailabilityRefresh();
   }
 
   isPhoneVerified() { return this.auth.user()?.phoneVerified === true; }
@@ -252,15 +303,21 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.players = pending?.players ?? 4;
     this.notes = '';
     this.lastWhatsappUrl = '';
+    this.pendingReservationId = null;
+    this.holdExpiresAt = null;
+    this.stopHoldCountdown();
   }
 
   closeModal() {
     if (this.submitting()) return;
-    const refresh = this.modalState === 'reservationConfirmed' || this.modalState === 'verificationPending';
+    const refresh = this.modalState !== 'confirm';
     this.selectedSlot = null;
     this.modalState = 'confirm';
     this.modalError = '';
     this.lastWhatsappUrl = '';
+    this.pendingReservationId = null;
+    this.holdExpiresAt = null;
+    this.stopHoldCountdown();
     if (refresh) this.search();
   }
 
@@ -299,10 +356,13 @@ export class AvailabilityPage implements OnInit, OnDestroy {
       next: response => {
         this.myBookingsStore.upsertBooking(response);
         this.adminAgendaStore.invalidate();
+        const reservation = response?.reservation ?? response;
         const url = this.buildVerificationWhatsappUrl();
         this.lastWhatsappUrl = url;
-        popup.location.href = url;
+        this.pendingReservationId = Number(reservation?.id ?? 0) || null;
         this.modalState = 'verificationPending';
+        this.startHoldCountdown(reservation?.holdExpiresAt);
+        popup.location.href = url;
         sessionStorage.removeItem(this.pendingKey);
       },
       error: error => {
@@ -313,8 +373,30 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     });
   }
   openWhatsappAgain() {
-    if (!this.lastWhatsappUrl) return;
+    if (!this.lastWhatsappUrl || this.holdRemainingSeconds() <= 0) return;
     window.open(this.lastWhatsappUrl, '_blank');
+  }
+
+  cancelPendingHold() {
+    const id = this.pendingReservationId;
+    if (!id || this.submitting()) return;
+    this.submitting.set(true);
+    this.modalError = '';
+    this.api.patch(`/bookings/${id}/cancel`, {}).pipe(
+      finalize(() => this.submitting.set(false))
+    ).subscribe({
+      next: () => {
+        this.stopHoldCountdown();
+        this.holdReleaseReason = 'cancelled';
+        this.modalState = 'holdReleased';
+        this.lastWhatsappUrl = '';
+        this.myBookingsStore.updateBookingStatus(id, 'CANCELLED');
+        this.adminAgendaStore.invalidate();
+      },
+      error: error => {
+        this.modalError = this.friendlyBookingError(error.error?.message ?? error.message);
+      }
+    });
   }
 
   confirmBooking() {
@@ -374,6 +456,33 @@ export class AvailabilityPage implements OnInit, OnDestroy {
       registeredPhone: user?.phone ?? '',
       verificationCode: user?.verificationCode ?? undefined
     });
+  }
+
+  private startHoldCountdown(value?: string | null) {
+    this.stopHoldCountdown();
+    this.holdExpiresAt = value && Number.isFinite(Date.parse(value))
+      ? value
+      : new Date(Date.now() + 10 * 60_000).toISOString();
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((Date.parse(this.holdExpiresAt!) - Date.now()) / 1000));
+      this.holdRemainingSeconds.set(remaining);
+      if (remaining > 0) return;
+      this.stopHoldCountdown();
+      if (this.modalState === 'verificationPending') {
+        this.holdReleaseReason = 'expired';
+        this.modalState = 'holdReleased';
+        this.lastWhatsappUrl = '';
+        void this.myBookingsStore.loadBookings(true);
+        this.adminAgendaStore.invalidate();
+      }
+    };
+    tick();
+    if (this.holdRemainingSeconds() > 0) this.holdTimer = setInterval(tick, 1000);
+  }
+
+  private stopHoldCountdown() {
+    if (this.holdTimer) clearInterval(this.holdTimer);
+    this.holdTimer = null;
   }
 
   private loadPrices() {
@@ -461,8 +570,10 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         price: (json as any)?.price ?? null,
         reason: (json as any)?.reason,
         message: (json as any)?.message,
+        nextChangeAt: (json as any)?.nextChangeAt,
         slots: normalizedSlots
       };
+      this.scheduleAvailabilityRefresh(this.result.nextChangeAt);
       this.availabilityStatus.set('success');
       this.resumePendingConfirmation();
     } catch (error) {
@@ -477,6 +588,20 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         this.availabilityAbort = null;
       }
     }
+  }
+  private scheduleAvailabilityRefresh(value?: string | null) {
+    this.clearAvailabilityRefresh();
+    if (!value) return;
+    const delay = Date.parse(value) - Date.now() + 250;
+    if (!Number.isFinite(delay) || delay <= 0) return;
+    this.availabilityRefreshTimer = setTimeout(() => {
+      this.availabilityRefreshTimer = null;
+      void this.loadAvailability();
+    }, Math.min(delay, 2_147_000_000));
+  }
+  private clearAvailabilityRefresh() {
+    if (this.availabilityRefreshTimer) clearTimeout(this.availabilityRefreshTimer);
+    this.availabilityRefreshTimer = null;
   }
   private isAbortError(error: unknown, signal: AbortSignal) {
     const value = error as { name?: string };

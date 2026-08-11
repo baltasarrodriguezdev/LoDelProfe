@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/async-handler.js';
-import { createBooking } from '../services/booking.service.js';
+import { createBooking, expirePendingBookings, pendingBookingExpiresAt } from '../services/booking.service.js';
 import { prisma } from '../prisma/client.js';
 import { HttpError } from '../utils/http-error.js';
 import { localDateTime } from '../utils/time.js';
 import { writeAudit } from '../services/audit.service.js';
+import { publishBookingChange } from '../realtime/events.js';
 
 const r = Router();
 r.use(authenticate);
@@ -28,11 +29,14 @@ r.post('/', asyncHandler(async (req, res) => {
 
   const isVerified = user.phoneVerified === true;
   if (!isVerified) {
+    await expirePendingBookings({ userId: user.id });
+    const now = new Date();
     const requestedStart = localDateTime(input.date, input.startTime).toJSDate();
     const samePending = await prisma.booking.findFirst({
       where: {
         userId: user.id,
         status: 'PENDING',
+        holdExpiresAt: { gt: now },
         courtId: input.courtId,
         startTime: requestedStart,
         durationMinutes: input.durationMinutes
@@ -43,7 +47,7 @@ r.post('/', asyncHandler(async (req, res) => {
     if (samePending) return res.status(200).json({ reservation: samePending, alreadyPending: true });
 
     const pending = await prisma.booking.findFirst({
-      where: { userId: user.id, status: 'PENDING', startTime: { gte: new Date() } },
+      where: { userId: user.id, status: 'PENDING', holdExpiresAt: { gt: now }, startTime: { gte: now } },
       include: { court: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -58,6 +62,7 @@ r.post('/', asyncHandler(async (req, res) => {
     clientName: `${user.firstName} ${user.lastName}`,
     clientPhone: user.phone,
     status: isVerified ? 'CONFIRMED' : 'PENDING',
+    holdExpiresAt: isVerified ? null : pendingBookingExpiresAt(),
     origin: 'WEB'
   }, user.id);
   await writeAudit({
@@ -66,11 +71,13 @@ r.post('/', asyncHandler(async (req, res) => {
     entityType: 'BOOKING',
     entityId: booking.id
   });
+  await publishBookingChange('BOOKING_CREATED', booking);
 
   res.status(201).json(isVerified ? booking : { reservation: booking, alreadyPending: false });
 }));
 
 r.get('/my', asyncHandler(async (req, res) => {
+  await expirePendingBookings({ userId: req.auth!.userId });
   res.json(await prisma.booking.findMany({
     where: { userId: req.auth!.userId, startTime: { gte: new Date() }, status: { not: 'CANCELLED' } },
     include: { court: true },
@@ -78,11 +85,14 @@ r.get('/my', asyncHandler(async (req, res) => {
   }));
 }));
 
-r.get('/my/history', asyncHandler(async (req, res) => res.json(await prisma.booking.findMany({
-  where: { userId: req.auth!.userId, OR: [{ startTime: { lt: new Date() } }, { status: 'CANCELLED' }] },
-  include: { court: true },
-  orderBy: { startTime: 'desc' }
-}))));
+r.get('/my/history', asyncHandler(async (req, res) => {
+  await expirePendingBookings({ userId: req.auth!.userId });
+  res.json(await prisma.booking.findMany({
+    where: { userId: req.auth!.userId, OR: [{ startTime: { lt: new Date() } }, { status: 'CANCELLED' }] },
+    include: { court: true },
+    orderBy: { startTime: 'desc' }
+  }));
+}));
 
 r.patch('/:id/cancel', asyncHandler(async (req, res) => {
   const id = +req.params.id;
@@ -91,13 +101,16 @@ r.patch('/:id/cancel', asyncHandler(async (req, res) => {
   if (!['PENDING', 'CONFIRMED'].includes(booking.status) || booking.startTime <= new Date()) {
     throw new HttpError(409, 'Solo se pueden cancelar turnos futuros pendientes o confirmados.');
   }
-  const settings = await prisma.venueSetting.findUnique({ where: { id: 1 } });
-  const cutoffMinutes = settings?.cancellationCutoffMinutes ?? 120;
-  if (booking.startTime.getTime() - Date.now() < cutoffMinutes * 60_000) {
-    throw new HttpError(409, `La cancelación online cierra ${cutoffMinutes} minutos antes del turno. Comunicate con la cancha.`);
+  if (booking.status === 'CONFIRMED') {
+    const settings = await prisma.venueSetting.findUnique({ where: { id: 1 } });
+    const cutoffMinutes = settings?.cancellationCutoffMinutes ?? 120;
+    if (booking.startTime.getTime() - Date.now() < cutoffMinutes * 60_000) {
+      throw new HttpError(409, `La cancelación online cierra ${cutoffMinutes} minutos antes del turno. Comunicate con la cancha.`);
+    }
   }
   const updated = await prisma.booking.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date() } });
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CLIENT_CANCELLED', entityType: 'BOOKING', entityId: id });
+  await publishBookingChange('BOOKING_CANCELLED', updated, booking);
   res.json(updated);
 }));
 

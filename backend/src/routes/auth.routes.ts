@@ -7,6 +7,7 @@ import { createCsrfToken, rateLimit } from '../middlewares/security.js';
 import { config } from '../config.js';
 import { ARGENTINA_PHONE_ERROR, normalizeArgentinaPhone } from '../utils/argentina-phone.js';
 import * as passwordReset from '../services/password-reset.service.js';
+import { publishUserChange } from '../realtime/events.js';
 
 const required = (field: string) => ({ required_error: `Ingresá ${field}`, invalid_type_error: `Ingresá ${field}` });
 const phoneSchema = z.string(required('tu teléfono')).transform((value, context) => {
@@ -50,7 +51,9 @@ const establish = (res: Response, result: { token: string; user: unknown }, stat
 
 router.post('/register', authRateLimit, asyncHandler(async (req, res) => {
   const data = registrationSchema.parse(req.body);
-  establish(res, await auth.register(data), 201);
+  const result = await auth.register(data);
+  await publishUserChange('USER_CREATED', (result.user as { id: number }).id);
+  establish(res, result, 201);
 }));
 router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
   const data = z.object({ phone: phoneSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).parse(req.body);

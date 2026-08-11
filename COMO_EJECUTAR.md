@@ -38,7 +38,7 @@ npm install
 npm run prisma:generate
 npm run prisma:deploy
 npm run prisma:seed
-npm run dev
++
 ```
 
 Qué hace cada comando:

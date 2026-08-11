@@ -5,14 +5,18 @@ import { businessIntervals, dayOfWeek, localDateTime } from '../utils/time.js';
 import { HttpError } from '../utils/http-error.js';
 import { config } from '../config.js';
 import { hasBookingOverlap } from '../domain/booking-rules.js';
+import { publishBookingChange } from '../realtime/events.js';
 
 export type BookingInput = {
   courtId: number; userId?: number | null; clientName: string; clientPhone: string;
   date: string; startTime: string; durationMinutes: number; playersCount?: number;
   notes?: string; status?: BookingStatus; origin?: BookingOrigin; priceTotal?: number; adminOverride?: boolean;
+  holdExpiresAt?: Date | null;
 };
 
 export const occupiedBookingStatuses: BookingStatus[] = ['PENDING', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+const nonExpiringOccupiedStatuses: BookingStatus[] = ['CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+export const expiredPendingCancellationReason = 'Solicitud vencida sin confirmación por WhatsApp';
 // TiDB admite READ COMMITTED y REPEATABLE READ, pero rechaza SERIALIZABLE.
 // Mantenemos el nivel compatible más fuerte y los bloqueos FOR UPDATE del flujo.
 export const bookingTransactionOptions = {
@@ -20,6 +24,46 @@ export const bookingTransactionOptions = {
 } as const;
 const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
 const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
+
+export function pendingBookingExpiresAt(from = new Date()) {
+  return new Date(from.getTime() + config.booking.pendingHoldMinutes * 60_000);
+}
+
+export async function expirePendingBookings(filter: { userId?: number; bookingId?: number } = {}, now = new Date()) {
+  const where: Prisma.BookingWhereInput = {
+    id: filter.bookingId,
+    userId: filter.userId,
+    status: 'PENDING',
+    OR: [{ holdExpiresAt: { lte: now } }, { holdExpiresAt: null }]
+  };
+  const result = await prisma.booking.updateMany({
+    where,
+    data: { status: 'CANCELLED', cancelledAt: now, cancellationReason: expiredPendingCancellationReason }
+  });
+  if (result.count) {
+    const expired = await prisma.booking.findMany({
+      where: {
+        id: filter.bookingId,
+        userId: filter.userId,
+        status: 'CANCELLED',
+        cancelledAt: now,
+        cancellationReason: expiredPendingCancellationReason
+      },
+      select: { id: true, courtId: true, userId: true, startTime: true, status: true, holdExpiresAt: true }
+    });
+    await Promise.all(expired.map(booking => publishBookingChange('BOOKING_CANCELLED', booking)));
+  }
+  return result;
+}
+
+function occupyingBookingFilter(now = new Date()): Prisma.BookingWhereInput {
+  return {
+    OR: [
+      { status: { in: nonExpiringOccupiedStatuses } },
+      { status: 'PENDING', holdExpiresAt: { gt: now } }
+    ]
+  };
+}
 
 function leavesDeadGap(start: DateTime, end: DateTime, open: DateTime, close: DateTime, bookings: { startTime: Date; endTime: Date }[]) {
   const before = bookings.filter(b => b.endTime <= start.toJSDate()).sort((a, b) => b.endTime.getTime() - a.endTime.getTime())[0];
@@ -31,6 +75,7 @@ function leavesDeadGap(start: DateTime, end: DateTime, open: DateTime, close: Da
 
 async function lockedBookingsInSchedule(tx: Prisma.TransactionClient, input: BookingInput, schedule: { open: DateTime; close: DateTime }, ignoreId?: number): Promise<Array<{ startTime: Date; endTime: Date }>> {
   const ignoreClause = ignoreId ? Prisma.sql`AND id <> ${ignoreId}` : Prisma.empty;
+  const now = new Date();
   const client = tx as Prisma.TransactionClient & { $queryRaw?: Prisma.TransactionClient['$queryRaw'] };
   if (client.$queryRaw) {
     return client.$queryRaw<Array<{ startTime: Date; endTime: Date }>>(Prisma.sql`
@@ -38,7 +83,10 @@ async function lockedBookingsInSchedule(tx: Prisma.TransactionClient, input: Boo
       FROM bookings
       WHERE courtId = ${input.courtId}
         ${ignoreClause}
-        AND status IN (${Prisma.join(occupiedBookingStatuses)})
+        AND (
+          status IN (${Prisma.join(nonExpiringOccupiedStatuses)})
+          OR (status = 'PENDING' AND holdExpiresAt > ${now})
+        )
         AND startTime < ${schedule.close.toJSDate()}
         AND endTime > ${schedule.open.toJSDate()}
       ORDER BY startTime
@@ -49,7 +97,7 @@ async function lockedBookingsInSchedule(tx: Prisma.TransactionClient, input: Boo
     where: {
       id: ignoreId ? { not: ignoreId } : undefined,
       courtId: input.courtId,
-      status: { in: occupiedBookingStatuses },
+      ...occupyingBookingFilter(now),
       startTime: { lt: schedule.close.toJSDate() },
       endTime: { gt: schedule.open.toJSDate() }
     },
@@ -102,7 +150,8 @@ export async function createBookingInTransaction(
       clientName: input.clientName, clientPhone: input.clientPhone.replace(/\D/g, ''),
       startTime: start.toJSDate(), endTime: end.toJSDate(), durationMinutes: input.durationMinutes,
       playersCount: input.playersCount ?? 4, priceTotal: input.priceTotal ?? price.price, notes: input.notes,
-      status: input.status ?? 'CONFIRMED', origin: input.origin ?? 'WEB', createdBy
+      status: input.status ?? 'CONFIRMED', origin: input.origin ?? 'WEB', createdBy,
+      holdExpiresAt: input.status === 'PENDING' ? input.holdExpiresAt ?? pendingBookingExpiresAt() : null
     },
     include: { court: true }
   });
@@ -142,11 +191,11 @@ export async function availability(date: string, durationMinutes: number, courtI
     where: {
       id: ignoreBookingId ? { not: ignoreBookingId } : undefined,
       courtId,
-      status: { in: occupiedBookingStatuses },
+      ...occupyingBookingFilter(),
       startTime: { lt: rangeClose.toJSDate() },
       endTime: { gt: rangeOpen.toJSDate() }
     },
-    select: { id: true, status: true, startTime: true, endTime: true }
+    select: { id: true, status: true, startTime: true, endTime: true, holdExpiresAt: true }
   });
 
   const slots = [];
@@ -177,7 +226,11 @@ export async function availability(date: string, durationMinutes: number, courtI
   };
   if (availableCount === 0) console.warn('[Availability] no available slots', summary);
   else if (process.env.AVAILABILITY_DEBUG === '1') console.info('[Availability] slots generated', summary);
-  return { date, durationMinutes, price: Number(price.price), config: config.booking, slots };
+  const nextChangeAt = bookings
+    .filter(booking => booking.status === 'PENDING' && booking.holdExpiresAt)
+    .map(booking => booking.holdExpiresAt!)
+    .sort((left, right) => left.getTime() - right.getTime())[0]?.toISOString() ?? null;
+  return { date, durationMinutes, price: Number(price.price), config: config.booking, nextChangeAt, slots };
 }
 const durationLabel = (minutes: number) => {
   const hours = Math.floor(minutes / 60), rest = minutes % 60;
@@ -197,7 +250,7 @@ export async function freeAvailability(date: string, courtId: number) {
   const rangeOpen = schedules[0].open;
   const rangeClose = schedules[schedules.length - 1].close;
   const bookings = await prisma.booking.findMany({
-    where: { courtId, status: { in: occupiedBookingStatuses }, startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
+    where: { courtId, ...occupyingBookingFilter(), startTime: { lt: rangeClose.toJSDate() }, endTime: { gt: rangeOpen.toJSDate() } },
     select: { startTime: true, endTime: true },
     orderBy: { startTime: 'asc' }
   });
@@ -265,7 +318,8 @@ export async function updateBooking(id: number, data: Partial<BookingInput>) {
         courtId: input.courtId, userId: input.userId, clientName: input.clientName,
         clientPhone: input.clientPhone, startTime: start.toJSDate(), endTime: end.toJSDate(),
         durationMinutes: input.durationMinutes, playersCount: input.playersCount, notes: input.notes,
-        status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price
+        status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price,
+        holdExpiresAt: input.status === 'PENDING' ? old.holdExpiresAt ?? pendingBookingExpiresAt() : null
       }
     });
   }, bookingTransactionOptions);
@@ -287,6 +341,11 @@ export function canTransitionBookingStatus(from: BookingStatus, to: BookingStatu
 export async function transitionBookingStatus(id: number, status: BookingStatus) {
   const booking = await prisma.booking.findUnique({ where: { id } });
   if (!booking) throw new HttpError(404, 'Turno no encontrado');
+  if (booking.status === 'PENDING' && status === 'CONFIRMED'
+    && (!booking.holdExpiresAt || booking.holdExpiresAt <= new Date())) {
+    await expirePendingBookings({ bookingId: id });
+    throw new HttpError(409, 'La retención de este turno ya venció y el horario fue liberado.');
+  }
   if (!canTransitionBookingStatus(booking.status, status)) {
     throw new HttpError(409, `No se puede cambiar un turno ${booking.status} a ${status}.`);
   }
@@ -298,6 +357,7 @@ export async function transitionBookingStatus(id: number, status: BookingStatus)
     where: { id },
     data: {
       status,
+      holdExpiresAt: status === 'CONFIRMED' ? null : booking.holdExpiresAt,
       cancelledAt: status === 'CANCELLED' ? new Date() : null,
       cancellationReason: status === 'CANCELLED' ? booking.cancellationReason : null
     }

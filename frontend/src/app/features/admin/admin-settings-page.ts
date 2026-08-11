@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { finalize, forkJoin } from 'rxjs';
+import { debounceTime, finalize, forkJoin, merge } from 'rxjs';
 import { Api } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { AdminAgendaStore } from './admin-agenda-store';
 
@@ -106,6 +108,8 @@ export class AdminSettingsPage implements OnInit {
   private api = inject(Api);
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   readonly resourceStatus = signal<AsyncStatus>('idle');
   readonly resourceError = signal('');
@@ -141,7 +145,13 @@ export class AdminSettingsPage implements OnInit {
     return ({ prices: 'Precios', hours: 'Horarios de apertura', recurring: 'Turnos fijos', cash: 'Caja básica', policy: 'Políticas de reserva' } as Record<SettingsView, string>)[this.view];
   }
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    merge(
+      this.realtime.listen(['CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED', 'BOOKING_PAYMENT_CHANGED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+  }
 
   load() {
     const requestId = ++this.requestId;
