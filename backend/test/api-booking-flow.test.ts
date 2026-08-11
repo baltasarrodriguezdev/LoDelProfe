@@ -77,7 +77,7 @@ test('un usuario autenticado crea una reserva asociada a su cuenta', async () =>
   assert.equal(created[0].userId, 17);
   assert.equal(created[0].origin, 'WEB');
   assert.equal(created[0].status, 'CONFIRMED');
-  assert.equal(transactionOptions?.isolationLevel, 'Serializable');
+  assert.equal(transactionOptions?.isolationLevel, 'RepeatableRead');
 });
 
 

@@ -13,6 +13,11 @@ export type BookingInput = {
 };
 
 export const occupiedBookingStatuses: BookingStatus[] = ['PENDING', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
+// TiDB admite READ COMMITTED y REPEATABLE READ, pero rechaza SERIALIZABLE.
+// Mantenemos el nivel compatible más fuerte y los bloqueos FOR UPDATE del flujo.
+export const bookingTransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead
+} as const;
 const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
 const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
 
@@ -106,7 +111,7 @@ export async function createBookingInTransaction(
 export async function createBooking(input: BookingInput, createdBy: number, recurringId?: number) {
   return prisma.$transaction(
     tx => createBookingInTransaction(tx, input, createdBy, recurringId),
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    bookingTransactionOptions
   );
 }
 
@@ -263,7 +268,7 @@ export async function updateBooking(id: number, data: Partial<BookingInput>) {
         status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price
       }
     });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, bookingTransactionOptions);
 }
 
 const allowedTransitions: Record<BookingStatus, BookingStatus[]> = {

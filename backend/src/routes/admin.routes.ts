@@ -18,6 +18,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { prisma } from '../prisma/client.js';
 import {
   availability,
+  bookingTransactionOptions,
   createBooking,
   createBookingInTransaction,
   transitionBookingStatus,
@@ -691,7 +692,7 @@ r.post('/recurring-bookings', authorize(Role.SUPERADMIN), asyncHandler(async (re
       details: { generatedBookings: dates.length }
     }, tx);
     return row;
-  }, { isolationLevel: 'Serializable' });
+  }, bookingTransactionOptions);
   res.status(201).json(recurring);
 }));
 
@@ -743,7 +744,7 @@ r.patch('/recurring-bookings/:id', authorize(Role.SUPERADMIN), asyncHandler(asyn
       details: { regeneratedBookings: row.active ? dates.length : 0 }
     }, tx);
     return row;
-  }, { isolationLevel: 'Serializable' });
+  }, bookingTransactionOptions);
   res.json(updated);
 }));
 
