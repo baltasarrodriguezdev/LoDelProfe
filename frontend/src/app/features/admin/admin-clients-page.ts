@@ -27,28 +27,6 @@ type Client = {
   imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
   template: `
     <section class="admin-shell clients-admin-shell">
-      <aside class="admin-nav">
-        <span class="eyebrow">PANEL DEL CLUB</span>
-        <h2>Administración</h2>
-        <small class="admin-nav-label">USO DIARIO</small>
-        <a routerLink="/admin">Hoy</a>
-        <a routerLink="/admin/agenda-diaria">Agenda diaria</a>
-        <a routerLink="/admin/agenda-semanal">Agenda semanal</a>
-        <a routerLink="/admin/turno">Agregar turno</a>
-        <a routerLink="/admin/turno" [queryParams]="{mode:'block'}">Bloquear horario</a>
-        <small class="admin-nav-label advanced">MARKETING</small>
-        <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
-        <small class="admin-nav-label advanced">CONFIGURACIÓN</small>
-        <a routerLink="/admin/precios">Precios</a>
-        <a routerLink="/admin/horarios">Horarios</a>
-        <a routerLink="/admin/politicas">Políticas</a>
-        <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
-        <a routerLink="/admin/clientes" class="active">Clientes</a>
-        <a routerLink="/admin/seguridad">Seguridad y accesos</a>
-        <a routerLink="/admin/caja">Caja</a>
-        <a routerLink="/admin/estadisticas">Estadísticas</a>
-      </aside>
-
       <div class="admin-content clients-admin-content">
         <header class="clients-header">
           <div>

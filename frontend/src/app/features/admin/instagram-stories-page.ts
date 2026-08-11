@@ -1,7 +1,6 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { AfterViewInit, Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
 import { AsyncStatus } from '../../shared/async-state';
 import { finalize } from 'rxjs';
@@ -18,24 +17,9 @@ const BOOKING_SITE = 'lodelprofe.com';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe],
   template: `
     <section class="admin-shell stories-shell">
-      <aside class="admin-nav">
-        <span class="eyebrow">PANEL DEL CLUB</span>
-        <h2>Administracion</h2>
-        <small class="admin-nav-label">USO DIARIO</small>
-        <a routerLink="/admin">Hoy</a>
-        <a routerLink="/admin/agenda-diaria">Agenda diaria</a>
-        <a routerLink="/admin/agenda-semanal">Agenda semanal</a>
-        <a routerLink="/admin/turno">Agregar turno</a>
-        <small class="admin-nav-label advanced">MARKETING</small>
-        <a routerLink="/admin/marketing/historias-instagram" class="active">Historias Instagram</a>
-        <small class="admin-nav-label advanced">CONFIGURACION</small>
-        <a routerLink="/admin/clientes">Clientes</a>
-        <a routerLink="/admin/estadisticas">Estadisticas</a>
-      </aside>
-
       <div class="admin-content stories-content">
         <header class="stories-header">
           <div>

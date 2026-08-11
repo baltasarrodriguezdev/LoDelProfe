@@ -4,12 +4,12 @@
  * depender de selectores escritos en hojas CSS tradicionales.
  */
 export const APP_TAILWIND_CLASSES = `
-  block min-h-screen min-w-80 overflow-x-clip bg-brand-cream font-body text-brand-text
-  [&_*]:box-border
+  block min-h-screen w-full min-w-0 bg-brand-cream font-body text-brand-text
+  [&_*]:box-border [&_*]:min-w-0
   [&_a]:text-inherit [&_a]:no-underline
   [&_button]:font-display [&_button]:tracking-[.02em]
   [&_button]:disabled:cursor-not-allowed [&_button]:disabled:opacity-60
-  [&_h1]:font-display [&_h1]:font-medium [&_h1]:uppercase [&_h1]:leading-[.96] [&_h1]:tracking-[-.025em]
+  [&_h1]:font-display [&_h1]:font-medium [&_h1]:uppercase [&_h1]:leading-[.96] [&_h1]:tracking-normal
   [&_h2]:font-display [&_h2]:font-medium [&_h3]:font-display [&_h3]:font-medium
   [&_b]:font-display [&_strong]:font-display
   [&_p]:leading-[1.65] [&_p]:text-brand-muted
@@ -72,7 +72,7 @@ export const APP_TAILWIND_CLASSES = `
 
   [&_app-confirm-dialog]:fixed [&_app-confirm-dialog]:inset-0 [&_app-confirm-dialog]:z-[1000] [&_app-confirm-dialog]:block
   [&_.confirm-dialog-backdrop]:fixed [&_.confirm-dialog-backdrop]:inset-0 [&_.confirm-dialog-backdrop]:grid [&_.confirm-dialog-backdrop]:place-items-center [&_.confirm-dialog-backdrop]:bg-[rgba(6,23,18,.78)] [&_.confirm-dialog-backdrop]:p-4 [&_.confirm-dialog-backdrop]:backdrop-blur-[6px]
-  [&_.confirm-dialog]:w-[min(480px,calc(100vw-32px))] [&_.confirm-dialog]:overflow-visible [&_.confirm-dialog]:rounded-[20px] [&_.confirm-dialog]:border [&_.confirm-dialog]:border-brand-dark/15 [&_.confirm-dialog]:bg-brand-paper [&_.confirm-dialog]:p-7 [&_.confirm-dialog]:text-left [&_.confirm-dialog]:shadow-[0_26px_70px_rgba(0,0,0,.32)]
+  [&_.confirm-dialog]:w-full [&_.confirm-dialog]:max-w-[480px] [&_.confirm-dialog]:overflow-visible [&_.confirm-dialog]:rounded-[20px] [&_.confirm-dialog]:border [&_.confirm-dialog]:border-brand-dark/15 [&_.confirm-dialog]:bg-brand-paper [&_.confirm-dialog]:p-7 [&_.confirm-dialog]:text-left [&_.confirm-dialog]:shadow-[0_26px_70px_rgba(0,0,0,.32)]
   [&_.confirm-dialog-icon]:mb-4 [&_.confirm-dialog-icon]:grid [&_.confirm-dialog-icon]:size-[58px] [&_.confirm-dialog-icon]:place-items-center [&_.confirm-dialog-icon]:rounded-full [&_.confirm-dialog-icon]:bg-[#f3d8d2] [&_.confirm-dialog-icon]:font-display [&_.confirm-dialog-icon]:text-3xl [&_.confirm-dialog-icon]:font-bold [&_.confirm-dialog-icon]:text-[#9f3f36] [&_.confirm-dialog-icon]:shadow-[6px_6px_0_rgba(159,63,54,.18)]
   [&_.confirm-dialog_h2]:mb-[9px] [&_.confirm-dialog_h2]:text-[2.35rem] [&_.confirm-dialog_h2]:leading-[1.02]
   [&_.confirm-dialog-message]:m-0 [&_.confirm-dialog-message]:text-[.98rem] [&_.confirm-dialog-message]:text-brand-text
@@ -446,7 +446,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   max-[769px]:[&_.turn-grid-layout]:w-[calc(100%-28px)] max-[769px]:[&_.turn-grid-layout]:grid-cols-1
   max-[769px]:[&_.turn-filters]:border-r-0 max-[769px]:[&_.turn-filters]:border-b max-[769px]:[&_.turn-results]:p-5
   max-[768px]:[&_.cards-list]:px-4 max-[768px]:[&_.booking-card]:grid-cols-[58px_1fr] max-[768px]:[&_.booking-card>strong]:col-start-2 max-[768px]:[&_.booking-card>.btn]:col-start-2
-  max-[768px]:[&_.booking-modal]:w-[calc(100vw-20px)] max-[768px]:[&_.booking-modal]:p-5
+  max-[768px]:[&_.booking-modal]:w-full max-[768px]:[&_.booking-modal]:p-5
   max-[768px]:[&_.form-grid]:grid-cols-1 max-[768px]:[&_.form-grid.three]:grid-cols-1 max-[768px]:[&_.form-grid_.wide]:col-auto
   max-[768px]:[&_.admin-form-page]:px-4 max-[768px]:[&_.admin-form-page]:py-8 max-[768px]:[&_.manual-booking-form]:p-5
   max-[768px]:[&_.manual-booking-form_.form-grid.three]:grid-cols-2 max-[768px]:[&_.manual-booking-form_.schedule-field]:col-span-1 max-[768px]:[&_.manual-booking-form_.financial-field]:col-span-1 max-[768px]:[&_.manual-booking-form_.notes-field]:col-span-2

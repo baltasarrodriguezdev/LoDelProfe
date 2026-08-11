@@ -1,9 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { finalize, forkJoin } from 'rxjs';
-import { Api, Auth } from '../../core/api';
+import { Api } from '../../core/api';
 import { AsyncStatus } from '../../shared/async-state';
 import { AdminAgendaStore } from './admin-agenda-store';
 
@@ -11,21 +11,9 @@ type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash' | 'policy';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   template: `
     <section class='admin-shell'>
-      <aside class='admin-nav'>
-        <span class='eyebrow'>PANEL DEL CLUB</span><h2>Administración</h2>
-        <small class='admin-nav-label'>USO DIARIO</small>
-        <a routerLink='/admin'>Hoy</a><a routerLink='/admin/agenda-diaria'>Agenda diaria</a><a routerLink='/admin/agenda-semanal'>Agenda semanal</a>
-        <a routerLink='/admin/turno'>Agregar turno</a><a routerLink='/admin/turno' [queryParams]='{mode: &quot;block&quot;}'>Bloquear horario</a>
-        <small class='admin-nav-label advanced'>MARKETING</small><a routerLink='/admin/marketing/historias-instagram'>Historias Instagram</a>
-        @if (auth.user()?.role === 'SUPERADMIN') {
-          <small class='admin-nav-label advanced'>CONFIGURACIÓN</small>
-          <a routerLink='/admin/precios'>Precios</a><a routerLink='/admin/horarios'>Horarios</a><a routerLink='/admin/politicas'>Políticas</a><a routerLink='/admin/turnos-fijos'>Turnos fijos</a>
-          <a routerLink='/admin/clientes'>Clientes</a><a routerLink='/admin/caja'>Caja</a><a routerLink='/admin/estadisticas'>Estadísticas</a>
-        }
-      </aside>
       <div class='admin-content'>
         <div class='admin-title'><div><span class='eyebrow'>GESTIÓN</span><h1>{{ title }}</h1></div><span class='today'>{{ today | date:'EEEE d MMMM' }}</span></div>
         @if (notice()) { <p class='notice' [class.error-notice]='noticeError()'>{{ notice() }}</p> }
@@ -118,7 +106,6 @@ export class AdminSettingsPage implements OnInit {
   private api = inject(Api);
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
-  readonly auth = inject(Auth);
 
   readonly resourceStatus = signal<AsyncStatus>('idle');
   readonly resourceError = signal('');

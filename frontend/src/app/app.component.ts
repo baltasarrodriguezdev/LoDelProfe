@@ -1,22 +1,23 @@
-import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import { Component, DestroyRef, HostListener, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 import { Auth } from './core/api';
+import { AdminNavigationComponent } from './shared/admin-navigation.component';
 import { APP_TAILWIND_CLASSES, APP_TAILWIND_FEATURE_CLASSES, APP_TAILWIND_PUBLIC_CLASSES } from './shared/tailwind-classes';
 import { VENUE } from './shared/venue';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink],
+  imports: [RouterOutlet, RouterLink, AdminNavigationComponent],
   template: `
     <div [attr.class]="tailwindClasses">
-    <div [attr.class]="tailwindPublicClasses">
-    <div [attr.class]="tailwindFeatureClasses">
     @if (!isAuthPage()) {
       <header class="site-header" [class.home-header]="isHomePage()">
         <div class="site-header-inner">
           <a class="brand brand-logo" routerLink="/" aria-label="Lo del Profe, inicio"><img src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe"></a>
-          <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'" aria-controls="primary-navigation" (click)="mobileMenuOpen = !mobileMenuOpen"><span></span><span></span><span></span></button>
+          <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'" aria-controls="primary-navigation" (click)="toggleMobileMenu()"><span></span><span></span><span></span></button>
           <nav id="primary-navigation" aria-label="Navegación principal" [class.open]="mobileMenuOpen">
             @for (item of navigationItems(); track item.label) {
               <a [routerLink]="item.route" [fragment]="item.fragment" [class.active]="isNavigationActive(item)" [class.nav-cta]="item.cta" (click)="closeMobileMenu()">{{ item.label }}</a>
@@ -27,6 +28,12 @@ import { VENUE } from './shared/venue';
           </nav>
         </div>
       </header>
+      @if (mobileMenuOpen) {
+        <button type="button" class="mobile-menu-backdrop" aria-label="Cerrar menú" (click)="closeMobileMenu()"></button>
+      }
+      @if (isAdminPage() && auth.isAdmin()) {
+        <app-admin-navigation />
+      }
     }
 
     <main><router-outlet/></main>
@@ -65,20 +72,24 @@ import { VENUE } from './shared/venue';
       </footer>
     }
     </div>
-    </div>
-    </div>
   `
 })
 export class AppComponent {
-  readonly tailwindClasses = APP_TAILWIND_CLASSES;
-  readonly tailwindPublicClasses = APP_TAILWIND_PUBLIC_CLASSES;
-  readonly tailwindFeatureClasses = APP_TAILWIND_FEATURE_CLASSES;
+  readonly tailwindClasses = `${APP_TAILWIND_CLASSES} ${APP_TAILWIND_PUBLIC_CLASSES} ${APP_TAILWIND_FEATURE_CLASSES}`;
   auth = inject(Auth);
   private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
   venue = VENUE;
   mobileMenuOpen = false;
 
-  constructor() { this.auth.refreshSession(); }
+  constructor() {
+    this.auth.refreshSession();
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(() => this.closeMobileMenu());
+    this.destroyRef.onDestroy(() => document.body.classList.remove('mobile-menu-open'));
+  }
 
   navigationItems() {
     const items = [
@@ -94,7 +105,20 @@ export class AppComponent {
     return items;
   }
 
-  closeMobileMenu() { this.mobileMenuOpen = false; }
+  toggleMobileMenu() { this.setMobileMenu(!this.mobileMenuOpen); }
+
+  closeMobileMenu() { this.setMobileMenu(false); }
+
+  private setMobileMenu(open: boolean) {
+    this.mobileMenuOpen = open;
+    document.body.classList.toggle('mobile-menu-open', open);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() { this.closeMobileMenu(); }
+
+  @HostListener('window:resize')
+  onResize() { if (window.innerWidth > 900) this.closeMobileMenu(); }
 
   isNavigationActive(item: { label: string; route: string; fragment?: string }) {
     const [pathWithQuery, fragment = ''] = this.router.url.split('#');
@@ -117,5 +141,9 @@ export class AppComponent {
 
   isHomePage() {
     return this.router.url.split(/[?#]/)[0] === '/';
+  }
+
+  isAdminPage() {
+    return this.router.url.split(/[?#]/)[0].startsWith('/admin');
   }
 }
