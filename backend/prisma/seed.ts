@@ -1,5 +1,6 @@
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { seedSuma12League } from './league-seed.js';
 
 const prisma = new PrismaClient();
 
@@ -48,6 +49,7 @@ async function main() {
       create: { dayOfWeek, ...hours }
     });
   }
+  await seedSuma12League(prisma, 1);
   console.log(`Seed listo. SUPERADMIN: ${phone}`);
 }
 

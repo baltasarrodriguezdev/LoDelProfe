@@ -22,7 +22,8 @@ export type RealtimeEventType =
   | 'PASSWORD_RESET_CHANGED'
   | 'CONFIGURATION_CHANGED'
   | 'RECURRING_BOOKING_CHANGED'
-  | 'CASH_MOVEMENT_CREATED';
+  | 'CASH_MOVEMENT_CREATED'
+  | 'LEAGUE_CHANGED';
 
 export type RealtimeResource = {
   bookingId?: number;
@@ -31,7 +32,9 @@ export type RealtimeResource = {
   previousCourtId?: number;
   previousDate?: string;
   status?: string;
-  resource?: 'COURTS' | 'PRICES' | 'BUSINESS_HOURS' | 'BOOKING_POLICY' | 'USERS' | 'PASSWORD_RESETS' | 'RECURRING_BOOKINGS' | 'CASH';
+  leagueId?: number;
+  leagueMatchId?: number;
+  resource?: 'COURTS' | 'PRICES' | 'BUSINESS_HOURS' | 'BOOKING_POLICY' | 'USERS' | 'PASSWORD_RESETS' | 'RECURRING_BOOKINGS' | 'CASH' | 'LEAGUE';
   refreshAt?: string;
 };
 
@@ -193,4 +196,12 @@ export async function publishConfigurationChange(resource: Extract<RealtimeResou
 
 export async function publishAdminChange(type: Extract<RealtimeEventType, 'PASSWORD_RESET_CHANGED' | 'RECURRING_BOOKING_CHANGED' | 'CASH_MOVEMENT_CREATED'>, resource: RealtimeResource['resource']) {
   await publishRealtimeEvent({ audience: 'ADMIN', type, resource: { resource } });
+}
+
+export async function publishLeagueChange(leagueId: number, leagueMatchId?: number) {
+  const resource: RealtimeResource = { resource: 'LEAGUE', leagueId, leagueMatchId };
+  await Promise.all([
+    publishRealtimeEvent({ audience: 'PUBLIC', type: 'LEAGUE_CHANGED', resource }),
+    publishRealtimeEvent({ audience: 'ADMIN', type: 'LEAGUE_CHANGED', resource })
+  ]);
 }

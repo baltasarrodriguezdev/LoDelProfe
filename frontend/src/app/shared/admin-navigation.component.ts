@@ -86,6 +86,7 @@ export class AdminNavigationComponent {
     { label: 'Agenda semanal', route: '/admin/agenda-semanal' },
     { label: 'Agregar turno', route: '/admin/turno' },
     { label: 'Bloquear horario', route: '/admin/turno', queryParams: { mode: 'block' } },
+    { label: 'La Liga', route: '/admin/la-liga' },
     { label: 'Historias Instagram', route: '/admin/marketing/historias-instagram' }
   ];
 

@@ -38,7 +38,6 @@ npm install
 npm run prisma:generate
 npm run prisma:deploy
 npm run prisma:seed
-+
 ```
 
 Qué hace cada comando:
@@ -47,6 +46,7 @@ Qué hace cada comando:
 - `npm run prisma:generate`: genera el cliente de Prisma.
 - `npm run prisma:deploy`: aplica a MySQL las migraciones existentes. No es `npm deploy`.
 - `npm run prisma:seed`: carga los datos iniciales, incluido el usuario administrador configurado en `.env`.
+- `npm run prisma:seed:league`: vuelve a cargar solamente la Liga Suma 12 de forma idempotente, sin modificar la configuración de reservas.
 - `npm run dev`: inicia la API en modo desarrollo y la reinicia al detectar cambios.
 
 Antes de publicar el sistema, reemplazá `JWT_SECRET`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` en `backend/.env` por valores seguros.
@@ -142,6 +142,9 @@ npm run prisma:migrate -- --name nombre_del_cambio
 
 # Volver a cargar los datos iniciales
 npm run prisma:seed
+
+# Volver a cargar solamente los datos de La Liga
+npm run prisma:seed:league
 ```
 
 Usá `prisma:migrate` cuando modifiques el esquema de Prisma durante el desarrollo. Usá `prisma:deploy` para aplicar migraciones ya creadas, sin generar una migración nueva.

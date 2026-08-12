@@ -18,7 +18,8 @@ export type RealtimeEventType =
   | 'PASSWORD_RESET_CHANGED'
   | 'CONFIGURATION_CHANGED'
   | 'RECURRING_BOOKING_CHANGED'
-  | 'CASH_MOVEMENT_CREATED';
+  | 'CASH_MOVEMENT_CREATED'
+  | 'LEAGUE_CHANGED';
 
 export type RealtimeResource = {
   bookingId?: number;
@@ -27,7 +28,9 @@ export type RealtimeResource = {
   previousCourtId?: number;
   previousDate?: string;
   status?: string;
-  resource?: 'COURTS' | 'PRICES' | 'BUSINESS_HOURS' | 'BOOKING_POLICY' | 'USERS' | 'PASSWORD_RESETS' | 'RECURRING_BOOKINGS' | 'CASH';
+  leagueId?: number;
+  leagueMatchId?: number;
+  resource?: 'COURTS' | 'PRICES' | 'BUSINESS_HOURS' | 'BOOKING_POLICY' | 'USERS' | 'PASSWORD_RESETS' | 'RECURRING_BOOKINGS' | 'CASH' | 'LEAGUE';
   refreshAt?: string;
 };
 

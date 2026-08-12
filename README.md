@@ -53,6 +53,20 @@ El seed crea un `SUPERADMIN` con los valores de `SUPERADMIN_PHONE` y `SUPERADMIN
 
 También se crea la única cancha activa, precios iniciales para 60/90/120 minutos, horarios editables y una política inicial de cancelación online de 120 minutos. Los importes y reglas del seed son ejemplos editables desde el panel.
 
+## La Liga
+
+La ruta pública `/la-liga` muestra la Liga Suma 12 2026, su fixture, posiciones calculadas, eliminatorias y reglamento. La administración protegida está en `/admin/la-liga`. Los cambios se notifican por la misma conexión WebSocket del sistema y cada cliente vuelve a consultar la API para mantener la base de datos como fuente de verdad.
+
+La migración crea el modelo de competencia y el seed idempotente carga las 16 parejas, las siete fechas de cada zona y el cuadro eliminatorio descriptos en `laliga.pdf`. Para volver a cargar solamente esos datos, sin tocar la configuración general de reservas, ejecutá:
+
+```powershell
+cd backend
+npm run prisma:deploy
+npm run prisma:seed:league
+```
+
+La temporada guarda `America/Argentina/Cordoba` como zona horaria. El puntaje de una derrota 0–2 y las reglas ambiguas permanecen sin definir hasta que un administrador las configure.
+
 ## Comandos útiles
 
 Backend:
@@ -63,6 +77,7 @@ npm run build
 npm run prisma:migrate -- --name nombre_del_cambio
 npm run prisma:deploy
 npm run prisma:seed
+npm run prisma:seed:league
 ```
 
 Frontend:

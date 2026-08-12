@@ -9,7 +9,7 @@ const browserPath = process.env.RESPONSIVE_BROWSER_PATH
 const outputDir = resolve(process.env.RESPONSIVE_OUTPUT_DIR ?? 'responsive-results');
 const widths = [320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440];
 const screenshotWidths = new Set([390, 768, 1440]);
-const publicRoutes = ['/', '/ingresar', '/registro', '/recuperar-contrasena', '/reservar'];
+const publicRoutes = ['/', '/ingresar', '/registro', '/recuperar-contrasena', '/reservar', '/la-liga'];
 const authenticatedRoutes = ['/validar-telefono', '/confirmar-reserva', '/mis-turnos', '/historial'];
 const adminRoutes = [
   '/admin',
@@ -24,7 +24,8 @@ const adminRoutes = [
   '/admin/seguridad',
   '/admin/caja',
   '/admin/estadisticas',
-  '/admin/marketing/historias-instagram'
+  '/admin/marketing/historias-instagram',
+  '/admin/la-liga'
 ];
 
 class CdpClient {
@@ -298,6 +299,16 @@ async function main() {
       await captureInteraction(client, sessionId, report, { route: '/reservar', width: 390, state: 'guest-modal-open', screenshot: 'reservar-modal-390.png' });
     }
 
+    await navigate(client, sessionId, `${baseUrl}/la-liga`);
+    const standingsOpened = await clickFirst(client, sessionId, '.league-tabs button:nth-of-type(4)');
+    if (standingsOpened) {
+      await captureInteraction(client, sessionId, report, { route: '/la-liga', width: 390, state: 'standings', screenshot: 'la-liga-posiciones-390.png' });
+    }
+    const bracketOpened = await clickFirst(client, sessionId, '.league-tabs button:nth-of-type(5)');
+    if (bracketOpened) {
+      await captureInteraction(client, sessionId, report, { route: '/la-liga', width: 390, state: 'bracket', screenshot: 'la-liga-eliminatorias-390.png' });
+    }
+
     const userAuthenticated = await loginAsUser(client, sessionId);
     if (userAuthenticated) {
       for (const width of widths) {
@@ -355,6 +366,12 @@ async function main() {
       })()`);
       if (longContentInjected) {
         await captureInteraction(client, sessionId, report, { route: '/admin/clientes', width: 390, state: 'long-content', screenshot: 'admin-clientes-texto-largo-390.png' });
+      }
+
+      await navigate(client, sessionId, `${baseUrl}/admin/la-liga`);
+      const leagueResultsOpened = await clickFirst(client, sessionId, '.league-admin-tabs button:nth-of-type(4)');
+      if (leagueResultsOpened) {
+        await captureInteraction(client, sessionId, report, { route: '/admin/la-liga', width: 390, state: 'league-results', screenshot: 'admin-la-liga-resultados-390.png' });
       }
     }
 

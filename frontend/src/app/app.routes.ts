@@ -24,6 +24,7 @@ export const routes: Routes = [
   { path: 'recuperar-contrasena', component: PasswordRecoveryPage },
   { path: 'restablecer-contrasena', component: PasswordRecoveryPage },
   { path: 'reservar', component: AvailabilityPage },
+  { path: 'la-liga', loadComponent: () => import('./features/league/league-page').then(module => module.LeaguePage) },
   { path: 'confirmar-reserva', component: AvailabilityPage, canActivate: [authGuard] },
   { path: 'mis-turnos', component: BookingsPage, canActivate: [authGuard] },
   { path: 'historial', component: BookingsPage, canActivate: [authGuard] },
@@ -40,5 +41,6 @@ export const routes: Routes = [
   { path: 'admin/clientes', component: AdminClientsPage, canActivate: [superAdminGuard] },
   { path: 'admin/seguridad', component: AdminSecurityPage, canActivate: [superAdminGuard] },
   { path: 'admin/marketing/historias-instagram', component: InstagramStoriesPage, canActivate: [adminGuard] },
+  { path: 'admin/la-liga', loadComponent: () => import('./features/league/admin-league-page').then(module => module.AdminLeaguePage), canActivate: [adminGuard] },
   { path: '**', redirectTo: '' }
 ];

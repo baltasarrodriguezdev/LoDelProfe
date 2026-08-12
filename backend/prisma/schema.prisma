@@ -60,6 +60,34 @@ enum CashCategory {
   LIMPIEZA
   OTRO
 }
+
+enum LeagueSeasonStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum LeagueStage {
+  GROUP_STAGE
+  ROUND_OF_16
+  QUARTERFINAL
+  SEMIFINAL
+  FINAL
+}
+
+enum LeagueMatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  RESCHEDULED
+  SUSPENDED
+  PENDING
+}
+
+enum LeagueBracketSlot {
+  HOME
+  AWAY
+}
 model User {
   id Int @id @default(autoincrement())
   firstName String
@@ -107,9 +135,159 @@ model Court {
   active Boolean @default(true)
   bookings Booking[]
   recurring RecurringBooking[]
+  leagueSeasons LeagueSeason[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("courts")
+}
+
+model LeagueSeason {
+  id Int @id @default(autoincrement())
+  slug String @unique @db.VarChar(80)
+  name String @db.VarChar(120)
+  seasonYear Int
+  status LeagueSeasonStatus @default(DRAFT)
+  currentStage LeagueStage @default(GROUP_STAGE)
+  courtId Int?
+  court Court? @relation(fields: [courtId], references: [id])
+  timezone String @default("America/Argentina/Cordoba") @db.VarChar(80)
+  bestOfSets Int @default(3)
+  fullThirdSet Boolean @default(true)
+  allPairsAdvance Boolean @default(true)
+  registrationFee Decimal? @db.Decimal(12,2)
+  firstPrize String? @db.VarChar(255)
+  secondPrize String? @db.VarChar(255)
+  ballAvailabilityNote String? @db.VarChar(255)
+  scheduleNote String? @db.Text
+  activeFrom DateTime? @db.Date
+  activeUntil DateTime? @db.Date
+  zones LeagueZone[]
+  players LeaguePlayer[]
+  pairs LeaguePair[]
+  matches LeagueMatch[]
+  rules LeagueRuleSettings?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, seasonYear])
+  @@map("league_seasons")
+}
+
+model LeagueZone {
+  id Int @id @default(autoincrement())
+  leagueId Int
+  league LeagueSeason @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  code String @db.VarChar(8)
+  name String @db.VarChar(80)
+  regularDay String? @db.VarChar(30)
+  displayOrder Int @default(0)
+  pairs LeaguePair[]
+  matches LeagueMatch[]
+  @@unique([leagueId, code])
+  @@index([leagueId, displayOrder])
+  @@map("league_zones")
+}
+
+model LeaguePlayer {
+  id Int @id @default(autoincrement())
+  leagueId Int
+  league LeagueSeason @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  displayName String @db.VarChar(120)
+  pairsAsFirst LeaguePair[] @relation("LeaguePairFirstPlayer")
+  pairsAsSecond LeaguePair[] @relation("LeaguePairSecondPlayer")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([leagueId, displayName])
+  @@map("league_players")
+}
+
+model LeaguePair {
+  id Int @id @default(autoincrement())
+  leagueId Int
+  league LeagueSeason @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  zoneId Int
+  zone LeagueZone @relation(fields: [zoneId], references: [id])
+  seedNumber Int
+  displayName String @db.VarChar(255)
+  firstPlayerId Int
+  firstPlayer LeaguePlayer @relation("LeaguePairFirstPlayer", fields: [firstPlayerId], references: [id])
+  secondPlayerId Int
+  secondPlayer LeaguePlayer @relation("LeaguePairSecondPlayer", fields: [secondPlayerId], references: [id])
+  active Boolean @default(true)
+  homeMatches LeagueMatch[] @relation("LeagueHomePair")
+  awayMatches LeagueMatch[] @relation("LeagueAwayPair")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([leagueId, displayName])
+  @@unique([zoneId, seedNumber])
+  @@index([leagueId, zoneId])
+  @@map("league_pairs")
+}
+
+model LeagueRuleSettings {
+  id Int @id @default(autoincrement())
+  leagueId Int @unique
+  league LeagueSeason @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  straightSetsWinPoints Int @default(3)
+  threeSetsWinPoints Int @default(2)
+  threeSetsLossPoints Int @default(1)
+  straightSetsLossPoints Int?
+  gamesPositiveDefinition String? @db.Text
+  multiPairTieRule String? @db.Text
+  walkoverRule String? @db.Text
+  retirementRule String? @db.Text
+  incompleteMatchRule String? @db.Text
+  reschedulingRule String? @db.Text
+  sixAllTiebreakRule String? @db.Text
+  updatedById Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("league_rule_settings")
+}
+
+model LeagueMatch {
+  id Int @id @default(autoincrement())
+  leagueId Int
+  league LeagueSeason @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  zoneId Int?
+  zone LeagueZone? @relation(fields: [zoneId], references: [id])
+  stage LeagueStage
+  matchday Int?
+  code String @db.VarChar(30)
+  scheduledDate DateTime? @db.Date
+  scheduledTime String? @db.VarChar(5)
+  status LeagueMatchStatus @default(SCHEDULED)
+  homePairId Int?
+  homePair LeaguePair? @relation("LeagueHomePair", fields: [homePairId], references: [id])
+  awayPairId Int?
+  awayPair LeaguePair? @relation("LeagueAwayPair", fields: [awayPairId], references: [id])
+  homePlaceholder String? @db.VarChar(120)
+  awayPlaceholder String? @db.VarChar(120)
+  official Boolean @default(false)
+  officialAt DateTime?
+  rescheduleNote String? @db.Text
+  nextMatchId Int?
+  nextMatch LeagueMatch? @relation("LeagueProgression", fields: [nextMatchId], references: [id])
+  previousMatches LeagueMatch[] @relation("LeagueProgression")
+  nextSlot LeagueBracketSlot?
+  sets LeagueMatchSet[]
+  updatedById Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([leagueId, code])
+  @@index([leagueId, stage, scheduledDate])
+  @@index([zoneId, matchday])
+  @@map("league_matches")
+}
+
+model LeagueMatchSet {
+  id Int @id @default(autoincrement())
+  matchId Int
+  match LeagueMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  setNumber Int
+  homeGames Int
+  awayGames Int
+  @@unique([matchId, setNumber])
+  @@map("league_match_sets")
 }
 model Price {
   id Int @id @default(autoincrement())

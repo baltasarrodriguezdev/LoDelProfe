@@ -57,6 +57,7 @@ import { RealtimeService } from './core/realtime';
                 <a class="footer-link" routerLink="/">Inicio</a>
                 <a class="footer-link" routerLink="/ingresar">Ingresar</a>
               }
+              <a class="footer-link" routerLink="/la-liga">La Liga</a>
               <a class="footer-link" routerLink="/" fragment="como-llegar">Cómo llegar</a>
             </div>
           </nav>
@@ -103,6 +104,7 @@ export class AppComponent {
   navigationItems() {
     const items = [
       { label: 'Reservar', route: '/reservar' },
+      { label: 'La Liga', route: '/la-liga' },
       ...(this.auth.user() ? [{ label: 'Mis turnos', route: '/mis-turnos' }] : []),
       { label: 'Cómo llegar', route: '/', fragment: 'como-llegar' },
       ...(this.auth.isAdmin() ? [{ label: 'Admin', route: '/admin' }] : []),
@@ -133,6 +135,7 @@ export class AppComponent {
     const [pathWithQuery, fragment = ''] = this.router.url.split('#');
     const path = pathWithQuery.split('?')[0] || '/';
     if (item.label === 'Reservar') return path === '/reservar';
+    if (item.label === 'La Liga') return path === '/la-liga';
     if (item.label === 'Mis turnos') return path === '/mis-turnos';
     if (item.label === 'Admin') return path === '/admin' || path.startsWith('/admin/');
     if (item.label === 'Cómo llegar') return path === '/como-llegar' || (path === '/' && fragment === 'como-llegar');
