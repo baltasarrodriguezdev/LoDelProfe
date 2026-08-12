@@ -1,5 +1,6 @@
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { seedSuma12League } from './league-seed.js';
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,11 @@ async function main() {
     where: { id: 1 }, update: { name: 'Lo del Profe', description: 'Cancha de pádel' },
     create: { id: 1, name: 'Lo del Profe', description: 'Cancha de pádel' }
   });
+  await prisma.venueSetting.upsert({
+    where: { id: 1 },
+    update: {},
+    create: { id: 1, cancellationCutoffMinutes: 120 }
+  });
   for (const [durationMinutes, price] of [[60, 16000], [90, 20000], [120, 24000]] as const) {
     await prisma.price.upsert({ where: { durationMinutes }, update: { price }, create: { durationMinutes, price } });
   }
@@ -30,13 +36,20 @@ async function main() {
     const weekend = dayOfWeek === 0 || dayOfWeek === 6;
     const weekday = dayOfWeek >= 1 && dayOfWeek <= 5;
     const openTime = weekend || dayOfWeek === 4 ? '09:00' : '15:00';
-    const hours = { openTime, closeTime: '00:00', active: weekend || weekday };
+    const hours = {
+      openTime,
+      closeTime: '00:00',
+      breakStartTime: dayOfWeek === 4 ? '13:00' : null,
+      breakEndTime: dayOfWeek === 4 ? '15:00' : null,
+      active: weekend || weekday
+    };
     await prisma.businessHour.upsert({
       where: { dayOfWeek },
       update: hours,
       create: { dayOfWeek, ...hours }
     });
   }
+  await seedSuma12League(prisma, 1);
   console.log(`Seed listo. SUPERADMIN: ${phone}`);
 }
 

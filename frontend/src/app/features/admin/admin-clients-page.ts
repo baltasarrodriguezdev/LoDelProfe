@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 import { Api } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
@@ -27,26 +29,6 @@ type Client = {
   imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
   template: `
     <section class="admin-shell clients-admin-shell">
-      <aside class="admin-nav">
-        <span class="eyebrow">PANEL DEL CLUB</span>
-        <h2>Administración</h2>
-        <small class="admin-nav-label">USO DIARIO</small>
-        <a routerLink="/admin">Hoy</a>
-        <a routerLink="/admin/agenda-diaria">Agenda diaria</a>
-        <a routerLink="/admin/agenda-semanal">Agenda semanal</a>
-        <a routerLink="/admin/turno">Agregar turno</a>
-        <a routerLink="/admin/turno" [queryParams]="{mode:'block'}">Bloquear horario</a>
-        <small class="admin-nav-label advanced">MARKETING</small>
-        <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
-        <small class="admin-nav-label advanced">CONFIGURACIÓN</small>
-        <a routerLink="/admin/precios">Precios</a>
-        <a routerLink="/admin/horarios">Horarios</a>
-        <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
-        <a routerLink="/admin/clientes" class="active">Clientes</a>
-        <a routerLink="/admin/caja">Caja</a>
-        <a routerLink="/admin/estadisticas">Estadísticas</a>
-      </aside>
-
       <div class="admin-content clients-admin-content">
         <header class="clients-header">
           <div>
@@ -60,11 +42,12 @@ type Client = {
         @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
         <section class="clients-toolbar panel">
-          <label>Buscar cliente<input type="search" placeholder="Nombre, apellido o teléfono" [(ngModel)]="search"></label>
-          <div class="client-tabs" role="tablist" aria-label="Estados de clientes">
+          <label class="clients-search">Buscar cliente<input type="search" name="clientSearch" autocomplete="off" placeholder="Nombre, apellido o teléfono…" [(ngModel)]="search"></label>
+          <div class="client-tabs" role="group" aria-label="Filtrar clientes por estado">
             @for (tab of tabs; track tab.id) {
-              <button type="button" [class.active]="activeTab === tab.id" (click)="activeTab = tab.id">
-                <span>{{ tab.label }}</span><b>{{ count(tab.id) }}</b>
+              <button type="button" [class.active]="activeTab === tab.id" [attr.aria-pressed]="activeTab === tab.id" (click)="activeTab = tab.id">
+                <span class="client-tab-label">{{ tab.label }}</span>
+                <b class="client-tab-count">{{ count(tab.id) }}</b>
               </button>
             }
           </div>
@@ -72,7 +55,7 @@ type Client = {
 
         @if (showForm) {
           <form class="panel client-form" (ngSubmit)="saveForm()">
-            <div class="form-section-title"><span>{{ editingClient ? '02' : '01' }}</span><div><h2>{{ editingClient ? 'Editar cliente' : 'Agregar cliente confirmado' }}</h2><p>{{ editingClient ? 'Actualizá el nombre visible del cliente.' : 'El cliente queda verificado y listo para reservar online.' }}</p></div></div>
+            <div class="form-section-title"><span>{{ editingClient ? '02' : '01' }}</span><div><h2>{{ editingClient ? 'Editar cliente' : 'Agregar cliente' }}</h2><p>{{ editingClient ? 'Actualizá el nombre visible del cliente.' : 'La cuenta quedará pendiente hasta comprobar el teléfono desde Seguridad.' }}</p></div></div>
             <div class="form-grid clients-form-grid">
               <label>Nombre<input name="firstName" required minlength="2" [(ngModel)]="form.firstName"></label>
               <label>Apellido<input name="lastName" required minlength="2" [(ngModel)]="form.lastName"></label>
@@ -105,14 +88,15 @@ type Client = {
                 </div>
                 <div class="client-actions">
                   @if (!client.phoneVerified && client.active && !client.isBlocked) {
-                    <button type="button" class="small-action" (click)="verifyClient(client)">Verificar</button>
+                    <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                     <button type="button" class="small-action danger-action" (click)="askCancelPending(client)">Cancelar registro</button>
                   } @else {
                     <button type="button" class="small-action" (click)="openEdit(client)">Editar</button>
                     @if (client.active && !client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, true)">Bloquear</button> }
                     @if (client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, false)">Desbloquear</button> }
-                    @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Eliminar cliente</button> }
+                    @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Desactivar cliente</button> }
                     @if (!client.active) { <button type="button" class="small-action pay-action" (click)="setActive(client, true)">Reactivar</button> }
+                    @if (!client.active) { <button type="button" class="small-action danger-action" (click)="askReleasePhone(client)">Liberar número</button> }
                   }
                 </div>
               </article>
@@ -140,31 +124,11 @@ type Client = {
       />
     }
   `,
-  styles: [`
-    .clients-admin-shell{background:linear-gradient(180deg,#e8eee1 0,#f4f2e9 330px)}
-    .clients-admin-content{display:grid;gap:18px}
-    .clients-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:8px}
-    .clients-header h1{margin:8px 0 6px;font-size:clamp(3rem,5vw,4.9rem);color:var(--color-green-dark)}
-    .clients-header p{max-width:560px;margin:0;color:#657064}
-    .clients-toolbar{display:grid;grid-template-columns:minmax(240px,340px) 1fr;gap:18px;align-items:end;padding:18px}
-    .clients-toolbar label{display:grid;gap:7px;font-size:.72rem;font-weight:800;text-transform:uppercase;color:var(--muted)}
-    .client-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:4px;border:1px solid rgba(34,53,38,.12);border-radius:11px;background:#edf2e8}
-    .client-tabs button{min-width:0;min-height:46px;padding:8px;border:0;border-radius:8px;background:transparent;color:#607062;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
-    .client-tabs button.active{background:var(--color-green-dark);color:var(--color-white-soft);box-shadow:0 5px 14px rgba(34,53,38,.14)}
-    .client-tabs span{font-family:var(--font-display);font-size:.76rem;font-weight:600}.client-tabs b{min-width:22px;padding:2px 6px;border-radius:999px;background:#fff;color:var(--color-green-dark);font-size:.68rem}
-    .client-form{padding:21px}.clients-form-grid{max-width:860px}.client-form-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:16px}.client-form-error{margin:12px 0 0}
-    .clients-list{display:grid;gap:9px}.client-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--line);border-radius:11px;background:var(--color-white-soft);box-shadow:0 5px 18px rgba(34,53,38,.045)}
-    .client-row.inactive{opacity:.68;background:#f0efe9}.client-row.blocked{border-left:5px solid #a2473e;background:#fff4f1}
-    .client-avatar{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:var(--color-green-dark);color:var(--color-white-soft);font-family:var(--font-display);font-size:1.25rem;font-weight:700}
-    .client-main{min-width:0}.client-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-title-row h2{margin:0;font-size:1.38rem;color:var(--color-green-dark)}.client-main p{margin:4px 0 0;font-size:.78rem;color:#6f7a70}
-    .client-status{display:inline-flex;padding:4px 8px;border-radius:999px;font-family:var(--font-display);font-size:.61rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase}.client-status.pending{background:#fff0c9;color:#775d17}.client-status.confirmed{background:#dfebdc;color:#326044}.client-status.inactive{background:#e4e3dd;color:#767d76}.client-status.blocked{background:#f1ded9;color:#934d42}
-    .client-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px;max-width:390px}.client-actions .small-action{min-height:38px}
-    @media(max-width:980px){.clients-header{display:grid}.clients-header .btn{width:100%}.clients-toolbar{grid-template-columns:1fr}.client-tabs{grid-template-columns:repeat(3,1fr)}.client-row{grid-template-columns:46px 1fr}.client-avatar{width:46px;height:46px}.client-actions{grid-column:1/-1;max-width:none;justify-content:flex-start}}
-    @media(max-width:560px){.clients-admin-content{padding-inline:14px}.client-tabs{grid-template-columns:1fr 1fr}.client-row{grid-template-columns:1fr}.client-avatar{display:none}.client-actions{display:grid;grid-template-columns:1fr 1fr}.client-actions .small-action{width:100%}.client-form-actions{display:grid}.client-form-actions .btn{width:100%}}
-  `]
 })
 export class AdminClientsPage implements OnInit, OnDestroy {
   private api = inject(Api);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   clients: Client[] = [];
   activeTab: ClientStatus = 'pending';
@@ -178,7 +142,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   editingClient: Client | null = null;
   form: any = { firstName: '', lastName: '', phone: '', password: '' };
   formError = '';
-  confirmDialog: { type: 'cancelPending' | 'deactivate'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
+  confirmDialog: { type: 'cancelPending' | 'deactivate' | 'releasePhone'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
   readonly confirmLoading = signal(false);
   confirmError = '';
   private clientsRequestId = 0;
@@ -192,7 +156,16 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     { id: 'all', label: 'Todos' }
   ];
 
-  ngOnInit() { this.loadClients(); }
+  ngOnInit() {
+    this.loadClients();
+    merge(
+      this.realtime.listen([
+        'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'BOOKING_CREATED',
+        'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadClients());
+  }
   ngOnDestroy() { this.clientsAbort?.abort(); }
 
   get clientRows() { return this.clients.filter(client => client.role === 'CLIENT'); }
@@ -361,11 +334,24 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     this.confirmDialog = {
       type: 'deactivate',
       target: client,
-      title: 'Eliminar cliente',
+      title: 'Desactivar cliente',
       message: `¿Querés desactivar a ${client.firstName} ${client.lastName}?`,
       secondaryMessage: 'No se borra su historial ni sus turnos. La cuenta no podrá iniciar sesión hasta reactivarla.',
       confirmText: 'Sí, desactivar',
       loadingText: 'Desactivando...'
+    };
+    this.confirmError = '';
+  }
+
+  askReleasePhone(client: Client) {
+    this.confirmDialog = {
+      type: 'releasePhone',
+      target: client,
+      title: 'Liberar número',
+      message: `¿Querés cerrar la cuenta de ${client.firstName} ${client.lastName} y liberar su número?`,
+      secondaryMessage: 'La cuenta será anonimizada, conservará su historial y no podrá reactivarse. Después se podrá registrar una cuenta nueva con ese número.',
+      confirmText: 'Sí, liberar número',
+      loadingText: 'Liberando...'
     };
     this.confirmError = '';
   }
@@ -379,6 +365,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   confirmDialogConfirmed() {
     if (!this.confirmDialog || this.confirmLoading()) return;
     if (this.confirmDialog.type === 'cancelPending') this.confirmCancelPending(this.confirmDialog.target);
+    else if (this.confirmDialog.type === 'releasePhone') this.confirmReleasePhone(this.confirmDialog.target);
     else this.confirmDeactivate(this.confirmDialog.target);
   }
 
@@ -391,9 +378,9 @@ export class AdminClientsPage implements OnInit, OnDestroy {
       next: () => {
         this.clients = this.clients.filter(item => item.id !== client.id);
         this.confirmDialog = null;
-        this.showNotice('Usuario pendiente cancelado. El n?mero ya est? disponible.');
+        this.showNotice('Usuario pendiente cancelado. El número ya está disponible.');
       },
-      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intent? nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intentá nuevamente.'; }
     });
   }
 
@@ -408,7 +395,22 @@ export class AdminClientsPage implements OnInit, OnDestroy {
         this.confirmDialog = null;
         this.showNotice('Cliente desactivado. Conservamos su historial.');
       },
-      error: () => { this.confirmError = 'No pudimos actualizar el cliente. Intent? nuevamente.'; }
+      error: () => { this.confirmError = 'No pudimos actualizar el cliente. Intentá nuevamente.'; }
+    });
+  }
+
+  private confirmReleasePhone(client: Client) {
+    this.confirmLoading.set(true);
+    this.confirmError = '';
+    this.api.post<any>(`/admin/users/${client.id}/release-phone`, { confirmation: 'LIBERAR' }).pipe(
+      finalize(() => this.confirmLoading.set(false))
+    ).subscribe({
+      next: () => {
+        this.clients = this.clients.filter(item => item.id !== client.id);
+        this.confirmDialog = null;
+        this.showNotice('Cuenta cerrada. El número ya está disponible para un registro nuevo.');
+      },
+      error: error => { this.confirmError = error.error?.message ?? 'No pudimos liberar el número.'; }
     });
   }
 

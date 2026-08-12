@@ -1,31 +1,21 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { finalize, forkJoin } from 'rxjs';
-import { Api, Auth } from '../../core/api';
+import { Router } from '@angular/router';
+import { debounceTime, finalize, forkJoin, merge } from 'rxjs';
+import { Api } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { AdminAgendaStore } from './admin-agenda-store';
 
-type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash';
+type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash' | 'policy';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   template: `
     <section class='admin-shell'>
-      <aside class='admin-nav'>
-        <span class='eyebrow'>PANEL DEL CLUB</span><h2>Administración</h2>
-        <small class='admin-nav-label'>USO DIARIO</small>
-        <a routerLink='/admin'>Hoy</a><a routerLink='/admin/agenda-diaria'>Agenda diaria</a><a routerLink='/admin/agenda-semanal'>Agenda semanal</a>
-        <a routerLink='/admin/turno'>Agregar turno</a><a routerLink='/admin/turno' [queryParams]='{mode: &quot;block&quot;}'>Bloquear horario</a>
-        <small class='admin-nav-label advanced'>MARKETING</small><a routerLink='/admin/marketing/historias-instagram'>Historias Instagram</a>
-        @if (auth.user()?.role === 'SUPERADMIN') {
-          <small class='admin-nav-label advanced'>CONFIGURACIÓN</small>
-          <a routerLink='/admin/precios'>Precios</a><a routerLink='/admin/horarios'>Horarios</a><a routerLink='/admin/turnos-fijos'>Turnos fijos</a>
-          <a routerLink='/admin/clientes'>Clientes</a><a routerLink='/admin/caja'>Caja</a><a routerLink='/admin/estadisticas'>Estadísticas</a>
-        }
-      </aside>
       <div class='admin-content'>
         <div class='admin-title'><div><span class='eyebrow'>GESTIÓN</span><h1>{{ title }}</h1></div><span class='today'>{{ today | date:'EEEE d MMMM' }}</span></div>
         @if (notice()) { <p class='notice' [class.error-notice]='noticeError()'>{{ notice() }}</p> }
@@ -51,7 +41,9 @@ type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash';
                 <article class='panel row'>
                   <b>{{ days[hours.dayOfWeek] }}</b>
                   <label>Abre<input type='time' [(ngModel)]='hours.openTime'></label>
-                  <label>Cierra<input type='time' [(ngModel)]='hours.closeTime'></label>
+                   <label>Cierra<input type='time' [(ngModel)]='hours.closeTime'></label>
+                   <label>Descanso desde<input type='time' [(ngModel)]='hours.breakStartTime'></label>
+                   <label>Descanso hasta<input type='time' [(ngModel)]='hours.breakEndTime'></label>
                   <label class='check'><input type='checkbox' [(ngModel)]='hours.active'> Abierto</label>
                 </article>
               } @empty { <div class='empty'>No hay horarios configurados.</div> }
@@ -66,7 +58,7 @@ type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash';
               <label>Hora<input type='time' [(ngModel)]='form.startTime' name='rtime'></label>
               <label>Desde<input type='date' [(ngModel)]='form.startDate' name='from'></label>
               <label>Hasta<input type='date' [(ngModel)]='form.endDate' name='to'></label>
-              <label>Duración<select [(ngModel)]='form.durationMinutes' name='rdur'><option [ngValue]='60'>60</option><option [ngValue]='90'>90</option><option [ngValue]='120'>120</option></select></label>
+              <label>Duración<select [(ngModel)]='form.durationMinutes' name='rdur'>@for (price of recurringPrices; track price.id) { <option [ngValue]='price.durationMinutes'>{{ price.durationMinutes }} minutos</option> }</select></label>
               <button class='btn primary' [disabled]='creatingRecurring()'>{{ creatingRecurring() ? 'Creando...' : 'Crear serie' }}</button>
             </form>
             <div class='table recurring-table'>
@@ -98,6 +90,15 @@ type SettingsView = 'prices' | 'hours' | 'recurring' | 'cash';
               } @empty { <div class='empty'>No hay movimientos registrados.</div> }
             </div>
           }
+          @if (view === 'policy') {
+            <form class='panel form-grid' (ngSubmit)='savePolicy()'>
+              <label>Límite para cancelar
+                <input type='number' min='0' max='10080' [(ngModel)]='cancellationCutoffMinutes' name='cutoff'>
+              </label>
+              <p>Los clientes podrán cancelar hasta esta cantidad de minutos antes del turno. Administración conserva la posibilidad de resolver excepciones.</p>
+              <button class='btn primary' [disabled]='savingPolicy()'>{{ savingPolicy() ? 'Guardando...' : 'Guardar política' }}</button>
+            </form>
+          }
         }
       </div>
     </section>
@@ -107,7 +108,8 @@ export class AdminSettingsPage implements OnInit {
   private api = inject(Api);
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
-  readonly auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   readonly resourceStatus = signal<AsyncStatus>('idle');
   readonly resourceError = signal('');
@@ -120,26 +122,36 @@ export class AdminSettingsPage implements OnInit {
   readonly creatingRecurring = signal(false);
   readonly deactivatingId = signal<number | null>(null);
   readonly addingCash = signal(false);
+  readonly savingPolicy = signal(false);
   private requestId = 0;
 
   today = new Date();
   days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  form: any = { courtId: 1, clientName: '', clientPhone: '', dayOfWeek: 3, startTime: '18:00', durationMinutes: 90, startDate: this.dateInput(new Date()), endDate: this.dateInput(new Date()) };
+  form: any = { courtId: 0, clientName: '', clientPhone: '', dayOfWeek: 3, startTime: '18:00', durationMinutes: 90, startDate: this.dateInput(new Date()), endDate: this.dateInput(new Date()) };
   cash: any = { type: 'INCOME', category: 'TURNO', amount: null, description: '' };
+  recurringPrices: any[] = [];
+  cancellationCutoffMinutes = 120;
 
   get view(): SettingsView {
     const url = this.router.url;
     if (url.includes('precios')) return 'prices';
     if (url.includes('horarios')) return 'hours';
+    if (url.includes('politicas')) return 'policy';
     if (url.includes('fijos')) return 'recurring';
     return 'cash';
   }
 
   get title() {
-    return ({ prices: 'Precios', hours: 'Horarios de apertura', recurring: 'Turnos fijos', cash: 'Caja básica' } as Record<SettingsView, string>)[this.view];
+    return ({ prices: 'Precios', hours: 'Horarios de apertura', recurring: 'Turnos fijos', cash: 'Caja básica', policy: 'Políticas de reserva' } as Record<SettingsView, string>)[this.view];
   }
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    merge(
+      this.realtime.listen(['CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED', 'BOOKING_PAYMENT_CHANGED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+  }
 
   load() {
     const requestId = ++this.requestId;
@@ -150,7 +162,13 @@ export class AdminSettingsPage implements OnInit {
       : this.view === 'hours'
         ? this.api.get<unknown>('/business-hours', undefined, { noCache: true })
         : this.view === 'recurring'
-          ? this.api.get<unknown>('/admin/recurring-bookings', undefined, { noCache: true })
+          ? forkJoin({
+              items: this.api.get<unknown>('/admin/recurring-bookings', undefined, { noCache: true }),
+              courts: this.api.get<unknown>('/courts', undefined, { noCache: true }),
+              prices: this.api.get<unknown>('/prices', undefined, { noCache: true })
+            })
+          : this.view === 'policy'
+            ? this.api.get<any>('/admin/booking-policy', undefined, { noCache: true })
           : forkJoin({
               items: this.api.get<unknown>('/admin/cash-movements', undefined, { noCache: true }),
               report: this.api.get<any>('/admin/reports/daily', undefined, { noCache: true })
@@ -165,6 +183,16 @@ export class AdminSettingsPage implements OnInit {
           const value = response as any;
           this.items.set(this.normalizeList(value?.items));
           this.report.set(value?.report ?? null);
+        } else if (this.view === 'recurring') {
+          const value = response as any;
+          this.items.set(this.normalizeList(value?.items));
+          this.form.courtId = Number(this.normalizeList(value?.courts)[0]?.id ?? 0);
+          this.recurringPrices = this.normalizeList(value?.prices);
+          if (this.recurringPrices.length && !this.recurringPrices.some(item => item.durationMinutes === this.form.durationMinutes)) {
+            this.form.durationMinutes = this.recurringPrices[0].durationMinutes;
+          }
+        } else if (this.view === 'policy') {
+          this.cancellationCutoffMinutes = Number((response as any)?.cancellationCutoffMinutes ?? 120);
         } else {
           this.items.set(this.normalizeList(response));
         }
@@ -191,7 +219,14 @@ export class AdminSettingsPage implements OnInit {
 
   saveHours() {
     if (this.savingHours()) return;
-    const payload = this.items().map(({ dayOfWeek, openTime, closeTime, active }) => ({ dayOfWeek, openTime, closeTime, active }));
+    const payload = this.items().map(({ dayOfWeek, openTime, closeTime, breakStartTime, breakEndTime, active }) => ({
+      dayOfWeek,
+      openTime,
+      closeTime,
+      breakStartTime: breakStartTime || null,
+      breakEndTime: breakEndTime || null,
+      active
+    }));
     this.savingHours.set(true);
     this.api.put('/admin/business-hours', payload).pipe(
       finalize(() => this.savingHours.set(false))
@@ -237,6 +272,21 @@ export class AdminSettingsPage implements OnInit {
     ).subscribe({
       next: () => { this.cash = { type: 'INCOME', category: 'TURNO', amount: null, description: '' }; this.showNotice('Movimiento registrado.'); this.load(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar el movimiento.', true)
+    });
+  }
+
+  savePolicy() {
+    const cancellationCutoffMinutes = Number(this.cancellationCutoffMinutes);
+    if (!Number.isInteger(cancellationCutoffMinutes) || cancellationCutoffMinutes < 0 || cancellationCutoffMinutes > 10080) {
+      this.showNotice('Ingresá un límite válido entre 0 y 10080 minutos.', true);
+      return;
+    }
+    this.savingPolicy.set(true);
+    this.api.put('/admin/booking-policy', { cancellationCutoffMinutes }).pipe(
+      finalize(() => this.savingPolicy.set(false))
+    ).subscribe({
+      next: () => this.showNotice('Política de cancelación guardada.'),
+      error: error => this.showNotice(error.error?.message ?? 'No se pudo guardar la política.', true)
     });
   }
 

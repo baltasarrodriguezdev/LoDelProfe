@@ -6,6 +6,8 @@ import { authenticate } from '../middlewares/auth.js';
 import { createCsrfToken, rateLimit } from '../middlewares/security.js';
 import { config } from '../config.js';
 import { ARGENTINA_PHONE_ERROR, normalizeArgentinaPhone } from '../utils/argentina-phone.js';
+import * as passwordReset from '../services/password-reset.service.js';
+import { publishUserChange } from '../realtime/events.js';
 
 const required = (field: string) => ({ required_error: `Ingresá ${field}`, invalid_type_error: `Ingresá ${field}` });
 const phoneSchema = z.string(required('tu teléfono')).transform((value, context) => {
@@ -20,7 +22,7 @@ const registrationSchema = z.object({
   firstName: z.string(required('tu nombre')).trim().min(2, 'El nombre debe tener al menos 2 caracteres'),
   lastName: z.string(required('tu apellido')).trim().min(2, 'El apellido debe tener al menos 2 caracteres'),
   phone: phoneSchema,
-  password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres')
+  password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
 });
 
 const router = Router();
@@ -31,6 +33,16 @@ const authRateLimit = rateLimit({
   max: 20,
   key: req => `${req.ip ?? 'unknown'}:${String(req.body?.phone ?? '')}`
 });
+const recoveryRequestRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.phone ?? '')}`
+});
+const recoveryAttemptRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.token ?? '').slice(0, 12)}`
+});
 const establish = (res: Response, result: { token: string; user: unknown }, status = 200) =>
   res.status(status)
     .cookie(config.authCookieName, result.token, cookieOptions)
@@ -39,11 +51,27 @@ const establish = (res: Response, result: { token: string; user: unknown }, stat
 
 router.post('/register', authRateLimit, asyncHandler(async (req, res) => {
   const data = registrationSchema.parse(req.body);
-  establish(res, await auth.register(data), 201);
+  const result = await auth.register(data);
+  await publishUserChange('USER_CREATED', (result.user as { id: number }).id);
+  establish(res, result, 201);
 }));
 router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
   const data = z.object({ phone: phoneSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).parse(req.body);
   establish(res, await auth.login(data.phone, data.password));
+}));
+router.post('/password-reset-requests', recoveryRequestRateLimit, asyncHandler(async (req, res) => {
+  const data = z.object({ phone: phoneSchema }).parse(req.body);
+  res.status(202).json(await passwordReset.requestPasswordReset(data.phone));
+}));
+router.post('/password-reset', recoveryAttemptRateLimit, asyncHandler(async (req, res) => {
+  const data = z.object({
+    token: z.string().min(1),
+    password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
+  }).parse(req.body);
+  const result = await passwordReset.resetPassword(data.token, data.password);
+  res.clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
+    .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
+    .json(result);
 }));
 router.post('/logout', (_req, res) => res
   .clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })

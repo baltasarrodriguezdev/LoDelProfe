@@ -15,7 +15,7 @@
             "index": "src/index.html",
             "tsConfig": "tsconfig.app.json",
             "assets": [{ "glob": "**/*", "input": "src/assets", "output": "assets" }],
-            "styles": ["src/styles.css", "src/brand.css", "src/typography-brand.css", "src/responsive.css"]
+            "styles": ["src/tailwind.css"]
           },
           "configurations": {
             "production": {

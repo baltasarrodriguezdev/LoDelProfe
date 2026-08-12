@@ -11,13 +11,20 @@ import { InstagramStoriesPage } from './features/admin/instagram-stories-page';
 import { AdminAgendaPage } from './features/admin/admin-agenda-page';
 import { AdminSettingsPage } from './features/admin/admin-settings-page';
 import { adminGuard, authGuard, superAdminGuard } from './core/api';
+import { PhoneVerificationPage } from './features/client/phone-verification-page';
+import { PasswordRecoveryPage } from './features/client/password-recovery-page';
+import { AdminSecurityPage } from './features/admin/admin-security-page';
 
 export const routes: Routes = [
   { path: '', component: HomePage },
   { path: 'ingresar', component: AuthPage },
   { path: 'login', redirectTo: 'ingresar', pathMatch: 'full' },
   { path: 'registro', component: AuthPage },
+  { path: 'validar-telefono', component: PhoneVerificationPage, canActivate: [authGuard] },
+  { path: 'recuperar-contrasena', component: PasswordRecoveryPage },
+  { path: 'restablecer-contrasena', component: PasswordRecoveryPage },
   { path: 'reservar', component: AvailabilityPage },
+  { path: 'la-liga', loadComponent: () => import('./features/league/league-page').then(module => module.LeaguePage) },
   { path: 'confirmar-reserva', component: AvailabilityPage, canActivate: [authGuard] },
   { path: 'mis-turnos', component: BookingsPage, canActivate: [authGuard] },
   { path: 'historial', component: BookingsPage, canActivate: [authGuard] },
@@ -29,8 +36,11 @@ export const routes: Routes = [
   { path: 'admin/turnos-fijos', component: AdminSettingsPage, canActivate: [superAdminGuard] },
   { path: 'admin/precios', component: AdminSettingsPage, canActivate: [superAdminGuard] },
   { path: 'admin/horarios', component: AdminSettingsPage, canActivate: [superAdminGuard] },
+  { path: 'admin/politicas', component: AdminSettingsPage, canActivate: [superAdminGuard] },
   { path: 'admin/caja', component: AdminSettingsPage, canActivate: [superAdminGuard] },
   { path: 'admin/clientes', component: AdminClientsPage, canActivate: [superAdminGuard] },
+  { path: 'admin/seguridad', component: AdminSecurityPage, canActivate: [superAdminGuard] },
   { path: 'admin/marketing/historias-instagram', component: InstagramStoriesPage, canActivate: [adminGuard] },
+  { path: 'admin/la-liga', loadComponent: () => import('./features/league/admin-league-page').then(module => module.AdminLeaguePage), canActivate: [adminGuard] },
   { path: '**', redirectTo: '' }
 ];

@@ -96,4 +96,31 @@ describe('AdminClientsPage zoneless', () => {
     expect(fixture.componentInstance.confirmLoading()).toBe(false);
     expect(fixture.componentInstance.confirmError).toContain('No pudimos cancelar');
   });
+
+  it('distingue desactivar de liberar el número y exige la confirmación explícita', async () => {
+    const api = {
+      get: vi.fn(() => of([])),
+      post: vi.fn(() => of({ message: 'Número disponible' })),
+      patch: vi.fn(() => of({})),
+      delete: vi.fn(() => of({}))
+    };
+    await TestBed.configureTestingModule({
+      imports: [AdminClientsPage],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: Api, useValue: api }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(AdminClientsPage);
+    const client = { id: 18, firstName: 'Ana', lastName: 'Pérez', active: false } as any;
+    fixture.componentInstance.clients = [client];
+    fixture.componentInstance.askReleasePhone(client);
+    fixture.componentInstance.confirmDialogConfirmed();
+    await fixture.whenStable();
+
+    expect(api.post).toHaveBeenCalledWith('/admin/users/18/release-phone', { confirmation: 'LIBERAR' });
+    expect(fixture.componentInstance.clients).toEqual([]);
+  });
 });

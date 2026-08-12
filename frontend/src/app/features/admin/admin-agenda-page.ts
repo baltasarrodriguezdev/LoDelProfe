@@ -13,27 +13,6 @@ import { AdminAgendaStore, AdminBooking } from './admin-agenda-store';
   imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
   template: `
     <section class='admin-shell'>
-      <aside class='admin-nav'>
-        <span class='eyebrow'>PANEL DEL CLUB</span>
-        <h2>Administración</h2>
-        <small class='admin-nav-label'>USO DIARIO</small>
-        <a routerLink='/admin'>Hoy</a>
-        <a routerLink='/admin/agenda-diaria'>Agenda diaria</a>
-        <a routerLink='/admin/agenda-semanal'>Agenda semanal</a>
-        <a routerLink='/admin/turno'>Agregar turno</a>
-        <a routerLink='/admin/turno' [queryParams]='{mode: &quot;block&quot;}'>Bloquear horario</a>
-        <small class='admin-nav-label advanced'>MARKETING</small>
-        <a routerLink='/admin/marketing/historias-instagram'>Historias Instagram</a>
-        @if (auth.user()?.role === 'SUPERADMIN') {
-          <small class='admin-nav-label advanced'>CONFIGURACIÓN</small>
-          <a routerLink='/admin/precios'>Precios</a>
-          <a routerLink='/admin/horarios'>Horarios</a>
-          <a routerLink='/admin/turnos-fijos'>Turnos fijos</a>
-          <a routerLink='/admin/clientes'>Clientes</a>
-          <a routerLink='/admin/caja'>Caja</a>
-          <a routerLink='/admin/estadisticas'>Estadísticas</a>
-        }
-      </aside>
       <div class='admin-content'>
         <div class='admin-title'>
           <div><span class='eyebrow'>GESTIÓN</span><h1>{{ weekly ? 'Agenda semanal' : 'Agenda diaria' }}</h1></div>
@@ -64,14 +43,12 @@ import { AdminAgendaStore, AdminBooking } from './admin-agenda-store';
                   <p>{{ booking.clientPhone }} · {{ booking.durationMinutes }} min · {{ booking.playersCount }} jugadores</p>
                 </div>
                 <strong>{{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong>
-                <select [ngModel]='booking.status' [disabled]='bookingMutationId() !== null' (ngModelChange)='changeStatus(booking, $event)'>
-                  <option value='CONFIRMED'>Confirmado</option>
-                  <option value='PLAYED'>Jugado</option>
-                  <option value='NO_SHOW'>No asistió</option>
-                  <option value='BLOCKED'>Bloqueado</option>
-                  <option value='CANCELLED'>{{ isBlocked(booking) ? 'Liberar horario' : 'Cancelar turno' }}</option>
+                <select [ngModel]='booking.status' [disabled]='bookingMutationId() !== null || statusOptions(booking).length <= 1' (ngModelChange)='changeStatus(booking, $event)'>
+                  @for (option of statusOptions(booking); track option.value) {
+                    <option [value]='option.value'>{{ option.label }}</option>
+                  }
                 </select>
-                @if (isCancelled(booking)) {
+                @if (isCancelled(booking) && auth.user()?.role === 'SUPERADMIN') {
                   <button type='button' class='link danger-text history-delete' [disabled]='bookingMutationId() !== null' (click)='askDelete(booking)'>Eliminar</button>
                 }
               </article>
@@ -130,7 +107,22 @@ export class AdminAgendaPage implements OnInit {
   isCancelled(booking: AdminBooking) { return booking.status === 'CANCELLED'; }
 
   statusLabel(status: string) {
-    return ({ CONFIRMED: 'Confirmado', PLAYED: 'Jugado', CANCELLED: 'Cancelado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status;
+    return ({ PENDING: 'Pendiente', CONFIRMED: 'Confirmado', PLAYED: 'Jugado', CANCELLED: 'Cancelado', NO_SHOW: 'No asistió', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status;
+  }
+
+  statusOptions(booking: AdminBooking) {
+    const transitions: Record<string, string[]> = {
+      PENDING: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['PLAYED', 'NO_SHOW', 'CANCELLED'],
+      CANCELLED: ['CONFIRMED', 'BLOCKED'],
+      BLOCKED: ['CANCELLED'],
+      PLAYED: [],
+      NO_SHOW: []
+    };
+    return [booking.status, ...(transitions[booking.status] ?? [])].map(value => ({
+      value,
+      label: value === 'CANCELLED' && booking.status === 'BLOCKED' ? 'Liberar horario' : this.statusLabel(value)
+    }));
   }
 
   originLabel(origin?: string) {

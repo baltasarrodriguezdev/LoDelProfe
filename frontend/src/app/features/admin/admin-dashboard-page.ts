@@ -1,9 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { debounceTime, finalize, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { AdminAgendaStore } from './admin-agenda-store';
@@ -20,8 +22,10 @@ type Booking = {
   status: string;
   origin?: string;
   paymentStatus: string;
+  amountPaid?: number;
   notes?: string;
   createdAt?: string;
+  holdExpiresAt?: string | null;
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
@@ -53,6 +57,7 @@ type Booking = {
         <a routerLink="/admin/turno">Agregar turno</a>
         <a routerLink="/admin/turno" [queryParams]="{ mode: 'block' }">Bloquear horario</a>
         <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
+        @if (auth.user()?.role === 'SUPERADMIN') { <a routerLink="/admin/seguridad">Seguridad</a> }
       </nav>
 
       @if (auth.isAdmin() && auth.user()?.role === 'SUPERADMIN') {
@@ -61,8 +66,10 @@ type Booking = {
           <nav>
             <a routerLink="/admin/precios">Precios</a>
             <a routerLink="/admin/horarios">Horarios</a>
+            <a routerLink="/admin/politicas">Políticas</a>
             <a routerLink="/admin/turnos-fijos">Turnos fijos</a>
             <a routerLink="/admin/clientes">Clientes</a>
+            <a routerLink="/admin/seguridad">Seguridad y accesos</a>
             <a routerLink="/admin/marketing/historias-instagram">Historias Instagram</a>
             <a routerLink="/admin/caja">Caja</a>
             <a routerLink="/admin/estadisticas">Estadísticas</a>
@@ -81,19 +88,20 @@ type Booking = {
             <div class='empty'>No se pudieron cargar los turnos pendientes.</div>
           } @else {
           @for (booking of pendingReservations; track booking.id) {
-            <article class="operations-booking">
+            <article class="operations-booking pending-hold-card">
               <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>{{ booking.startTime | date:'dd/MM' }}</small></time>
-              <div class="operations-booking__main">
-                <div class="operations-booking__labels">
+              <div class="operations-booking-main">
+                <div class="operations-booking-labels">
                   <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
+                  <span class="hold-pill" [class.urgent]="holdRemainingSeconds(booking) <= 120">Vence en {{ holdRemainingLabel(booking) }}</span>
                   @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
                 </div>
                 <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
-                <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }}</p>
+                <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }} · se libera {{ booking.holdExpiresAt | date:'HH:mm' }}</p>
               </div>
-              <div class="operations-booking__actions">
-                <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action pay-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
+              <div class="operations-booking-actions">
+                <button type="button" class="small-action" [disabled]="isHoldExpired(booking) || bookingMutationId() !== null" (click)="confirmPending(booking)">Confirmar</button>
+                @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action pay-action" routerLink="/admin/seguridad">Validar cliente</a> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
             </article>
@@ -112,10 +120,10 @@ type Booking = {
           } @else {
           @for (user of pendingUsers; track user.id) {
             <article class="operations-booking">
-              <div class="operations-booking__main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
-              <div class="operations-booking__actions">
+              <div class="operations-booking-main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
+              <div class="operations-booking-actions">
                 @if (auth.user()?.role === 'SUPERADMIN') {
-                  <button type="button" class="small-action" (click)="verifyUser(user)">Marcar como verificado</button>
+                  <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                   <button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button>
                 }
               </div>
@@ -126,14 +134,14 @@ type Booking = {
       </section>
 
       <section class="operations-summary" aria-label="Resumen de hoy">
-        <article><span>Turnos de hoy</span><strong>{{ activeBookings.length }}</strong></article>
-        <article><span>Total estimado</span><strong>{{ estimatedTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
-        <article><span>Cobrado</span><strong>{{ paidTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
-        <article><span>Pendiente</span><strong>{{ pendingTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Turnos de hoy</span><strong class="summary-value">{{ activeBookings.length }}</strong></article>
+        <article><span class="summary-label">Total estimado</span><strong class="summary-value">{{ estimatedTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Cobrado</span><strong class="summary-value">{{ paidTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
+        <article><span class="summary-label">Pendiente</span><strong class="summary-value">{{ pendingTotal | currency:'ARS':'symbol':'1.0-0' }}</strong></article>
       </section>
 
       <section class="operations-agenda">
-        <div class="section-heading">
+        <div class="section-heading operations-agenda-heading">
           <div><span class="eyebrow">HOY EN LA CANCHA</span><h2>Próximos turnos de hoy</h2></div>
           <label class="operations-date-picker">Cambiar fecha<input type="date" [(ngModel)]="selectedDate" (change)="loadAll()"></label>
         </div>
@@ -145,8 +153,8 @@ type Booking = {
             @for (booking of bookings(); track booking.id) {
               <article class="operations-booking" [class.cancelled]="booking.status === 'CANCELLED'" [class.blocked]="booking.status === 'BLOCKED'">
                 <time><b>{{ booking.startTime | date:'HH:mm' }}</b><small>a {{ booking.endTime | date:'HH:mm' }}</small></time>
-                <div class="operations-booking__main">
-                  <div class="operations-booking__labels">
+                <div class="operations-booking-main">
+                  <div class="operations-booking-labels">
                     <span [class]="'status-pill status-' + booking.status.toLowerCase()">{{ statusLabel(booking.status) }}</span>
                     <span class="origin-pill">{{ originLabel(booking.origin) }}</span>
                     <span [class.paid]="booking.paymentStatus === 'PAID'" class="payment-pill">{{ paymentLabel(booking.paymentStatus) }}</span>
@@ -158,14 +166,14 @@ type Booking = {
                     @if (booking.status !== 'BLOCKED') { <span> · {{ booking.playersCount }} jugadores · {{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</span> }
                   </p>
                 </div>
-                <div class="operations-booking__actions">
+                <div class="operations-booking-actions">
                   <button type="button" class="small-action detail-action" (click)="openDetail(booking)">Ver detalle</button>
                   @if (booking.status !== 'BLOCKED' && booking.clientPhone) {
                     <a class="small-action whatsapp-action" [href]="whatsappUrl(booking.clientPhone)" target="_blank" rel="noopener noreferrer">WhatsApp</a>
                   }
                   @if (booking.status === 'PENDING') {
                     <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                    @if (auth.user()?.role === 'SUPERADMIN') { <button type="button" class="small-action" (click)="confirmAndVerify(booking)">Confirmar cliente y turno</button> }
+                    @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action" routerLink="/admin/seguridad">Validar cliente</a> }
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>
@@ -174,7 +182,7 @@ type Booking = {
                   @if (booking.status === 'BLOCKED') {
                     <button type="button" class="small-action" (click)="changeStatus(booking, 'CANCELLED')">Liberar horario</button>
                   }
-                  @if (booking.status === 'CANCELLED') {
+                  @if (booking.status === 'CANCELLED' && auth.user()?.role === 'SUPERADMIN') {
                     <button type="button" class="small-action" (click)="changeStatus(booking, booking.clientName === 'Bloqueo' ? 'BLOCKED' : 'CONFIRMED')">Reactivar</button>
                     <button type="button" class="small-action danger-action" (click)="deleteCancelled(booking)">Eliminar del historial</button>
                   }
@@ -197,9 +205,11 @@ type Booking = {
         <div class="section-heading">
           <div><span class="eyebrow">DISPONIBILIDAD</span><h2>Horarios del día</h2></div>
           <div class="availability-controls">
+            <label class="availability-duration">Duración
             <select [(ngModel)]="availabilityDuration" (change)="loadAvailability()">
               <option [ngValue]="60">60 min</option><option [ngValue]="90">90 min</option><option [ngValue]="120">120 min</option>
             </select>
+            </label>
           </div>
         </div>
         <p class="section-help">Tocá un horario disponible para cargar un turno. Los horarios pasados y los que no encajan con la duración elegida se muestran por separado.</p>
@@ -211,7 +221,7 @@ type Booking = {
           } @else {
           @for (slot of visibleSlots(); track slot.startTime) {
             <button type="button" [class.occupied]="!slot.available" [class.blocked]="slotState(slot) === 'Bloqueado'" [class.past]="slot.reason === 'PAST'" [class.duration-gap]="slot.reason === 'DEAD_GAP'" (click)="openSlot(slot)">
-              <b>{{ slot.startTime }}</b><span>{{ slotState(slot) }}</span>
+              <b class="slot-time">{{ slot.startTime }}</b><span class="slot-state">{{ slotState(slot) }}</span>
             </button>
           } @empty { <div class="empty">No hay horarios para esta fecha.</div> }
           }
@@ -252,6 +262,27 @@ type Booking = {
         </section>
       </div>
     }
+    @if (depositTarget; as booking) {
+      <div class="modal-backdrop" (click)="closeDeposit()">
+        <section class="booking-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title" (click)="$event.stopPropagation()">
+          <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeDeposit()">×</button>
+          <span class="eyebrow">REGISTRAR SEÑA</span>
+          <h2 id="deposit-title">{{ booking.clientName }}</h2>
+          <p>Indicá el importe realmente cobrado. Se registrará también como ingreso en caja.</p>
+          <label>Importe
+            <input type="number" min="1" [max]="booking.priceTotal - 1" [(ngModel)]="depositAmount">
+          </label>
+          <label>Medio de pago
+            <select [(ngModel)]="depositMethod"><option>EFECTIVO</option><option>TRANSFERENCIA</option><option>OTRO</option></select>
+          </label>
+          @if (depositError) { <p class="notice error-notice">{{ depositError }}</p> }
+          <div class="detail-actions">
+            <button type="button" class="btn ghost" [disabled]="paymentMutationId() !== null" (click)="closeDeposit()">Cancelar</button>
+            <button type="button" class="btn primary" [disabled]="paymentMutationId() !== null" (click)="confirmPartial()">Registrar seña</button>
+          </div>
+        </section>
+      </div>
+    }
     @if (confirmDialog; as dialog) {
       <app-confirm-dialog
         [title]="dialog.title"
@@ -274,9 +305,12 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
   public auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
 
   selectedDate = this.dateInput(new Date());
   availabilityDuration = 90;
+  courtId = 0;
   bookings = this.agendaStore.bookings;
   pendingReservations: Booking[] = [];
   availability = this.agendaStore.availability;
@@ -287,9 +321,14 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   readonly availabilityError = this.agendaStore.availabilityError;
   readonly pendingReservationsStatus = signal<AsyncStatus>('idle');
   readonly pendingUsersStatus = signal<AsyncStatus>('idle');
+  readonly holdClock = signal(Date.now());
   readonly bookingMutationId = signal<number | null>(null);
   readonly pendingUserMutationId = signal<number | null>(null);
   readonly paymentMutationId = signal<number | null>(null);
+  depositTarget: Booking | null = null;
+  depositAmount: number | null = null;
+  depositMethod = 'EFECTIVO';
+  depositError = '';
   notice = '';
   noticeError = false;
   selectedBooking: Booking | null = null;
@@ -304,6 +343,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   private pendingReservationsAbort: AbortController | null = null;
   private pendingUsersAbort: AbortController | null = null;
   private detailAbort: AbortController | null = null;
+  private holdTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshedExpiredHolds = new Set<number>();
 
   get formattedDate() {
     const value = new Intl.DateTimeFormat('es-AR', {
@@ -315,17 +356,66 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   readonly visibleSlots = this.agendaStore.visibleSlots;
   get activeBookings() { return this.bookings().filter((item: Booking) => !['CANCELLED', 'BLOCKED'].includes(item.status)); }
   get estimatedTotal() { return this.activeBookings.reduce((total: number, item: Booking) => total + Number(item.priceTotal), 0); }
-  get paidTotal() { return this.activeBookings.filter((item: Booking) => item.paymentStatus === 'PAID').reduce((total: number, item: Booking) => total + Number(item.priceTotal), 0); }
+  get paidTotal() {
+    return this.activeBookings.reduce(
+      (total: number, item: Booking) => total + Number(item.amountPaid ?? (item.paymentStatus === 'PAID' ? item.priceTotal : 0)),
+      0
+    );
+  }
   get pendingTotal() { return Math.max(0, this.estimatedTotal - this.paidTotal); }
 
   ngOnInit() {
-    this.ensureLoaded();
+    this.holdTimer = setInterval(() => this.tickPendingHolds(), 1000);
+    this.loadCourt();
+    merge(
+      this.realtime.listen([
+        'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
+        'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
+        'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
+        'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED', 'CASH_MOVEMENT_CREATED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
+        && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
+      this.loadPendingReservations();
+      this.loadPendingUsers();
+    });
+  }
+
+  private loadCourt() {
+    this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
+      next: courts => {
+        this.courtId = Number(courts?.[0]?.id ?? 0);
+        if (this.courtId) this.ensureLoaded();
+        else this.showNotice('No hay una cancha activa configurada.', true);
+      },
+      error: error => this.showNotice(error.error?.message ?? 'No se pudo cargar la cancha activa.', true)
+    });
   }
 
   ngOnDestroy() {
+    if (this.holdTimer) clearInterval(this.holdTimer);
+    this.holdTimer = null;
     this.pendingReservationsAbort?.abort();
     this.pendingUsersAbort?.abort();
     this.detailAbort?.abort();
+  }
+
+  holdRemainingSeconds(booking: Booking) {
+    const expiresAt = Date.parse(booking.holdExpiresAt ?? '');
+    return Number.isFinite(expiresAt)
+      ? Math.max(0, Math.ceil((expiresAt - this.holdClock()) / 1000))
+      : 0;
+  }
+
+  holdRemainingLabel(booking: Booking) {
+    const seconds = this.holdRemainingSeconds(booking);
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
+
+  isHoldExpired(booking: Booking) {
+    return booking.status === 'PENDING' && (!booking.holdExpiresAt || this.holdRemainingSeconds(booking) <= 0);
   }
 
   loadAll() {
@@ -401,7 +491,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   loadAvailability(force = false) {
-    void this.agendaStore.ensureAvailabilityLoaded({ date: this.selectedDate, duration: this.availabilityDuration, courtId: 1 }, force);
+    if (!this.courtId) return;
+    void this.agendaStore.ensureAvailabilityLoaded({ date: this.selectedDate, duration: this.availabilityDuration, courtId: this.courtId }, force);
   }
 
   openDetail(booking: Booking) {
@@ -571,12 +662,36 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
   markPartial(booking: Booking) {
     if (!booking.id || this.paymentMutationId() !== null) return;
+    this.depositTarget = booking;
+    this.depositAmount = null;
+    this.depositMethod = 'EFECTIVO';
+    this.depositError = '';
+  }
+  closeDeposit() {
+    if (this.paymentMutationId() !== null) return;
+    this.depositTarget = null;
+    this.depositAmount = null;
+    this.depositError = '';
+  }
+  confirmPartial() {
+    const booking = this.depositTarget;
+    const amountPaid = Number(this.depositAmount);
+    if (!booking?.id || this.paymentMutationId() !== null) return;
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0 || amountPaid >= Number(booking.priceTotal)) {
+      this.depositError = 'La seña debe ser mayor a cero y menor al total del turno.';
+      return;
+    }
     this.paymentMutationId.set(booking.id);
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
-      paymentStatus: 'PARTIAL', paymentMethod: 'EFECTIVO', createCashMovement: false
+      paymentStatus: 'PARTIAL', amountPaid, paymentMethod: this.depositMethod, createCashMovement: true
     }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
-      next: () => { booking.paymentStatus = 'PARTIAL'; this.showNotice('Seña registrada correctamente.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar la seña.', true)
+      next: response => {
+        booking.paymentStatus = 'PARTIAL';
+        booking.amountPaid = Number(response.amountPaid ?? amountPaid);
+        this.closeDeposit();
+        this.showNotice('Seña registrada correctamente.');
+      },
+      error: error => { this.depositError = error.error?.message ?? 'No se pudo registrar la seña.'; }
     });
   }
   markPaid(booking: Booking) {
@@ -585,7 +700,11 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.api.patch<any>(`/admin/bookings/${booking.id}/payment`, {
       paymentStatus: 'PAID', paymentMethod: 'EFECTIVO', createCashMovement: true
     }).pipe(finalize(() => this.paymentMutationId.set(null))).subscribe({
-      next: () => { booking.paymentStatus = 'PAID'; this.showNotice('Pago registrado correctamente.'); },
+      next: response => {
+        booking.paymentStatus = 'PAID';
+        booking.amountPaid = Number(response.amountPaid ?? booking.priceTotal);
+        this.showNotice('Pago registrado correctamente.');
+      },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo registrar el pago.', true)
     });
   }
@@ -641,6 +760,14 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.loadPendingReservations();
     this.loadPendingUsers();
     this.loadAvailability(true);
+  }
+
+  private tickPendingHolds() {
+    this.holdClock.set(Date.now());
+    const expired = this.pendingReservations.filter(booking => this.isHoldExpired(booking) && !this.refreshedExpiredHolds.has(booking.id));
+    if (!expired.length) return;
+    expired.forEach(booking => this.refreshedExpiredHolds.add(booking.id));
+    this.reloadOperationalViews();
   }
 
   private bookingAt(time: string) {

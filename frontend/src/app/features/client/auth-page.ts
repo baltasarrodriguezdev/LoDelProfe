@@ -7,18 +7,13 @@ import { Auth } from '../../core/api';
 @Component({
   standalone: true,
   imports: [FormsModule, RouterLink],
-  styles: [`
-    .phone-control { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; }
-    .phone-country { display: flex; align-items: center; gap: .45rem; padding: 0 .85rem; border: 1px solid var(--line, #d8d8d8); border-right: 0; border-radius: .65rem 0 0 .65rem; white-space: nowrap; background: #f5f2ed; font-weight: 700; }
-    .phone-control input { min-width: 0; border-radius: 0 .65rem .65rem 0; }
-    @media (max-width: 420px) { .phone-country__name { display: none; } }
-  `],
+
   template: `
     <section class="auth-wrap branded-auth">
       <div class="auth-side">
-        <img class="auth-side__image" src="assets/logos/fotoIngresar.jpg" alt="Cancha de pádel Lo del Profe">
-        <div class="auth-side__overlay" aria-hidden="true"></div>
-        <div class="auth-side__copy">
+        <img class="auth-side-image" src="assets/logos/fotoIngresar.jpg" alt="Cancha de pádel Lo del Profe">
+        <div class="auth-side-overlay" aria-hidden="true"></div>
+        <div class="auth-side-copy">
           <span class="eyebrow">LO DEL PROFE</span>
           <h1>{{ registerMode ? 'Sumate a jugar.' : 'Volvé a la cancha.' }}</h1>
           <p>{{ registerMode ? 'Creá tu cuenta y reservá tu próximo partido.' : 'Reservá tu próximo turno en segundos.' }}</p>
@@ -38,7 +33,7 @@ import { Auth } from '../../core/api';
           }
           <label>Teléfono
             <span class="phone-control">
-              <span class="phone-country" aria-label="País Argentina, código más 54"><span aria-hidden="true">AR</span><span class="phone-country__name">Argentina</span> +54</span>
+              <span class="phone-country" aria-label="País Argentina, código más 54"><span aria-hidden="true">AR</span><span class="phone-country-name">Argentina</span> +54</span>
               <input required inputmode="numeric" autocomplete="tel-national" [ngModel]="form.phone" (ngModelChange)="onPhoneInput($event)" name="phone" placeholder="Ej: 3515551234" maxlength="17">
             </span>
             <small>Ingresá los 10 dígitos, con código de área y sin 0 ni 15.</small>
@@ -47,6 +42,7 @@ import { Auth } from '../../core/api';
           <label>Contraseña<input required minlength="8" type="password" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
           @if (error) { <p class="error">{{ error }}</p> }
           <button type="submit" class="btn primary full" [disabled]="loading()">{{ loading() ? 'Procesando...' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</button>
+          @if (!registerMode) { <p class="switch"><a routerLink="/recuperar-contrasena">Olvidé mi contraseña</a></p> }
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -84,7 +80,11 @@ export class AuthPage {
         this.loading.set(false);
         const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
         if (this.registerMode) sessionStorage.setItem('accountCreatedNotice', '1');
-        this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
+        if (this.registerMode) {
+          this.router.navigate(['/validar-telefono'], { queryParams: requestedUrl ? { returnUrl: requestedUrl } : undefined });
+        } else {
+          this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
+        }
       },
       error: response => {
         const fields = response.error?.errors as Record<string, string[] | undefined> | undefined;

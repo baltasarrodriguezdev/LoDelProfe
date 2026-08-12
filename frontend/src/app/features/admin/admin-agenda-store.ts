@@ -1,6 +1,8 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime, firstValueFrom, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
 
 export type AdminBooking = {
@@ -13,6 +15,8 @@ export type AdminBooking = {
   playersCount: number;
   priceTotal: number;
   status: string;
+  holdExpiresAt?: string | null;
+  cancellationReason?: string | null;
   origin?: string;
   paymentStatus: string;
   notes?: string;
@@ -30,6 +34,8 @@ type AvailabilityKey = { date: string; duration: number; courtId: number };
 export class AdminAgendaStore {
   private api = inject(Api);
   private auth = inject(Auth);
+  private realtime = inject(RealtimeService);
+  private destroyRef = inject(DestroyRef);
   private bookingsRequestId = 0;
   private availabilityRequestId = 0;
   private loadedAgendaKey: AgendaKey | null = null;
@@ -55,6 +61,25 @@ export class AdminAgendaStore {
     return Array.isArray(value) ? value : value?.slots ?? value?.data?.slots ?? [];
   });
 
+  constructor() {
+    merge(
+      this.realtime.listen([
+        'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
+        'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED',
+        'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED', 'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED'
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.reloadLoaded());
+  }
+
+  private reloadLoaded() {
+    if (!this.auth.isAdmin()) return;
+    const agendaKey = this.loadedAgendaKey && { ...this.loadedAgendaKey };
+    const availabilityKey = this.loadedAvailabilityKey && { ...this.loadedAvailabilityKey };
+    if (agendaKey) void this.ensureAgendaLoaded(agendaKey, true);
+    if (availabilityKey) void this.ensureAvailabilityLoaded(availabilityKey, true);
+  }
+
   ensureAgendaLoaded(key: AgendaKey, force = false) {
     this.resetForUserChange();
     if (!force && this.sameAgendaKey(this.loadedAgendaKey, key) && this.agendaStatus() === 'success') return Promise.resolve();
@@ -74,6 +99,8 @@ export class AdminAgendaStore {
       return;
     }
     const requestId = ++this.bookingsRequestId;
+    const requestUserId = this.auth.user()?.id ?? null;
+    const requestSessionRevision = this.auth.sessionRevision();
     this.agendaAbort?.abort();
     const abortController = new AbortController();
     this.agendaAbort = abortController;
@@ -85,11 +112,15 @@ export class AdminAgendaStore {
     try {
       const response = await firstValueFrom(this.api.get<unknown>('/admin/bookings', { from: from.toISOString(), to: to.toISOString() }, { noCache: true, abortSignal: abortController.signal }));
       if (requestId !== this.bookingsRequestId) return;
+      if (!this.sameSession(requestUserId, requestSessionRevision)) {
+        this.agendaStatus.set('idle');
+        return;
+      }
       const normalizedBookings = this.normalizeBookings(response);
       this.bookings.set(normalizedBookings);
       this.loadedAgendaKey = { ...key };
-      this.loadedUserId = this.auth.user()?.id ?? null;
-      this.loadedSessionRevision = this.auth.sessionRevision();
+      this.loadedUserId = requestUserId;
+      this.loadedSessionRevision = requestSessionRevision;
       this.agendaStatus.set('success');
     } catch (error) {
       if (requestId !== this.bookingsRequestId) return;
@@ -120,6 +151,8 @@ export class AdminAgendaStore {
       return;
     }
     const requestId = ++this.availabilityRequestId;
+    const requestUserId = this.auth.user()?.id ?? null;
+    const requestSessionRevision = this.auth.sessionRevision();
     this.availabilityAbort?.abort();
     const abortController = new AbortController();
     this.availabilityAbort = abortController;
@@ -128,11 +161,15 @@ export class AdminAgendaStore {
     try {
       const response = await firstValueFrom(this.api.get<unknown>('/availability', { date: key.date, duration: key.duration, courtId: key.courtId }, { noCache: true, abortSignal: abortController.signal }));
       if (requestId !== this.availabilityRequestId) return;
+      if (!this.sameSession(requestUserId, requestSessionRevision)) {
+        this.availabilityStatus.set('idle');
+        return;
+      }
       const normalizedSlots = this.normalizeSlots(response);
       this.availability.set(Array.isArray(response) ? { slots: normalizedSlots } : { ...(response as any), slots: normalizedSlots });
       this.loadedAvailabilityKey = { ...key };
-      this.loadedUserId = this.auth.user()?.id ?? null;
-      this.loadedSessionRevision = this.auth.sessionRevision();
+      this.loadedUserId = requestUserId;
+      this.loadedSessionRevision = requestSessionRevision;
       this.availabilityStatus.set('success');
     } catch (error) {
       if (requestId !== this.availabilityRequestId) return;
@@ -146,8 +183,18 @@ export class AdminAgendaStore {
   }
 
   invalidate() {
+    ++this.bookingsRequestId;
+    ++this.availabilityRequestId;
+    this.agendaAbort?.abort();
+    this.availabilityAbort?.abort();
+    this.agendaAbort = null;
+    this.availabilityAbort = null;
+    this.agendaInFlight = null;
+    this.availabilityInFlight = null;
     this.loadedAgendaKey = null;
     this.loadedAvailabilityKey = null;
+    if (this.agendaStatus() === 'loading') this.agendaStatus.set('idle');
+    if (this.availabilityStatus() === 'loading') this.availabilityStatus.set('idle');
   }
 
   clear() {
@@ -219,6 +266,11 @@ export class AdminAgendaStore {
       (this.loadedUserId !== null && this.loadedUserId !== userId)
       || (this.loadedSessionRevision !== null && this.loadedSessionRevision !== sessionRevision)
     ) this.clear();
+  }
+
+  private sameSession(userId: number | null, sessionRevision: number) {
+    return (this.auth.user()?.id ?? null) === userId
+      && this.auth.sessionRevision() === sessionRevision;
   }
 
   private errorMessage(error: unknown, fallback: string) {

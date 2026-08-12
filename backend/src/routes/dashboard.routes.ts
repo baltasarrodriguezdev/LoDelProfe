@@ -31,7 +31,7 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
   const [bookings, movements, businessHours, activeCourts, newClients] = await Promise.all([
     prisma.booking.findMany({
       where: { startTime: { lte: to.toJSDate() }, endTime: { gte: from.toJSDate() } },
-      select: { id: true, startTime: true, endTime: true, durationMinutes: true, priceTotal: true, status: true, paymentStatus: true }
+      select: { id: true, startTime: true, endTime: true, durationMinutes: true, priceTotal: true, amountPaid: true, status: true, paymentStatus: true }
     }),
     prisma.cashMovement.findMany({ where: { createdAt: { gte: from.toJSDate(), lte: to.toJSDate() } }, select: { type: true, amount: true, createdAt: true } }),
     prisma.businessHour.findMany({ where: { active: true } }),
@@ -45,7 +45,7 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
     const date = cursor.toISODate()!;
     const hours = businessHours.find(item => item.dayOfWeek === cursor.weekday % 7);
     if (hours) {
-      const schedules = businessIntervals(date, hours.openTime, hours.closeTime);
+      const schedules = businessIntervals(date, hours.openTime, hours.closeTime, hours.breakStartTime, hours.breakEndTime);
       grossCapacityMinutes += schedules.reduce((total, schedule) => total + schedule.close.diff(schedule.open, 'minutes').minutes, 0) * activeCourts;
     }
     days.push({ date, bookings: 0, income: 0 });
@@ -107,7 +107,7 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
       expense,
       balance: income - expense,
       pendingPaymentCount: activeBookings.filter(item => item.paymentStatus === 'PENDING').length,
-      pendingAmount: activeBookings.filter(item => item.paymentStatus === 'PENDING').reduce((total, item) => total + Number(item.priceTotal), 0),
+      pendingAmount: activeBookings.reduce((total, item) => total + Math.max(0, Number(item.priceTotal) - Number(item.amountPaid)), 0),
       partialPaymentCount: activeBookings.filter(item => item.paymentStatus === 'PARTIAL').length
     },
     byDay: days,

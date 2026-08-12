@@ -32,12 +32,13 @@ after(async () => new Promise<void>((resolve, reject) => server.close(error => e
 beforeEach(() => {
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, role: 'SUPERADMIN', active: true });
   db.user.findFirst = async () => null;
+  db.auditLog.create = async ({ data }: any) => ({ id: 1n, ...data });
 });
 
 test('superadmin crea cliente pendiente sin exponer passwordHash', async () => {
   let created: any;
   db.user.create = async ({ data, omit }: any) => {
-    assert.deepEqual(omit, { passwordHash: true });
+    assert.deepEqual(omit, { passwordHash: true, securityVersion: true });
     created = { id: 50, createdAt: new Date(), updatedAt: new Date(), ...data };
     const { passwordHash: _passwordHash, ...publicUser } = created;
     return publicUser;
@@ -82,4 +83,37 @@ test('admin no superadmin no puede crear clientes', async () => {
   });
 
   assert.equal(response.status, 403);
+});
+
+test('liberar teléfono anonimiza la cuenta, invalida sesiones y conserva el usuario histórico', async () => {
+  let userUpdate: any = null;
+  db.user.findUnique = async ({ where }: any) => ({
+    id: where.id,
+    role: 'CLIENT',
+    phone: '3576468131',
+    releasedAt: null
+  });
+  db.$transaction = async (work: any) => work({
+    user: {
+      update: async ({ data }: any) => {
+        userUpdate = data;
+        return { id: 77, ...data, passwordHash: undefined, securityVersion: undefined };
+      }
+    },
+    passwordResetRequest: { updateMany: async () => ({ count: 1 }) },
+    auditLog: { create: async ({ data }: any) => ({ id: 1n, ...data }) }
+  });
+
+  const response = await fetch(`${baseUrl}/api/admin/users/77/release-phone`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ confirmation: 'LIBERAR' })
+  });
+
+  assert.equal(response.status, 200);
+  assert.match(userUpdate.phone, /^liberado-77-/);
+  assert.equal(userUpdate.active, false);
+  assert.equal(userUpdate.isBlocked, true);
+  assert.deepEqual(userUpdate.securityVersion, { increment: 1 });
+  assert.ok(userUpdate.releasedAt instanceof Date);
 });
