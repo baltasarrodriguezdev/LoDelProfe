@@ -6,7 +6,7 @@ app.use(securityHeaders,cors({origin:config.frontendUrls,credentials:true}),expr
 app.use((req,_res,next)=>{const unsafe=!['GET','HEAD','OPTIONS'].includes(req.method),origin=req.headers.origin;if(unsafe&&origin&&!config.frontendUrls.includes(origin))return next(new HttpError(403,'Origen no autorizado'));next()});
 app.use(csrfProtection);
 const routes=express.Router();
-routes.get('/health',(_,p)=>p.json({status:'ok'}));routes.use('/auth',auth);routes.use(pub);routes.use('/league',leaguePublic);routes.use('/bookings',bookings);routes.use('/admin/leagues',leagueAdmin);routes.use('/admin',dashboard);routes.use('/admin',admin);
+routes.get('/health',(_,p)=>p.json({status:'ok'}));routes.get('/realtime',(_req,res)=>res.status(426).set('Upgrade','websocket').json({message:'Este endpoint requiere una conexión WebSocket.'}));routes.use('/auth',auth);routes.use(pub);routes.use('/league',leaguePublic);routes.use('/bookings',bookings);routes.use('/admin/leagues',leagueAdmin);routes.use('/admin',dashboard);routes.use('/admin',admin);
 app.use('/api',routes);app.use(routes);app.use(notFound);app.use(errorHandler);
 export const httpServer=createServer(app);attachRealtimeServer(httpServer);
 export default httpServer;

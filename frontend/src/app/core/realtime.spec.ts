@@ -91,4 +91,22 @@ describe('RealtimeService', () => {
     expect(reasons).toContain('reconnected');
     service.stop();
   });
+
+  it('corta los reintentos automáticos después de cinco fallos consecutivos', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const service = TestBed.inject(RealtimeService);
+    service.start();
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      MockWebSocket.instances[attempt].close();
+      await vi.advanceTimersByTimeAsync(1_000 * 2 ** attempt);
+    }
+    expect(MockWebSocket.instances).toHaveLength(6);
+
+    MockWebSocket.instances[5].close();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(MockWebSocket.instances).toHaveLength(6);
+    expect(service.status()).toBe('offline');
+    service.stop();
+  });
 });
