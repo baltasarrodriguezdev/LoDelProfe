@@ -44,6 +44,8 @@ export type RealtimeEvent = {
 export type RealtimeResyncReason = 'connected' | 'reconnected' | 'online' | 'visible' | 'fallback';
 export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'offline';
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private readonly auth = inject(Auth);
@@ -59,6 +61,8 @@ export class RealtimeService {
   private connectedOnce = false;
   private started = false;
   private stopped = false;
+  private reconnectExhausted = false;
+  private observedSessionRevision: number | undefined;
 
   readonly status = signal<RealtimeStatus>('idle');
   readonly events$ = this.eventsSubject.asObservable();
@@ -67,7 +71,14 @@ export class RealtimeService {
   constructor() {
     effect(() => {
       const revision = (this.auth as Auth & { sessionRevision?: () => number }).sessionRevision;
-      if (typeof revision === 'function') revision();
+      if (typeof revision !== 'function') return;
+      const currentRevision = revision();
+      if (this.observedSessionRevision === undefined) {
+        this.observedSessionRevision = currentRevision;
+        return;
+      }
+      if (currentRevision === this.observedSessionRevision) return;
+      this.observedSessionRevision = currentRevision;
       if (this.started) queueMicrotask(() => this.restart());
     });
     this.destroyRef.onDestroy(() => this.stop());
@@ -77,6 +88,8 @@ export class RealtimeService {
     if (this.started) return;
     this.started = true;
     this.stopped = false;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
     window.addEventListener('online', this.onOnline);
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     this.fallbackTimer = setInterval(() => {
@@ -110,8 +123,9 @@ export class RealtimeService {
   }
 
   private connect() {
-    if (this.stopped || !this.started || this.socket || !navigator.onLine) {
+    if (this.stopped || !this.started || this.socket || !navigator.onLine || this.reconnectExhausted) {
       if (!navigator.onLine) this.status.set('offline');
+      if (this.reconnectExhausted) this.status.set('offline');
       return;
     }
     this.status.set('connecting');
@@ -123,6 +137,7 @@ export class RealtimeService {
       if (this.socket !== socket) return;
       this.status.set('connected');
       this.reconnectAttempt = 0;
+      this.reconnectExhausted = false;
       const reason: RealtimeResyncReason = this.connectedOnce ? 'reconnected' : 'connected';
       this.connectedOnce = true;
       this.resyncSubject.next(reason);
@@ -164,6 +179,11 @@ export class RealtimeService {
       this.status.set('offline');
       return;
     }
+    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectExhausted = true;
+      this.status.set('offline');
+      return;
+    }
     this.status.set('connecting');
     const base = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt++, 5));
     const delay = Math.round(base * (0.8 + Math.random() * 0.4));
@@ -175,6 +195,8 @@ export class RealtimeService {
 
   private restart() {
     if (!this.started || this.stopped) return;
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
     this.clearRetry();
     const socket = this.socket;
     this.socket = null;
@@ -185,6 +207,8 @@ export class RealtimeService {
 
   private readonly onOnline = () => {
     this.resyncSubject.next('online');
+    this.reconnectAttempt = 0;
+    this.reconnectExhausted = false;
     this.clearRetry();
     this.connect();
   };

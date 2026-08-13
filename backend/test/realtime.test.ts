@@ -102,3 +102,10 @@ test('la disponibilidad pública llega a todos los navegadores conectados', asyn
   assert.equal(inbox.get(second.socket)!.at(-1)?.id, event.id);
   assert.equal(inbox.get(admin.socket)!.at(-1)?.id, event.id);
 });
+
+test('GET /api/realtime informa que se requiere upgrade sin responder 500', async () => {
+  const response = await fetch(`${baseUrl.replace('ws://', 'http://')}/api/realtime`);
+  assert.equal(response.status, 426);
+  assert.equal(response.headers.get('upgrade'), 'websocket');
+  assert.match((await response.json() as { message: string }).message, /WebSocket/i);
+});
