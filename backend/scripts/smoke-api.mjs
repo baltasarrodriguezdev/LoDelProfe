@@ -1,6 +1,10 @@
-import { httpServer } from '../dist/src/app.js';
+import { createServer } from 'node:http';
+import appModule from '../dist/src/app.js';
 import { prisma } from '../dist/src/prisma/client.js';
 import { stopRealtimeBroker } from '../dist/src/realtime/events.js';
+
+const app = appModule.default ?? appModule;
+const httpServer = createServer(app);
 
 const expectedStatuses = new Map([
   ['/api/auth/me', 401],

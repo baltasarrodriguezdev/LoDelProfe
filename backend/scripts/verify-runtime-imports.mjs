@@ -16,7 +16,8 @@ for (const packageName of runtimePackages) {
 }
 
 const backend = await import('../dist/src/app.js');
-if (typeof backend.app !== 'function' || typeof backend.httpServer?.listen !== 'function') {
+const defaultExport = backend.default?.default ?? backend.default;
+if (typeof backend.app !== 'function' || defaultExport !== backend.app) {
   throw new Error('La salida compilada no exporta la aplicación Express y el servidor HTTP esperados.');
 }
 
