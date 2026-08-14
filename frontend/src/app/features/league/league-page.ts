@@ -19,10 +19,6 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
           <h1>{{ data()?.league?.name || 'Liga Suma 12' }}</h1>
           <p>Fixture, resultados y posiciones de las 16 parejas, siempre al día.</p>
         </div>
-        <div class="league-live" [class.online]="realtime.status() === 'connected'">
-          <span></span>
-          <div><small>ACTUALIZACIÓN</small><strong>{{ realtimeLabel() }}</strong></div>
-        </div>
       </div>
     </section>
 
@@ -241,7 +237,6 @@ export class LeaguePage implements OnInit {
 
   openTab(tab: LeagueTab) { this.activeTab.set(tab); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   valueOf(event: Event) { return (event.target as HTMLSelectElement).value; }
-  realtimeLabel() { return ({ connected: 'En vivo', connecting: 'Conectando', offline: 'Sin conexión', idle: 'Preparando' } as Record<string, string>)[this.realtime.status()]; }
   stageLabel(stage: string) { return ({ GROUP_STAGE: 'Fase de zonas', ROUND_OF_16: 'Octavos de final', QUARTERFINAL: 'Cuartos de final', SEMIFINAL: 'Semifinales', FINAL: 'Final' } as Record<string, string>)[stage] ?? stage; }
   statusLabel(status: string) { return ({ SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Finalizado', RESCHEDULED: 'Reprogramado', SUSPENDED: 'Suspendido', PENDING: 'Pendiente' } as Record<string, string>)[status] ?? status; }
   signed(value: number) { return value > 0 ? `+${value}` : String(value); }
