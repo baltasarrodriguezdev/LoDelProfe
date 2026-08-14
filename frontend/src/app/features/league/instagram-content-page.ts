@@ -118,7 +118,7 @@ type LeagueSummary = { id: number; name: string; seasonYear: number; status: str
             } @else if (loading()) {
               <div class="preview-state"><span class="loader"></span><b>Generando la placa</b><small>Esperando fuentes, logo y datos.</small></div>
             } @else {
-              <div class="preview-state"><b>Sin vista previa</b><small>Completá una selección válida para generar.</small></div>
+              <div class="preview-state"><b>{{ previewError() ? 'No se pudo generar' : 'Sin vista previa' }}</b><small>{{ previewError() || 'Elegí los datos requeridos por la plantilla.' }}</small></div>
             }
             @if (loading() && previewUrl()) { <div class="preview-refreshing">Actualizando…</div> }
           </div>
@@ -167,6 +167,7 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   readonly pageIndex = signal(0);
   readonly previewUrl = signal('');
   readonly previewLoaded = signal(false);
+  readonly previewError = signal('');
   private requestId = 0;
   private requestAbort: AbortController | null = null;
   private copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -240,6 +241,8 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   loadLeague(leagueId: number, preserveSelection = false) {
     this.loading.set(true);
     this.notice.set('');
+    this.noticeError.set(false);
+    this.previewError.set('');
     this.api.get<LeaguePayload>(`/admin/leagues/${leagueId}`, undefined, { noCache: true }).subscribe({
       next: data => {
         this.leagueData.set(data);
@@ -305,12 +308,15 @@ export class InstagramContentPage implements OnInit, OnDestroy {
         this.caption = manifest.description;
         this.loadPreview(requestId, abort);
       },
-      error: error => {
+      error: async error => {
         if (requestId !== this.requestId || abort.signal.aborted) return;
         this.loading.set(false);
         this.manifest.set(null);
         this.revokePreview();
-        this.showError(error.error?.message ?? 'No se pudo preparar esta plantilla con los datos seleccionados.');
+        const message = await this.errorMessage(error, 'No se pudo preparar esta plantilla con los datos seleccionados.');
+        if (requestId !== this.requestId || abort.signal.aborted) return;
+        this.previewError.set(message);
+        this.showError(message);
       }
     });
   }
@@ -322,6 +328,7 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     if (!parentAbort) { this.requestAbort?.abort(); this.requestAbort = abort; }
     this.loading.set(true);
     this.previewLoaded.set(false);
+    this.previewError.set('');
     this.api.getBlob(`/admin/leagues/${leagueId}/instagram/render`, this.params(true), { noCache: true, abortSignal: abort.signal, timeoutMs: 45000 }).subscribe({
       next: blob => {
         if (parentRequestId !== this.requestId || abort.signal.aborted) return;
@@ -329,10 +336,13 @@ export class InstagramContentPage implements OnInit, OnDestroy {
         this.previewUrl.set(URL.createObjectURL(blob));
         this.loading.set(false);
       },
-      error: error => {
+      error: async error => {
         if (parentRequestId !== this.requestId || abort.signal.aborted) return;
         this.loading.set(false);
-        this.showError(error.error?.message ?? 'No se pudo renderizar la vista previa.');
+        const message = await this.errorMessage(error, 'No se pudo renderizar la vista previa.');
+        if (parentRequestId !== this.requestId || abort.signal.aborted) return;
+        this.previewError.set(message);
+        this.showError(message);
       }
     });
   }
@@ -385,6 +395,20 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     const url = this.previewUrl();
     if (url) URL.revokeObjectURL(url);
     this.previewUrl.set('');
+  }
+
+  private async errorMessage(error: any, fallback: string) {
+    const body = error?.error;
+    if (body instanceof Blob) {
+      try {
+        const text = await body.text();
+        const parsed = JSON.parse(text);
+        if (typeof parsed?.message === 'string' && parsed.message.trim()) return parsed.message;
+      } catch {
+        // La respuesta puede ser texto o un blob vacío; se conserva el mensaje estándar.
+      }
+    }
+    return typeof body?.message === 'string' && body.message.trim() ? body.message : fallback;
   }
 
   private showError(message: string) { this.notice.set(message); this.noticeError.set(true); }

@@ -1,7 +1,7 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { NEVER, of } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Api } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
@@ -81,6 +81,20 @@ describe('InstagramContentPage', () => {
       expect.objectContaining({ format: 'story' }),
       expect.anything()
     );
+  });
+
+  it('muestra el motivo real cuando el backend no puede generar la vista previa', async () => {
+    api.getBlob.mockReturnValue(throwError(() => ({
+      error: new Blob([JSON.stringify({ message: 'No hay partidos cargados para la fecha seleccionada.' })], { type: 'application/json' })
+    })));
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await vi.waitFor(() => expect(fixture.componentInstance.previewError()).toBe('No hay partidos cargados para la fecha seleccionada.'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('No se pudo generar');
+    expect(fixture.nativeElement.textContent).toContain('No hay partidos cargados para la fecha seleccionada.');
   });
 
   it('descarga PNG y ZIP con los nombres del manifiesto y copia la descripción editable', async () => {

@@ -95,16 +95,22 @@ const COLORS = {
   line: '#6f806d'
 };
 const SITE = 'lodelprofe.com';
-const ASSET_DIR = resolve(process.cwd(), 'assets', 'instagram');
+const ASSET_FILES = {
+  nullFree: resolve(__dirname, '../../assets/instagram/Null_Free.otf'),
+  manropeRegular: resolve(__dirname, '../../assets/instagram/Manrope-Regular.ttf'),
+  manropeBold: resolve(__dirname, '../../assets/instagram/Manrope-Bold.ttf'),
+  manropeExtraBold: resolve(__dirname, '../../assets/instagram/Manrope-ExtraBold.ttf'),
+  logo: resolve(__dirname, '../../assets/instagram/lo-del-profe-stacked.png')
+};
 let assetsPromise: Promise<{ nullFree: Buffer; manropeRegular: Buffer; manropeBold: Buffer; manropeExtraBold: Buffer; logo: string }> | null = null;
 
 function loadAssets() {
   assetsPromise ??= Promise.all([
-    readFile(resolve(ASSET_DIR, 'Null_Free.otf')),
-    readFile(resolve(ASSET_DIR, 'Manrope-Regular.ttf')),
-    readFile(resolve(ASSET_DIR, 'Manrope-Bold.ttf')),
-    readFile(resolve(ASSET_DIR, 'Manrope-ExtraBold.ttf')),
-    readFile(resolve(ASSET_DIR, 'lo-del-profe-stacked.png'))
+    readFile(ASSET_FILES.nullFree),
+    readFile(ASSET_FILES.manropeRegular),
+    readFile(ASSET_FILES.manropeBold),
+    readFile(ASSET_FILES.manropeExtraBold),
+    readFile(ASSET_FILES.logo)
   ]).then(([nullFree, manropeRegular, manropeBold, manropeExtraBold, logo]) => ({
     nullFree,
     manropeRegular,
