@@ -1,12 +1,15 @@
 const runtimePackages = [
   '@prisma/client',
+  '@resvg/resvg-js',
   'bcrypt',
   'cors',
   'dotenv',
   'express',
   'ioredis',
   'jsonwebtoken',
+  'jszip',
   'luxon',
+  'satori',
   'ws',
   'zod'
 ];

@@ -78,6 +78,7 @@ export async function seedSuma12League(prisma: PrismaClient, courtId = 1) {
       straightSetsWinPoints: 3,
       threeSetsWinPoints: 2,
       threeSetsLossPoints: 1,
+      straightSetsLossPoints: 0,
       gamesPositiveDefinition: GAMES_POSITIVE_DEFINITION
     },
     create: {
@@ -85,7 +86,7 @@ export async function seedSuma12League(prisma: PrismaClient, courtId = 1) {
       straightSetsWinPoints: 3,
       threeSetsWinPoints: 2,
       threeSetsLossPoints: 1,
-      straightSetsLossPoints: null,
+      straightSetsLossPoints: 0,
       gamesPositiveDefinition: GAMES_POSITIVE_DEFINITION
     }
   });
