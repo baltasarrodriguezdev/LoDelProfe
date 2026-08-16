@@ -9,7 +9,7 @@ import { VENUE } from '../../shared/venue';
   template: `
     <section class="hero hero-poster">
       <div class="hero-poster-bg" aria-hidden="true">
-        <img src="assets/logos/foto-padel-hero.jpg" alt="">
+        <img src="assets/logos/foto-padel-hero.jpg" width="1200" height="796" fetchpriority="high" alt="">
       </div>
       <div class="hero-poster-overlay" aria-hidden="true"></div>
       <div class="hero-copy hero-content">

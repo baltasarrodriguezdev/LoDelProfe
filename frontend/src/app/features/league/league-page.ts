@@ -28,11 +28,12 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
           <button type="button" [class.active]="activeTab() === tab.id" [attr.aria-current]="activeTab() === tab.id ? 'page' : null" (click)="activeTab.set(tab.id)">{{ tab.label }}</button>
         }
       </div>
+      <small class="league-tabs-hint" aria-hidden="true">Deslizá para ver todas las secciones →</small>
     </nav>
 
     <main class="league-content" aria-live="polite">
       @if (status() === 'loading') {
-        <div class="league-loading"><span></span><strong>Cargando La Liga...</strong><p>Estamos preparando fixture y posiciones.</p></div>
+        <div class="league-loading"><span></span><strong>Cargando La Liga…</strong><p>Estamos preparando fixture y posiciones.</p></div>
       } @else if (status() === 'error') {
         <div class="empty league-error"><strong>No pudimos cargar La Liga.</strong><span>{{ error() }}</span><button type="button" class="btn primary" (click)="load()">Reintentar</button></div>
       } @else if (data(); as leagueData) {
@@ -118,18 +119,46 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
             <div class="league-standings-stack">
               @for (table of leagueData.standings; track table.zone.id) {
                 <article class="league-standings-card">
-                  <header><h3>{{ table.zone.name }}</h3></header>
-                  <div class="league-table-scroll" tabindex="0" [attr.aria-label]="'Tabla de posiciones ' + table.zone.name">
+                  <header><h3>{{ table.zone.name }}</h3><span [class.pending]="!table.rankingComplete">{{ table.rankingComplete ? 'Orden confirmado' : 'Orden pendiente' }}</span></header>
+                  @for (warning of table.warnings; track warning) { <p class="league-warning">{{ warning }}</p> }
+                  <div class="league-standing-cards" [attr.aria-label]="'Posiciones y estadísticas ' + table.zone.name">
+                    @for (row of table.rows; track row.pairId) {
+                      <article class="league-standing-row" [class.ranking-pending]="row.rankingPending" [attr.data-testid]="'standing-card-' + table.zone.code + '-' + row.pairId">
+                        <header>
+                          <span class="league-position"><small>POS</small><strong>{{ row.position ?? 'Pend.' }}</strong></span>
+                          <h4>{{ row.pair }}</h4>
+                          <span class="league-points"><small>PTS</small><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></span>
+                        </header>
+                        <dl>
+                          <div><dt>PJ</dt><dd>{{ row.played }}</dd></div>
+                          <div><dt>PG</dt><dd>{{ row.won }}</dd></div>
+                          <div><dt>PP</dt><dd>{{ row.lost }}</dd></div>
+                          <div><dt>SF</dt><dd>{{ row.setsFor }}</dd></div>
+                          <div><dt>SC</dt><dd>{{ row.setsAgainst }}</dd></div>
+                          <div><dt>DS</dt><dd>{{ signed(row.setDifference) }}</dd></div>
+                          <div><dt>GF</dt><dd>{{ row.gamesFor }}</dd></div>
+                          <div><dt>GC</dt><dd>{{ row.gamesAgainst }}</dd></div>
+                          <div><dt>DG</dt><dd>{{ signed(row.gameDifference) }}</dd></div>
+                        </dl>
+                      </article>
+                    } @empty {
+                      <div class="empty"><strong>Todavía no hay parejas en esta zona.</strong><span>Las posiciones aparecerán cuando se carguen las parejas.</span></div>
+                    }
+                  </div>
+                  <p class="league-table-hint" [id]="'standings-scroll-hint-' + table.zone.code">Deslizá la tabla para consultar todas las estadísticas →</p>
+                  <div class="league-table-scroll" tabindex="0" [attr.aria-describedby]="'standings-scroll-hint-' + table.zone.code" [attr.aria-label]="'Tabla de posiciones ' + table.zone.name">
                     <table>
-                      <thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>SF</th><th>SC</th><th>DS</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr></thead>
+                      <thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>PG</th><th>PP</th><th>SF</th><th>SC</th><th>DS</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr></thead>
                       <tbody>
                         @for (row of table.rows; track row.pairId) {
-                          <tr><td>{{ row.position ?? '—' }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr>
+                          <tr [class.ranking-pending]="row.rankingPending"><td>{{ row.position ?? 'Pend.' }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr>
+                        } @empty {
+                          <tr><td colspan="12">Todavía no hay parejas en esta zona.</td></tr>
                         }
                       </tbody>
                     </table>
                   </div>
-                  <p class="league-abbreviations"><strong>PJ</strong> partidos jugados · <strong>SF/SC</strong> sets a favor/en contra · <strong>DS</strong> diferencia de sets · <strong>GF/GC</strong> games a favor/en contra · <strong>DG</strong> diferencia de games · <strong>PTS</strong> puntos.</p>
+                  <p class="league-abbreviations"><strong>PJ</strong> partidos jugados · <strong>PG/PP</strong> partidos ganados/perdidos · <strong>SF/SC</strong> sets a favor/en contra · <strong>DS</strong> diferencia de sets · <strong>GF/GC</strong> games a favor/en contra · <strong>DG</strong> diferencia de games · <strong>PTS</strong> puntos.</p>
                 </article>
               }
             </div>
@@ -181,6 +210,48 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
     .league-ranking-criteria small{color:var(--color-brand-muted);font-size:.68rem}
     @media(max-width:900px){.league-ranking-criteria ol{grid-template-columns:repeat(3,1fr)}}
     @media(max-width:560px){.league-ranking-criteria{padding:17px}.league-ranking-criteria ol{grid-template-columns:repeat(2,1fr)}}
+  `,
+  `
+    .league-tabs{overscroll-behavior-inline:contain;scrollbar-width:thin}
+    .league-tabs>div{scroll-snap-type:x proximity}
+    .league-tabs button{scroll-snap-align:start}
+    .league-tabs-hint{display:none}
+
+    .league-standing-cards{display:none}
+    .league-table-hint{display:none;margin:0;border-bottom:1px solid var(--color-brand-border);padding:9px 18px;background:#fff6d9;color:#6f551a;font-size:.7rem;font-weight:750}
+    .league-table-scroll{overscroll-behavior-inline:contain;scrollbar-gutter:stable;scrollbar-width:thin;touch-action:pan-x pan-y}
+    .league-table-scroll table{min-width:1020px;font-variant-numeric:tabular-nums}
+    .league-table-scroll th:nth-child(2){width:240px;max-width:240px;box-shadow:7px 0 10px -10px rgba(20,40,27,.8);white-space:normal;overflow-wrap:anywhere}
+    .league-table-scroll th:last-child,.league-table-scroll td:last-child{position:sticky;right:0;z-index:2;min-width:68px;background:var(--color-brand-paper);box-shadow:-7px 0 10px -10px rgba(20,40,27,.8)}
+    .league-table-scroll thead th:last-child{z-index:3;background:#ece9dd}
+    .league-table-scroll td:last-child strong{font-size:.94rem;color:var(--color-brand-green)}
+    .league-table-scroll td,.league-table-scroll th{font-variant-numeric:tabular-nums}
+
+    @media(min-width:721px) and (max-width:1100px){.league-table-hint{display:block}}
+    @media(max-width:720px){
+      .league-table-scroll,.league-table-hint{display:none}
+      .league-standing-cards{display:grid;gap:10px;padding:12px;background:#eeece2}
+      .league-standing-row{overflow:hidden;border:1px solid var(--color-brand-border);border-radius:11px;background:var(--color-brand-paper);box-shadow:0 5px 18px rgba(34,53,38,.045)}
+      .league-standing-row>header{display:grid;grid-template-columns:48px minmax(0,1fr) 54px;align-items:stretch;gap:10px;min-height:68px;border-bottom:1px solid var(--color-brand-border)}
+      .league-standing-row h4{align-self:center;margin:0;padding:10px 0;font-family:var(--font-body);font-size:.82rem;line-height:1.35;overflow-wrap:anywhere}
+      .league-position,.league-points{display:grid;align-content:center;justify-items:center;gap:2px;padding:8px 5px;background:#f1eee3;font-variant-numeric:tabular-nums}
+      .league-position{border-right:1px solid var(--color-brand-border)}
+      .league-points{border-left:1px solid rgba(255,255,255,.16);background:var(--color-brand-dark);color:#fff}
+      .league-position small,.league-points small{font-family:var(--font-display);font-size:.58rem;letter-spacing:.08em}
+      .league-position strong{font-family:var(--font-display);font-size:1rem;color:var(--color-brand-green)}
+      .league-points strong{font-family:var(--font-display);font-size:1.65rem;line-height:1;color:#fff}
+      .league-standing-row.ranking-pending .league-position strong{font-size:.72rem;color:#8a681d}
+      .league-standing-row dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;padding:5px 9px 9px}
+      .league-standing-row dl div{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:5px;min-height:38px;border-bottom:1px solid rgba(31,51,38,.09);padding:4px 7px}
+      .league-standing-row dt{font-family:var(--font-display);font-size:.62rem;color:var(--color-brand-muted)}
+      .league-standing-row dd{margin:0;text-align:right;font-family:var(--font-display);font-size:.9rem;font-variant-numeric:tabular-nums;color:var(--color-brand-dark)}
+      .league-warning{margin:12px 12px 0;font-size:.7rem}
+    }
+    @media(max-width:680px){
+      .league-hero h1{font-size:clamp(3rem,15vw,3.8rem);line-height:.95}
+      .league-tabs-hint{position:sticky;left:0;display:block;width:100%;border-top:1px solid var(--color-brand-border);padding:5px 16px;background:#f5f1e5;color:var(--color-brand-muted);font-size:.62rem;text-align:right}
+    }
+    @media(prefers-reduced-motion:reduce){.league-loading span{animation:none}}
   `]
 })
 export class LeaguePage implements OnInit {

@@ -17,7 +17,7 @@ import { RealtimeService } from './core/realtime';
     @if (!isAuthPage()) {
       <header class="site-header" [class.home-header]="isHomePage()">
         <div class="site-header-inner">
-          <a class="brand brand-logo" routerLink="/" aria-label="Lo del Profe, inicio"><img src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe"></a>
+          <a class="brand brand-logo" routerLink="/" aria-label="Lo del Profe, inicio"><img src="assets/logos/lo-del-profe-horizontal.png" width="500" height="500" alt="Lo del Profe"></a>
           <button type="button" class="mobile-menu-toggle" [class.open]="mobileMenuOpen" [attr.aria-expanded]="mobileMenuOpen" [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'" aria-controls="primary-navigation" (click)="toggleMobileMenu()"><span></span><span></span><span></span></button>
           <nav id="primary-navigation" aria-label="Navegación principal" [class.open]="mobileMenuOpen">
             @for (item of navigationItems(); track item.label) {
@@ -43,7 +43,7 @@ import { RealtimeService } from './core/realtime';
       <footer class="footer">
         <div class="footer-container">
           <section class="footer-brand" aria-label="Lo del Profe">
-            <img class="footer-logo" src="assets/logos/lo-del-profe-horizontal.png" alt="Lo del Profe">
+            <img class="footer-logo" src="assets/logos/lo-del-profe-horizontal.png" width="500" height="500" loading="lazy" alt="Lo del Profe">
             <strong class="footer-title">Cancha de pádel</strong>
             <p>Pádel, amigos y buenos partidos.</p>
           </section>
