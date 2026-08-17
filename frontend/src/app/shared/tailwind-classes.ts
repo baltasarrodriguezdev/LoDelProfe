@@ -44,7 +44,7 @@ export const APP_TAILWIND_CLASSES = `
   [&_.tag]:inline-flex [&_.tag]:w-max [&_.tag]:rounded [&_.tag]:bg-[#e7eedf] [&_.tag]:px-2 [&_.tag]:py-1 [&_.tag]:text-[.65rem] [&_.tag]:font-bold [&_.tag]:tracking-[.08em] [&_.tag]:text-brand-green
   [&_.actions]:flex [&_.actions]:flex-wrap [&_.actions]:gap-3
 
-  [&_.site-header]:sticky [&_.site-header]:top-0 [&_.site-header]:z-30 [&_.site-header]:block [&_.site-header]:h-[76px] [&_.site-header]:border-b [&_.site-header]:border-brand-gold/30 [&_.site-header]:bg-brand-dark [&_.site-header]:px-6 [&_.site-header]:text-brand-paper [&_.site-header]:shadow-[0_8px_24px_rgba(15,31,20,.09)]
+  [&_.site-header]:sticky [&_.site-header]:top-0 [&_.site-header]:z-30 [&_.site-header]:block [&_.site-header]:h-[76px] [&_.site-header]:border-b [&_.site-header]:border-brand-green/30 [&_.site-header]:bg-brand-dark [&_.site-header]:px-6 [&_.site-header]:text-brand-paper [&_.site-header]:shadow-[0_8px_24px_rgba(31,31,31,.12)]
   [&_.site-header-inner]:relative [&_.site-header-inner]:z-10 [&_.site-header-inner]:mx-auto [&_.site-header-inner]:flex [&_.site-header-inner]:h-full [&_.site-header-inner]:w-full [&_.site-header-inner]:max-w-[1200px] [&_.site-header-inner]:items-center [&_.site-header-inner]:justify-between
   [&_.brand-logo]:block [&_.brand-logo]:h-14 [&_.brand-logo]:w-28 [&_.brand-logo]:shrink-0
   [&_.brand-logo_img]:h-full [&_.brand-logo_img]:w-full [&_.brand-logo_img]:object-contain
@@ -55,17 +55,17 @@ export const APP_TAILWIND_CLASSES = `
   [&_.site-header.home-header]:absolute [&_.site-header.home-header]:inset-x-0 [&_.site-header.home-header]:top-0 [&_.site-header.home-header]:border-0 [&_.site-header.home-header]:bg-transparent [&_.site-header.home-header]:shadow-none
   [&_.mobile-menu-toggle]:hidden
 
-  [&_.footer]:block [&_.footer]:border-t-4 [&_.footer]:border-brand-gold [&_.footer]:bg-[#173022] [&_.footer]:px-6 [&_.footer]:py-12 [&_.footer]:text-brand-paper
+  [&_.footer]:block [&_.footer]:border-t-4 [&_.footer]:border-brand-green [&_.footer]:bg-brand-dark [&_.footer]:px-6 [&_.footer]:py-12 [&_.footer]:text-brand-paper
   [&_.footer-container]:mx-auto [&_.footer-container]:grid [&_.footer-container]:w-full [&_.footer-container]:max-w-[1200px] [&_.footer-container]:grid-cols-[1.2fr_1fr_1.2fr] [&_.footer-container]:gap-16
   [&_.footer-brand]:grid [&_.footer-brand]:content-start [&_.footer-brand]:justify-items-start
   [&_.footer-logo]:mb-4 [&_.footer-logo]:h-auto [&_.footer-logo]:w-[105px] [&_.footer-logo]:object-contain
-  [&_.footer-title]:mb-3 [&_.footer-title]:text-xs [&_.footer-title]:font-semibold [&_.footer-title]:uppercase [&_.footer-title]:tracking-[.17em] [&_.footer-title]:text-[#a8a05c]
-  [&_.footer-brand_p]:m-0 [&_.footer-brand_p]:max-w-[280px] [&_.footer-brand_p]:text-sm [&_.footer-brand_p]:text-[#d4dccf]
-  [&_.footer-eyebrow]:mb-3 [&_.footer-eyebrow]:block [&_.footer-eyebrow]:text-xs [&_.footer-eyebrow]:font-semibold [&_.footer-eyebrow]:uppercase [&_.footer-eyebrow]:tracking-[.17em] [&_.footer-eyebrow]:text-[#a8a05c]
+  [&_.footer-title]:mb-3 [&_.footer-title]:text-xs [&_.footer-title]:font-semibold [&_.footer-title]:uppercase [&_.footer-title]:tracking-[.17em] [&_.footer-title]:text-brand-cream
+  [&_.footer-brand_p]:m-0 [&_.footer-brand_p]:max-w-[280px] [&_.footer-brand_p]:text-sm [&_.footer-brand_p]:text-brand-cream/75
+  [&_.footer-eyebrow]:mb-3 [&_.footer-eyebrow]:block [&_.footer-eyebrow]:text-xs [&_.footer-eyebrow]:font-semibold [&_.footer-eyebrow]:uppercase [&_.footer-eyebrow]:tracking-[.17em] [&_.footer-eyebrow]:text-brand-cream
   [&_.footer-links]:grid [&_.footer-links]:justify-items-start [&_.footer-links]:gap-2
-  [&_.footer-link]:inline-flex [&_.footer-link]:min-h-10 [&_.footer-link]:items-center [&_.footer-link]:text-[#dce3d8]
+  [&_.footer-link]:inline-flex [&_.footer-link]:min-h-10 [&_.footer-link]:items-center [&_.footer-link]:text-brand-cream/85
   [&_.footer-contact]:grid [&_.footer-contact]:content-start [&_.footer-contact]:justify-items-start [&_.footer-contact]:gap-3
-  [&_.footer-contact_p]:m-0 [&_.footer-contact_p]:text-sm [&_.footer-contact_p]:text-[#d4dccf]
+  [&_.footer-contact_p]:m-0 [&_.footer-contact_p]:text-sm [&_.footer-contact_p]:text-brand-cream/75
   [&_.footer-map-link]:inline-flex [&_.footer-map-link]:items-center [&_.footer-map-link]:gap-2 [&_.footer-map-link]:rounded-lg [&_.footer-map-link]:border [&_.footer-map-link]:border-brand-gold/50 [&_.footer-map-link]:px-3 [&_.footer-map-link]:py-2 [&_.footer-map-link]:text-sm
   [&_.footer-bottom]:mx-auto [&_.footer-bottom]:mt-9 [&_.footer-bottom]:flex [&_.footer-bottom]:w-full [&_.footer-bottom]:max-w-[1200px] [&_.footer-bottom]:justify-between [&_.footer-bottom]:gap-7 [&_.footer-bottom]:border-t [&_.footer-bottom]:border-white/10 [&_.footer-bottom]:pt-5
   [&_.footer-bottom_span]:text-[.68rem] [&_.footer-bottom_span]:text-[#9eaea2]
@@ -90,7 +90,7 @@ export const APP_TAILWIND_PUBLIC_CLASSES = `
   [&_.hero-poster]:relative [&_.hero-poster]:isolate [&_.hero-poster]:m-0 [&_.hero-poster]:min-h-screen [&_.hero-poster]:w-full [&_.hero-poster]:overflow-hidden [&_.hero-poster]:bg-brand-dark
   [&_.hero-poster-bg]:absolute [&_.hero-poster-bg]:inset-0 [&_.hero-poster-bg]:z-0
   [&_.hero-poster-bg_img]:h-full [&_.hero-poster-bg_img]:w-full [&_.hero-poster-bg_img]:object-cover [&_.hero-poster-bg_img]:object-center
-  [&_.hero-poster-overlay]:absolute [&_.hero-poster-overlay]:inset-0 [&_.hero-poster-overlay]:z-[1] [&_.hero-poster-overlay]:bg-[linear-gradient(90deg,rgba(13,38,24,.88)_0%,rgba(13,38,24,.55)_48%,rgba(13,38,24,.08)_100%)]
+  [&_.hero-poster-overlay]:absolute [&_.hero-poster-overlay]:inset-0 [&_.hero-poster-overlay]:z-[1] [&_.hero-poster-overlay]:bg-[linear-gradient(90deg,rgba(31,31,31,.9)_0%,rgba(31,31,31,.58)_48%,rgba(31,31,31,.1)_100%)]
   [&_.hero-content]:relative [&_.hero-content]:z-[2] [&_.hero-content]:flex [&_.hero-content]:min-h-screen [&_.hero-content]:w-[min(58%,680px)] [&_.hero-content]:flex-col [&_.hero-content]:justify-center [&_.hero-content]:px-0 [&_.hero-content]:pt-[120px] [&_.hero-content]:pb-[70px] [&_.hero-content]:pl-16
   [&_.hero-eyebrow]:mb-6 [&_.hero-eyebrow]:inline-flex [&_.hero-eyebrow]:items-center [&_.hero-eyebrow]:gap-2.5 [&_.hero-eyebrow]:text-brand-gold
   [&_.hero-title]:m-0 [&_.hero-title]:mb-6 [&_.hero-title]:text-[clamp(4.7rem,7.8vw,7.4rem)] [&_.hero-title]:font-medium [&_.hero-title]:leading-[.88] [&_.hero-title]:text-brand-cream [&_.hero-title]:drop-shadow-xl
@@ -174,11 +174,11 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   [&_.auth-wrap]:grid [&_.auth-wrap]:min-h-screen [&_.auth-wrap]:grid-cols-[1.08fr_minmax(460px,.92fr)] [&_.auth-wrap]:bg-brand-cream
   [&_.auth-side]:relative [&_.auth-side]:flex [&_.auth-side]:min-h-screen [&_.auth-side]:items-end [&_.auth-side]:overflow-hidden [&_.auth-side]:bg-brand-dark
   [&_.auth-side-image]:absolute [&_.auth-side-image]:inset-0 [&_.auth-side-image]:h-full [&_.auth-side-image]:w-full [&_.auth-side-image]:object-cover
-  [&_.auth-side-overlay]:absolute [&_.auth-side-overlay]:inset-0 [&_.auth-side-overlay]:bg-[linear-gradient(180deg,rgba(20,40,27,.08)_25%,rgba(20,40,27,.78)_100%)]
+  [&_.auth-side-overlay]:absolute [&_.auth-side-overlay]:inset-0 [&_.auth-side-overlay]:bg-[linear-gradient(180deg,rgba(31,31,31,.08)_25%,rgba(31,31,31,.8)_100%)]
   [&_.auth-side-copy]:relative [&_.auth-side-copy]:z-10 [&_.auth-side-copy]:w-full [&_.auth-side-copy]:max-w-[640px] [&_.auth-side-copy]:p-[clamp(38px,6vw,72px)] [&_.auth-side-copy]:text-brand-cream
   [&_.auth-side-copy_h1]:my-3 [&_.auth-side-copy_h1]:text-[clamp(3.4rem,6.2vw,6rem)] [&_.auth-side-copy_h1]:text-brand-cream
   [&_.auth-side-copy_p]:m-0 [&_.auth-side-copy_p]:max-w-[420px] [&_.auth-side-copy_p]:text-brand-cream/85
-  [&_.auth-form-side]:grid [&_.auth-form-side]:place-items-center [&_.auth-form-side]:bg-[radial-gradient(circle_at_90%_8%,rgba(154,151,79,.11),transparent_28%)] [&_.auth-form-side]:p-12
+  [&_.auth-form-side]:grid [&_.auth-form-side]:place-items-center [&_.auth-form-side]:bg-[radial-gradient(circle_at_90%_8%,rgba(90,107,60,.11),transparent_28%)] [&_.auth-form-side]:p-12
   [&_.auth-card]:m-0 [&_.auth-card]:w-full [&_.auth-card]:max-w-[480px] [&_.auth-card]:p-10
   [&_.auth-card_h2]:my-3 [&_.auth-card_h2]:text-[2.8rem]
   [&_.auth-card_label]:my-3 [&_.auth-card_label]:grid [&_.auth-card_label]:gap-1.5 [&_.auth-card_label]:text-xs [&_.auth-card_label]:font-bold [&_.auth-card_label]:text-brand-muted
@@ -207,7 +207,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   [&_.verification-steps>div]:grid [&_.verification-steps>div]:grid-cols-[34px_1fr] [&_.verification-steps>div]:items-center [&_.verification-steps>div]:gap-3
   [&_.verification-steps_b]:grid [&_.verification-steps_b]:size-[34px] [&_.verification-steps_b]:place-items-center [&_.verification-steps_b]:rounded-full [&_.verification-steps_b]:bg-brand-dark [&_.verification-steps_b]:text-white
 
-  [&_.booking-entry]:relative [&_.booking-entry]:isolate [&_.booking-entry]:grid [&_.booking-entry]:min-h-[calc(100vh-76px)] [&_.booking-entry]:place-items-center [&_.booking-entry]:overflow-hidden [&_.booking-entry]:bg-[radial-gradient(circle_at_14%_12%,rgba(154,151,79,.16),transparent_26%),linear-gradient(145deg,rgba(255,253,245,.96),rgba(245,241,229,.88))] [&_.booking-entry]:px-6 [&_.booking-entry]:py-16
+  [&_.booking-entry]:relative [&_.booking-entry]:isolate [&_.booking-entry]:grid [&_.booking-entry]:min-h-[calc(100vh-76px)] [&_.booking-entry]:place-items-center [&_.booking-entry]:overflow-hidden [&_.booking-entry]:bg-[radial-gradient(circle_at_14%_12%,rgba(90,107,60,.13),transparent_26%),linear-gradient(145deg,rgba(255,255,255,.96),rgba(242,239,232,.9))] [&_.booking-entry]:px-6 [&_.booking-entry]:py-16
   [&_.booking-entry-card]:w-full [&_.booking-entry-card]:max-w-[720px] [&_.booking-entry-card]:rounded-[22px] [&_.booking-entry-card]:border [&_.booking-entry-card]:border-brand-dark/15 [&_.booking-entry-card]:bg-brand-paper/90 [&_.booking-entry-card]:p-[clamp(32px,5.5vw,58px)] [&_.booking-entry-card]:shadow-2xl [&_.booking-entry-card]:backdrop-blur-md
   [&_.booking-entry_h1]:my-4 [&_.booking-entry_h1]:max-w-[580px] [&_.booking-entry_h1]:text-[clamp(3.2rem,7vw,5.2rem)]
   [&_.booking-entry-intro]:m-0 [&_.booking-entry-intro]:max-w-[600px]
@@ -234,7 +234,7 @@ export const APP_TAILWIND_FEATURE_CLASSES = `
   [&_.small-action:hover]:border-brand-green [&_.small-action:hover]:bg-[#eef3e9]
   [&_.danger-action]:border-red-200 [&_.danger-action]:bg-red-50 [&_.danger-action]:text-brand-danger
   [&_.pay-action]:border-brand-green/30 [&_.pay-action]:bg-[#edf3e7] [&_.pay-action]:text-brand-green
-  [&_.admin-form-page]:min-h-[calc(100vh-76px)] [&_.admin-form-page]:bg-[linear-gradient(135deg,#edf1e7,#f4f2e9_55%)] [&_.admin-form-page]:px-[clamp(20px,5vw,64px)] [&_.admin-form-page]:py-11
+  [&_.admin-form-page]:min-h-[calc(100vh-76px)] [&_.admin-form-page]:bg-[linear-gradient(135deg,#f2efe8,#ffffff_55%)] [&_.admin-form-page]:px-[clamp(20px,5vw,64px)] [&_.admin-form-page]:py-11
   [&_.admin-form-container]:mx-auto [&_.admin-form-container]:w-full [&_.admin-form-container]:max-w-[920px]
   [&_.back-link]:inline-flex [&_.back-link]:min-h-11 [&_.back-link]:items-center [&_.back-link]:font-bold [&_.back-link]:text-brand-green [&_.back-link]:underline [&_.back-link]:underline-offset-4
   [&_.admin-form-heading]:mt-8 [&_.admin-form-heading]:mb-7 [&_.admin-form-heading]:max-w-[740px]
