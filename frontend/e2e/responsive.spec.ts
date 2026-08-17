@@ -7,9 +7,9 @@ const screenshotRoot = resolve(process.env.RESPONSIVE_SCREENSHOT_DIR ?? 'respons
 const viewports = [
   { name: 'mobile-320x568', width: 320, height: 568, mobile: true },
   { name: 'mobile-360x800', width: 360, height: 800, mobile: true },
-  { name: 'mobile-375x667', width: 375, height: 667, mobile: true },
+  { name: 'mobile-375x812', width: 375, height: 812, mobile: true },
   { name: 'mobile-390x844', width: 390, height: 844, mobile: true },
-  { name: 'mobile-414x896', width: 414, height: 896, mobile: true },
+  { name: 'mobile-412x915', width: 412, height: 915, mobile: true },
   { name: 'mobile-landscape-844x390', width: 844, height: 390, mobile: true },
   { name: 'tablet-768x1024', width: 768, height: 1024, mobile: false },
   { name: 'tablet-820x1180', width: 820, height: 1180, mobile: false },
@@ -185,22 +185,41 @@ for (const viewport of viewports) {
       }
 
       if (viewport.width <= 720) {
-        const cards = page.locator('.league-standing-row:visible');
-        expect(await cards.count()).toBe(payload.standings.reduce((sum: number, table: any) => sum + table.rows.length, 0));
-        const first = cards.first();
-        await expect(first).toContainText('POS');
-        await expect(first).toContainText('PTS');
-        for (const abbreviation of ['PJ', 'PG', 'PP', 'SF', 'SC', 'DS', 'GF', 'GC', 'DG']) await expect(first).toContainText(abbreviation);
-        const visualHierarchy = await first.evaluate(element => {
-          const points = element.querySelector('.league-points strong');
-          const stat = element.querySelector('dd');
-          return { points: Number.parseFloat(getComputedStyle(points!).fontSize), stat: Number.parseFloat(getComputedStyle(stat!).fontSize) };
-        });
-        expect(visualHierarchy.points).toBeGreaterThan(visualHierarchy.stat);
+        const tables = page.locator('.league-table-scroll:visible');
+        expect(await tables.count()).toBe(payload.standings.length);
+        const first = tables.first();
+        const visibleHeaders = await first.locator('thead th:visible').allTextContents();
+        expect(visibleHeaders).toEqual(viewport.width <= 340
+          ? ['POS', 'PAREJA', 'PJ', 'DS', 'PTS']
+          : ['POS', 'PAREJA', 'PJ', 'SF', 'SC', 'DS', 'PTS']);
+        const clippedCells = await first.locator('th:visible, td:visible').evaluateAll(elements => elements
+          .filter(element => element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1)
+          .map(element => element.textContent?.trim()));
+        expect(clippedCells, `celdas cortadas: ${JSON.stringify(clippedCells)}`).toEqual([]);
+        expect(await first.locator('tbody tr').count()).toBe(payload.standings[0].rows.length);
+        const compactOverflow = await first.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+        expect(compactOverflow.scroll).toBeLessThanOrEqual(compactOverflow.client + 1);
+        if (['mobile-360x800', 'mobile-390x844'].includes(viewport.name)) {
+          await page.locator('.league-standings-card').first().screenshot({
+            path: resolve(screenshotRoot, `tabla-posiciones-${viewport.width}px.png`),
+            animations: 'disabled'
+          });
+        }
+        await page.getByRole('button', { name: 'Ver estadísticas', exact: true }).first().click();
+        expect(await first.locator('thead th:visible').allTextContents()).toEqual(['POS', 'PAREJA', 'PJ', 'PG', 'PP', 'SF', 'SC', 'DS', 'GF', 'GC', 'DG', 'PTS']);
+        const expandedOverflow = await first.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+        expect(expandedOverflow.scroll).toBeGreaterThan(expandedOverflow.client);
+        await assertNoGlobalOverflow(page);
       } else {
         const table = page.locator('.league-table-scroll:visible').first();
         const headers = await table.locator('thead th').allTextContents();
         expect(headers).toEqual(['POS', 'PAREJA', 'PJ', 'PG', 'PP', 'SF', 'SC', 'DS', 'GF', 'GC', 'DG', 'PTS']);
+        if (viewport.name === 'desktop-1366x768') {
+          await page.locator('.league-standings-card').first().screenshot({
+            path: resolve(screenshotRoot, 'tabla-posiciones-escritorio.png'),
+            animations: 'disabled'
+          });
+        }
         if (viewport.width <= 1100) {
           const tableOverflow = await table.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }));
           expect(tableOverflow.scroll).toBeGreaterThan(tableOverflow.client);
@@ -310,7 +329,7 @@ test.describe('estados difíciles de Liga', () => {
     await capture(page, 'mobile-320x568', 'la-liga-sin-datos');
   });
 
-  test('nombres largos y estadísticas negativas conservan la tarjeta completa', async ({ page }) => {
+  test('nombres largos y estadísticas negativas conservan la fila completa', async ({ page }) => {
     const response = await page.request.get('/api/league/active');
     const payload = await response.json();
     payload.standings[0].rows[0].pair = 'Valentino Rodríguez Extraordinariamente Largo - Maximiliano de la Concepción Fernández';
@@ -321,10 +340,10 @@ test.describe('estados difíciles de Liga', () => {
     await page.route('**/api/league/active', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(payload) }));
     await page.goto('/la-liga');
     await page.getByRole('button', { name: 'Posiciones', exact: true }).click();
-    const card = page.locator('.league-standing-row:visible').first();
-    await expect(card).toContainText('Valentino Rodríguez Extraordinariamente Largo');
-    await expect(card).toContainText('-2');
-    await expect(card.locator('.league-points strong')).toHaveText('12');
+    const row = page.locator('.league-table-scroll:visible tbody tr').first();
+    await expect(row).toContainText('Valentino Rodríguez Extraordinariamente Largo');
+    await expect(row).toContainText('-2');
+    await expect(row.locator('td:last-child strong')).toHaveText('12');
     await assertNoGlobalOverflow(page);
     await capture(page, 'mobile-320x568', 'la-liga-nombre-largo');
   });
