@@ -519,7 +519,7 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   private displayFontFamily() {
     if (this.storyFont === 'condensed') return 'Oswald Local';
     if (this.storyFont === 'clean') return 'Manrope Local';
-    return 'Story Round';
+    return 'Null Free';
   }
 
   private coverImage(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {

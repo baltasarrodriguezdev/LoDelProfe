@@ -17,7 +17,7 @@
 }
 
 @font-face {
-  font-family: "Story Round";
+  font-family: "Null Free";
   src: url("./assets/fonts/Null_Free.otf") format("opentype");
   font-weight: 700;
   font-style: normal;
@@ -54,8 +54,10 @@
   --color-brand-danger: #b53c32;
   --color-brand-text: var(--color-text);
   --color-brand-border: var(--color-border);
-  --font-display: "Oswald Local", sans-serif;
-  --font-body: "Manrope Local", sans-serif;
+  --font-brand: "Null Free", sans-serif;
+  --font-functional: "Manrope Local", sans-serif;
+  --font-display: var(--font-brand);
+  --font-body: var(--font-functional);
 }
 
 :root {
@@ -82,6 +84,33 @@ body {
   overflow-x: visible;
   background: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+}
+
+h3,
+h4,
+h5,
+h6,
+button,
+input,
+select,
+textarea,
+label,
+table,
+time {
+  font-family: var(--font-body);
+}
+
+h3,
+button {
+  font-weight: 600;
 }
 
 body.mobile-menu-open {
@@ -238,7 +267,8 @@ app-admin-navigation {
   border-bottom: 3px solid transparent;
   padding: 0 11px;
   color: #d7e0d9;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: .82rem;
   cursor: pointer;
   white-space: nowrap;
@@ -300,7 +330,8 @@ app-admin-navigation {
   border-radius: 6px;
   padding: 9px 12px;
   color: #d7e0d9;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: .86rem;
 }
 
@@ -378,7 +409,8 @@ app-admin-navigation {
 }
 
 .agenda-time time {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 700;
   font-size: 1.75rem;
 }
 
@@ -491,7 +523,8 @@ app-admin-navigation {
 }
 
 .dashboard-agenda time {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 700;
   font-size: 1.65rem;
 }
 
@@ -869,7 +902,7 @@ app-admin-navigation {
   .admin-navigation-toggle small,
   .admin-navigation-label {
     color: var(--color-brand-gold);
-    font-family: var(--font-display);
+    font-family: var(--font-body);
     font-size: .65rem;
     font-weight: 700;
   }

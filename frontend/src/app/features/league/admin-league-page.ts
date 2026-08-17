@@ -162,6 +162,7 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
   `,
   `.league-result-feedback{margin:12px 0 0;border-left:4px solid var(--color-brand-green);border-radius:7px;padding:11px 13px;background:#e6efe1;color:var(--color-brand-green);font-size:.76rem;font-weight:700}.league-result-feedback.error{border-left-color:#a94738;background:#f9e2dc;color:#812f25}`,
   `
+    .league-set-editor input,.league-admin-bracket article em,.league-admin-standing-cards header small,.league-admin-standing-cards header strong,.league-admin-standing-cards dt,.league-admin-standing-cards dd{font-family:var(--font-body);font-weight:600}
     .league-admin-tabs{overscroll-behavior-inline:contain;scrollbar-width:thin;scroll-snap-type:x proximity}
     .league-admin-tabs button{scroll-snap-align:start}
     .league-admin-tabs-hint{display:none}

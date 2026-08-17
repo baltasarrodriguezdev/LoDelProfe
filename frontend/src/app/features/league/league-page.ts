@@ -193,6 +193,7 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
     @media(max-width:560px){.league-ranking-criteria{padding:17px}.league-ranking-criteria ol{grid-template-columns:repeat(2,1fr)}}
   `,
   `
+    .league-live small,.league-match-card>header span,.league-score-row em,.league-table-scroll thead th,.league-ranking-criteria li b{font-family:var(--font-body);font-weight:600}
     .league-tabs{overscroll-behavior-inline:contain;scrollbar-width:thin}
     .league-table-scroll tr.ranking-pending td:first-child{color:#9c741b}
     .league-tabs>div{scroll-snap-type:x proximity}
