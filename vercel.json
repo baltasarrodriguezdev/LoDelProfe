@@ -10,10 +10,8 @@
     },
     "backend": {
       "root": "backend",
-      "framework": "express",
-      "entrypoint": "src/app.ts",
-      "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
-      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime"
+      "runtime": "container",
+      "entrypoint": "Dockerfile.vercel"
     }
   },
   "rewrites": [
