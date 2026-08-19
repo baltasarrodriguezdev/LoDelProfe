@@ -414,6 +414,54 @@ export async function saveLeagueMatchResult(matchId: number, sets: LeagueSetInpu
   return getLeaguePayload(existing.leagueId);
 }
 
+export async function resetLeagueMatchResult(matchId: number, actorId: number, correctionConfirmed = false) {
+  const existing = await prisma.leagueMatch.findUnique({
+    where: { id: matchId },
+    include: { sets: true, nextMatch: { include: { sets: true } } }
+  });
+  if (!existing) throw new HttpError(404, 'Partido no encontrado.');
+  if (!existing.sets.length && !existing.official) return getLeaguePayload(existing.leagueId);
+  if (existing.official && !correctionConfirmed) {
+    throw new HttpError(409, 'Este resultado ya es oficial. Confirmá expresamente que querés quitarlo.', 'RESULT_CORRECTION_CONFIRMATION_REQUIRED');
+  }
+  if (existing.official && existing.nextMatch && (existing.nextMatch.official || existing.nextMatch.sets.length)) {
+    throw new HttpError(409, `No se puede quitar el resultado porque ${existing.nextMatch.code} ya tiene un resultado cargado.`);
+  }
+  if (existing.official && existing.stage === 'GROUP_STAGE') {
+    const startedKnockout = await prisma.leagueMatch.count({
+      where: { leagueId: existing.leagueId, stage: { not: 'GROUP_STAGE' }, OR: [{ official: true }, { sets: { some: {} } }] }
+    });
+    if (startedKnockout) throw new HttpError(409, 'No se puede quitar el resultado de zonas porque las eliminatorias ya tienen resultados cargados.');
+  }
+  await prisma.$transaction(async tx => {
+    await tx.leagueMatchSet.deleteMany({ where: { matchId } });
+    await tx.leagueMatch.update({
+      where: { id: matchId },
+      data: {
+        status: existing.scheduledDate && existing.scheduledTime ? 'SCHEDULED' : 'PENDING',
+        official: false,
+        officialAt: null,
+        updatedById: actorId
+      }
+    });
+    await writeAudit({
+      actorId,
+      action: 'LEAGUE_RESULT_RESET',
+      entityType: 'LEAGUE_MATCH',
+      entityId: matchId,
+      details: { previousSets: existing.sets, wasOfficial: existing.official }
+    }, tx);
+    if (existing.official && existing.nextMatchId && existing.nextSlot) {
+      await tx.leagueMatch.update({
+        where: { id: existing.nextMatchId },
+        data: { ...(existing.nextSlot === 'HOME' ? { homePairId: null } : { awayPairId: null }), status: 'PENDING' }
+      });
+    }
+  });
+  await reconcileLeagueBracket(existing.leagueId);
+  return getLeaguePayload(existing.leagueId);
+}
+
 export async function confirmLeagueMatchResult(matchId: number, actorId: number) {
   const match = await prisma.leagueMatch.findUnique({ where: { id: matchId }, include: { sets: { orderBy: { setNumber: 'asc' } } } });
   if (!match) throw new HttpError(404, 'Partido no encontrado.');

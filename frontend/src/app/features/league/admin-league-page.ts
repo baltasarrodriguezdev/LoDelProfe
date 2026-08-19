@@ -104,7 +104,7 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
                   <div class="league-result-tools">@if (resultSets.length === 2) { <button type="button" class="link" (click)="addThirdSet()">+ Agregar tercer set</button> } @else { <button type="button" class="link danger-text" (click)="removeThirdSet()">Quitar tercer set</button> }</div>
                   <p class="league-result-help">Marcadores admitidos por set completo: 6–0 a 6–4, 7–5 o 7–6. No se acepta 10–x porque el tercer set no es super tie-break.</p>
                   @if (resultFeedback()) { <p class="league-result-feedback" [class.error]="resultFeedbackError()" role="status">{{ resultFeedback() }}</p> }
-                  <div class="actions"><button type="button" class="btn ghost" [disabled]="saving()" (click)="saveResult()">{{ match.official ? 'Corregir resultado' : 'Guardar borrador' }}</button>@if (!match.official) { <button type="button" class="btn primary" [disabled]="saving()" (click)="saveAndConfirmResult()">{{ saving() ? 'Guardando...' : 'Guardar y confirmar' }}</button> }</div>
+                  <div class="actions">@if (match.sets.length) { <button type="button" class="btn ghost danger-text" [disabled]="saving()" (click)="requestResultReset()">Quitar resultado</button> }<button type="button" class="btn ghost" [disabled]="saving()" (click)="saveResult()">{{ match.official ? 'Corregir resultado' : 'Guardar borrador' }}</button>@if (!match.official) { <button type="button" class="btn primary" [disabled]="saving()" (click)="saveAndConfirmResult()">{{ saving() ? 'Guardando...' : 'Guardar y confirmar' }}</button> }</div>
                 </section>
               } @else { <div class="empty">Elegí un partido para cargar o revisar su resultado.</div> }
             </div>
@@ -153,6 +153,9 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
 
     @if (correctionPending()) {
       <app-confirm-dialog title="Corregir resultado oficial" message="El resultado ya fue oficializado. Al corregirlo volverá a estado de borrador y se recalcularán las posiciones." secondaryMessage="La corrección queda registrada con tu usuario y fecha. Si el siguiente cruce ya tiene resultado, el backend impedirá el cambio." confirmText="Sí, corregir" [loading]="saving()" [error]="dialogError()" (confirm)="saveResult(true)" (cancel)="cancelCorrection()" />
+    }
+    @if (resetPending()) {
+      <app-confirm-dialog title="Quitar resultado" [message]="resultMatch()?.official ? 'Este resultado es oficial. El partido volverá a figurar sin resultado y se recalcularán las posiciones y los cruces.' : 'Se borrará el marcador cargado y el partido volverá a figurar sin resultado.'" secondaryMessage="La acción queda registrada con tu usuario y fecha. Si un cruce posterior ya tiene resultado, el sistema impedirá el cambio." confirmText="Sí, quitar resultado" [loading]="saving()" [error]="dialogError()" (confirm)="resetResult()" (cancel)="cancelResultReset()" />
     }
   `,
   styles: [`
@@ -216,6 +219,7 @@ export class AdminLeaguePage implements OnInit {
   readonly activeTab = signal<AdminLeagueTab>('season');
   readonly resultMatch = signal<LeagueMatch | null>(null);
   readonly correctionPending = signal(false);
+  readonly resetPending = signal(false);
   readonly dialogError = signal('');
   readonly resultFeedback = signal('');
   readonly resultFeedbackError = signal(false);
@@ -344,6 +348,31 @@ export class AdminLeaguePage implements OnInit {
     const leagueId = this.selectedLeagueId(); if (!leagueId) return;
     this.runSave(this.api.post<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/confirm`, {}), 'Resultado confirmado oficialmente.', data => { this.data.set(data); const updated = data.matches.find(item => item.id === match.id)!; this.editResult(updated); });
   }
+
+  requestResultReset() {
+    const match = this.resultMatch();
+    if (!match?.sets.length || this.saving()) return;
+    this.dialogError.set('');
+    this.resetPending.set(true);
+  }
+
+  resetResult() {
+    const leagueId = this.selectedLeagueId(); const match = this.resultMatch();
+    if (!leagueId || !match || !match.sets.length) return;
+    this.saving.set(true);
+    this.api.post<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/result/reset`, { correctionConfirmed: true }).pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: data => {
+        this.resetPending.set(false);
+        this.data.set(data);
+        const updated = data.matches.find(item => item.id === match.id)!;
+        this.editResult(updated);
+        this.setResultFeedback('Resultado quitado. El partido volvió a quedar sin jugar.');
+      },
+      error: error => this.dialogError.set(error.error?.message ?? 'No se pudo quitar el resultado.')
+    });
+  }
+
+  cancelResultReset() { if (!this.saving()) { this.resetPending.set(false); this.dialogError.set(''); } }
 
   cancelCorrection() { if (!this.saving()) { this.correctionPending.set(false); this.dialogError.set(''); } }
 

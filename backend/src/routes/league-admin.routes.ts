@@ -12,6 +12,7 @@ import {
   generateLeagueFixture,
   getLeaguePayload,
   listLeagues,
+  resetLeagueMatchResult,
   saveLeagueMatchResult,
   updateLeaguePair
 } from '../services/league.service.js';
@@ -241,6 +242,17 @@ router.put('/:leagueId/matches/:matchId/result', asyncHandler(async (req, res) =
   const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
   if (!match) throw new HttpError(404, 'Partido no encontrado.');
   const payload = await saveLeagueMatchResult(matchId, data.sets, req.auth!.userId, data.correctionConfirmed);
+  await publishLeagueChange(leagueId, matchId);
+  res.json(payload);
+}));
+
+router.post('/:leagueId/matches/:matchId/result/reset', asyncHandler(async (req, res) => {
+  const leagueId = id(req.params.leagueId);
+  const matchId = id(req.params.matchId);
+  const data = z.object({ correctionConfirmed: z.boolean().default(false) }).strict().parse(req.body);
+  const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  const payload = await resetLeagueMatchResult(matchId, req.auth!.userId, data.correctionConfirmed);
   await publishLeagueChange(leagueId, matchId);
   res.json(payload);
 }));
