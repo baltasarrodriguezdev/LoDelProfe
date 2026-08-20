@@ -1,10 +1,8 @@
-FROM node:22.20.0-bookworm-slim AS build
+FROM node:22.20.0-alpine3.22 AS build
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates openssl
 
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
@@ -18,24 +16,23 @@ COPY assets ./assets
 RUN npm run build \
     && npm run verify:runtime \
     && npm prune --omit=dev --workspaces=false \
-    && npm run verify:runtime \
-    && npm run smoke:entrypoint
+    && rm -rf node_modules/.cache node_modules/@prisma/engines node_modules/@prisma/client/generator-build \
+    && find node_modules/@prisma/client/runtime -type f -name '*.wasm' -delete \
+    && find node_modules -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.map' \) -delete \
+    && node scripts/verify-runtime-imports.mjs \
+    && node scripts/smoke-entrypoint.mjs
 
-FROM node:22.20.0-bookworm-slim AS runtime
+FROM alpine:3.22 AS runtime
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates openssl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates libssl3 libstdc++
 
-COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 
 ENV NODE_ENV=production
 ENV PORT=80
 EXPOSE 80
-HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:80/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 CMD ["node", "dist/src/server.js"]
