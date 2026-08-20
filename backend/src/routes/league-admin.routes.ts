@@ -76,7 +76,8 @@ const instagramSelectionSchema = z.object({
   format: z.enum(INSTAGRAM_FORMATS),
   zoneId: z.coerce.number().int().positive().optional(),
   matchday: z.coerce.number().int().positive().optional(),
-  matchId: z.coerce.number().int().positive().optional()
+  matchId: z.coerce.number().int().positive().optional(),
+  scheduledDate: z.string().date().optional()
 }).strict();
 
 function instagramSelection(query: unknown): InstagramSelection {
@@ -86,7 +87,8 @@ function instagramSelection(query: unknown): InstagramSelection {
     format: value.format,
     zoneId: value.zoneId,
     matchday: value.matchday,
-    matchId: value.matchId
+    matchId: value.matchId,
+    scheduledDate: value.scheduledDate
   });
 }
 

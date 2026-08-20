@@ -73,6 +73,14 @@ type LeagueSummary = { id: number; name: string; seasonYear: number; status: str
                 </select>
               </label>
             }
+            @if (template === 'today') {
+              <label>Día de los partidos
+                <select [(ngModel)]="scheduledDate" (ngModelChange)="selectionChanged()">
+                  @for (date of availableScheduledDates(); track date) { <option [ngValue]="date">{{ dateLabel(date) }}</option> }
+                </select>
+                <small>Incluye sólo los partidos programados para ese día, aunque sean de distintas zonas o fechas.</small>
+              </label>
+            }
             @if (template === 'individual_result') {
               <label>Partido
                 <select [(ngModel)]="matchId" (ngModelChange)="selectionChanged()">
@@ -178,13 +186,14 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   zoneId: number | null = null;
   matchday: number | null = null;
   matchId: number | null = null;
+  scheduledDate: string | null = null;
   caption = '';
 
   readonly templateOptions: Array<{ id: InstagramTemplate; label: string; help: string }> = [
     { id: 'zones', label: 'Zonas', help: 'Portada + una página por zona' },
     { id: 'next_matchday', label: 'Próxima fecha', help: 'Fixture individual de una zona' },
     { id: 'weekly_fixture', label: 'Carrusel semanal', help: 'Portada + fechas de ambas zonas' },
-    { id: 'today', label: 'Hoy se juega', help: 'Historia rápida de la jornada' },
+    { id: 'today', label: 'Hoy juegan', help: 'Sólo los partidos programados para ese día' },
     { id: 'individual_result', label: 'Resultado individual', help: 'Marcador completo de un partido' },
     { id: 'matchday_results', label: 'Resultados', help: 'Todos los partidos de la fecha' },
     { id: 'standings', label: 'Posiciones', help: 'Ocho filas legibles y actualizadas' },
@@ -200,6 +209,9 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     return [...new Set(data.matches.filter(match => match.stage === 'GROUP_STAGE' && match.zone?.id === zoneId && match.matchday).map(match => match.matchday!))].sort((a, b) => a - b);
   });
   readonly resultMatches = computed(() => this.leagueData()?.matches.filter(match => match.result && match.homePair && match.awayPair) ?? []);
+  readonly availableScheduledDates = computed(() => [...new Set(
+    (this.leagueData()?.matches ?? []).filter(match => match.status !== 'SUSPENDED').map(match => match.scheduledDate).filter((date): date is string => Boolean(date))
+  )].sort());
   readonly currentWarnings = computed(() => this.manifest()?.pages.find(page => page.index === this.pageIndex())?.warnings ?? []);
 
   ngOnInit() {
@@ -267,10 +279,11 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   selectPage(index: number) { this.pageIndex.set(index); this.loadPreview(); }
   regenerate() { if (this.selectedLeagueId) this.loadLeague(this.selectedLeagueId, true); }
 
-  showZoneSelector() { return ['next_matchday', 'today', 'matchday_results', 'standings', 'results_standings'].includes(this.template); }
-  showMatchdaySelector() { return ['next_matchday', 'weekly_fixture', 'today', 'matchday_results', 'results_standings'].includes(this.template); }
+  showZoneSelector() { return ['next_matchday', 'matchday_results', 'standings', 'results_standings'].includes(this.template); }
+  showMatchdaySelector() { return ['next_matchday', 'weekly_fixture', 'matchday_results', 'results_standings'].includes(this.template); }
   currentTemplateLabel() { return this.templateOptions.find(option => option.id === this.template)?.label ?? 'Placa'; }
   matchLabel(match: LeagueMatch) { return `${match.zone?.name ?? this.stageLabel(match.stage)} · ${match.matchday ? `F${match.matchday}` : match.code} · ${match.homePair?.displayName} vs ${match.awayPair?.displayName}`; }
+  dateLabel(value: string) { return new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${value}T12:00:00`)); }
 
   private normalizeSelection() {
     const data = this.leagueData();
@@ -280,6 +293,11 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     if (!this.matchday || !rounds.includes(this.matchday)) this.matchday = rounds[0] ?? null;
     const results = this.resultMatches();
     if (!this.matchId || !results.some(match => match.id === this.matchId)) this.matchId = results[0]?.id ?? null;
+    const dates = this.availableScheduledDates();
+    if (!this.scheduledDate || !dates.includes(this.scheduledDate)) {
+      const today = new Intl.DateTimeFormat('en-CA').format(new Date());
+      this.scheduledDate = dates.find(date => date >= today) ?? dates.at(-1) ?? null;
+    }
   }
 
   private params(includePage = false) {
@@ -287,6 +305,7 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     if (this.showZoneSelector() && this.zoneId) params['zoneId'] = this.zoneId;
     if (this.showMatchdaySelector() && this.matchday) params['matchday'] = this.matchday;
     if (this.template === 'individual_result' && this.matchId) params['matchId'] = this.matchId;
+    if (this.template === 'today' && this.scheduledDate) params['scheduledDate'] = this.scheduledDate;
     if (includePage) params['page'] = this.pageIndex();
     return params;
   }

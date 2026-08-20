@@ -58,6 +58,32 @@ test('genera el ZIP del carrusel en el orden publicado', async () => {
   assert.equal(rendered.fileName, 'liga-suma12-zona-a-fecha-1-carrusel.zip');
 });
 
+test('Hoy juegan filtra por día real y admite partidos de distintas zonas y fechas', async () => {
+  const daily = instagramTestPayload();
+  const first = daily.matches.find(match => match.id === 1)!;
+  const second = daily.matches.find(match => match.id === 11)!;
+  first.scheduledDate = '2026-08-19';
+  second.scheduledDate = '2026-08-19';
+  second.matchday = 2;
+
+  const manifest = getInstagramManifest(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
+
+  assert.equal(manifest.pages[0].label, 'Hoy juegan');
+  assert.equal(manifest.pages[0].fileName, 'liga-suma12-hoy-2026-08-19-story.png');
+  assert.doesNotMatch(manifest.description, /Fecha 1/);
+  assert.match(manifest.description, /miércoles 19 de agosto/i);
+  assert.doesNotMatch(manifest.pages[0].warnings.join(' '), /prevé cuatro por zona/i);
+  const rendered = await renderInstagramPng(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
+  assert.deepEqual(pngDimensions(rendered.buffer), { width: 1080, height: 1920 });
+});
+
+test('Hoy juegan rechaza un día sin partidos programados', () => {
+  assert.throws(
+    () => getInstagramManifest(payload, { template: 'today', format: 'story', scheduledDate: '2026-08-19' }),
+    /No hay partidos programados/i
+  );
+});
+
 test('bloquea campeones si la final todavía no es oficial', () => {
   const incomplete = instagramTestPayload();
   const final = incomplete.matches.find(match => match.stage === 'FINAL')!;

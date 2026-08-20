@@ -14,8 +14,8 @@ const leaguePayload: any = {
     { id: 20, code: 'B', name: 'Zona B', regularDay: 'JUEVES', pairs: [] }
   ],
   matches: [
-    { id: 101, code: 'A-F1-M1', stage: 'GROUP_STAGE', matchday: 1, zone: { id: 10, code: 'A', name: 'Zona A' }, homePair: { displayName: 'Apellido Largo - Otro Apellido' }, awayPair: { displayName: 'Tercero - Cuarto' }, result: null },
-    { id: 201, code: 'B-F1-M1', stage: 'GROUP_STAGE', matchday: 1, zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
+    { id: 101, code: 'A-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-19', zone: { id: 10, code: 'A', name: 'Zona A' }, homePair: { displayName: 'Apellido Largo - Otro Apellido' }, awayPair: { displayName: 'Tercero - Cuarto' }, result: null },
+    { id: 201, code: 'B-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-20', zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
   ],
   standings: [], bracket: [], summary: {}, rules: {}
 };
@@ -79,6 +79,22 @@ describe('InstagramContentPage', () => {
     expect(api.get).toHaveBeenLastCalledWith(
       '/admin/leagues/1/instagram/manifest',
       expect.objectContaining({ format: 'story' }),
+      expect.anything()
+    );
+  });
+
+  it('Hoy juegan envía el día elegido sin limitar por zona ni número de fecha', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    component.selectTemplate('today');
+    await fixture.whenStable();
+
+    expect(component.showZoneSelector()).toBe(false);
+    expect(component.showMatchdaySelector()).toBe(false);
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/admin/leagues/1/instagram/manifest',
+      expect.objectContaining({ template: 'today', format: 'story', scheduledDate: component.scheduledDate }),
       expect.anything()
     );
   });
