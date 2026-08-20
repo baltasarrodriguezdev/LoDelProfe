@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const port = 32109;
+const startedAt = performance.now();
 const child = spawn(process.execPath, ['dist/src/server.js'], {
   env: {
     ...process.env,
@@ -14,29 +15,49 @@ const child = spawn(process.execPath, ['dist/src/server.js'], {
 });
 
 let output = '';
+let childError = null;
 child.stdout.setEncoding('utf8');
 child.stderr.setEncoding('utf8');
 child.stdout.on('data', chunk => { output += chunk; });
 child.stderr.on('data', chunk => { output += chunk; });
+child.on('error', error => { childError = error; });
 
-const timeout = setTimeout(() => child.kill('SIGTERM'), 8_000);
+const timeout = setTimeout(() => child.kill('SIGTERM'), 12_000);
 
-try {
-  await new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', code => reject(new Error(`El entrypoint terminó antes de iniciar (código ${code}).\n${output}`)));
+function waitForOutput(pattern) {
+  return new Promise((resolve, reject) => {
     const inspectOutput = () => {
-      if (output.includes(`API lista en http://localhost:${port}`)) resolve();
-      else setTimeout(inspectOutput, 25);
+      if (output.includes(pattern)) return resolve(performance.now() - startedAt);
+      if (childError) return reject(childError);
+      if (child.exitCode !== null) return reject(new Error(`El entrypoint terminó antes de informar “${pattern}” (código ${child.exitCode}).\n${output}`));
+      setTimeout(inspectOutput, 10);
     };
     inspectOutput();
   });
+}
+
+try {
+  const listeningMs = await waitForOutput(`API lista en http://localhost:${port}`);
+  if (listeningMs > 500) {
+    throw new Error(`El entrypoint tardó ${listeningMs.toFixed(1)}ms en escuchar; el máximo permitido por el smoke test es 500ms.`);
+  }
 
   const response = await fetch(`http://127.0.0.1:${port}/api/health`);
   if (!response.ok || (await response.json()).status !== 'ok') {
     throw new Error(`El health check del entrypoint devolvió ${response.status}.`);
   }
-  console.log(`Entrypoint de producción verificado en /api/health (${response.status}).`);
+  const earlyRouteResponses = Promise.all([
+    fetch(`http://127.0.0.1:${port}/api/auth/me`),
+    fetch(`http://127.0.0.1:${port}/api/realtime`)
+  ]);
+  const initializedMs = await waitForOutput('initialization:complete');
+
+  const [me, realtime] = await earlyRouteResponses;
+  if (me.status !== 401 || realtime.status !== 426) {
+    throw new Error(`Rutas durante cold start: /api/auth/me=${me.status} (esperado 401), /api/realtime=${realtime.status} (esperado 426).`);
+  }
+
+  console.log(`Cold start verificado: listen=${listeningMs.toFixed(1)}ms, inicialización=${initializedMs.toFixed(1)}ms, /api/health=${response.status}.`);
 } finally {
   clearTimeout(timeout);
   if (child.exitCode === null) {

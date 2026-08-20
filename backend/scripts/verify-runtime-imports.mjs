@@ -24,4 +24,17 @@ if (typeof backend.app !== 'function' || defaultExport !== backend.app) {
   throw new Error('La salida compilada no exporta la aplicación Express y el servidor HTTP esperados.');
 }
 
-console.log(`Runtime backend verificado: ${runtimePackages.length} dependencias y dist/src/app.js cargaron correctamente.`);
+const lazyRuntimeModules = [
+  'booking.routes.js',
+  'league-public.routes.js',
+  'league-admin.routes.js',
+  'dashboard.routes.js',
+  'admin.routes.js'
+];
+for (const moduleName of lazyRuntimeModules) {
+  const module = await import(`../dist/src/routes/${moduleName}`);
+  const exportedRouter = module.default?.default ?? module.default;
+  if (typeof exportedRouter !== 'function') throw new Error(`${moduleName} no exporta un router ejecutable.`);
+}
+
+console.log(`Runtime backend verificado: ${runtimePackages.length} dependencias, app y ${lazyRuntimeModules.length} routers lazy cargaron correctamente.`);
