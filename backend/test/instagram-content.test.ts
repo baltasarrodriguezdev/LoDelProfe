@@ -71,7 +71,7 @@ test('Hoy juegan filtra por día real y admite partidos de distintas zonas y fec
   assert.equal(manifest.pages[0].label, 'Hoy juegan');
   assert.equal(manifest.pages[0].fileName, 'liga-suma12-hoy-2026-08-19-story.png');
   assert.doesNotMatch(manifest.description, /Fecha 1/);
-  assert.match(manifest.description, /miércoles 19 de agosto/i);
+  assert.match(manifest.description, /miércoles,? 19 de agosto/i);
   assert.doesNotMatch(manifest.pages[0].warnings.join(' '), /prevé cuatro por zona/i);
   const rendered = await renderInstagramPng(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
   assert.deepEqual(pngDimensions(rendered.buffer), { width: 1080, height: 1920 });

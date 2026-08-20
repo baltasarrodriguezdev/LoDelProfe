@@ -399,7 +399,7 @@ function fixturePage(payload: InstagramLeaguePayload, format: InstagramFormat, a
         venue(payload) ? txt(venue(payload)!, { fontSize: 16, fontWeight: 700, color: COLORS.lime, textAlign: 'right' }) : null
       )
     ),
-    today ? fixtureRows(matches, format, 'today') : minimalFixtureRows(matches, format),
+    minimalFixtureRows(matches, format),
     today ? txt(`Resultados y posiciones en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime }) : null
   ));
 }
