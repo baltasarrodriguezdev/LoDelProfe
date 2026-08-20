@@ -93,12 +93,36 @@ test('ordena por puntos y luego por el partido entre sí sin saltar criterios', 
   assert.deepEqual(table.rows.slice(0, 2).map(row => row.points), [3, 3]);
 });
 
-test('no saltea el enfrentamiento directo para desempatar por sets o games', () => {
+test('si todavía no jugaron entre sí asigna posiciones usando el sorteo original como último criterio', () => {
   const pairs = [{ id: 1, displayName: 'Nombre muy largo uno', seedNumber: 1 }, { id: 2, displayName: 'Nombre muy largo dos', seedNumber: 2 }];
   const table = calculateStandings(pairs, [], confirmedRules);
-  assert.equal(table.rankingComplete, false);
-  assert.ok(table.rows.every(row => row.position === null && row.rankingPending));
-  assert.match(table.warnings.join(' '), /partido entre sí/i);
+  assert.equal(table.rankingComplete, true);
+  assert.deepEqual(table.rows.map(row => [row.pairId, row.position, row.rankingPending]), [[1, 1, false], [2, 2, false]]);
+  assert.deepEqual(table.warnings, []);
+});
+
+test('completa el desempate por sets a favor, games a favor y games positivos', () => {
+  const pairs = [1, 2, 3, 4].map(id => ({ id, displayName: `Pareja ${id}`, seedNumber: id }));
+  const result = (homePairId: number, awayPairId: number, sets: Array<{ homeGames: number; awayGames: number }>) => ({
+    homePairId, awayPairId, official: true, status: 'FINISHED', sets
+  });
+  const straight = (winner: number, loser: number, homeGames = 6, awayGames = 2) => result(winner, loser, [
+    { homeGames, awayGames }, { homeGames, awayGames }
+  ]);
+
+  const setsTable = calculateStandings(pairs, [
+    straight(1, 3), straight(4, 1), straight(2, 3),
+    result(4, 2, [{ homeGames: 6, awayGames: 4 }, { homeGames: 3, awayGames: 6 }, { homeGames: 6, awayGames: 2 }])
+  ], { ...confirmedRules, threeSetsLossPoints: 0 });
+  assert.ok(setsTable.rows.findIndex(row => row.pairId === 2) < setsTable.rows.findIndex(row => row.pairId === 1));
+
+  const gamesForTable = calculateStandings(pairs, [straight(1, 3, 6, 4), straight(2, 4, 7, 5)], confirmedRules);
+  assert.ok(gamesForTable.rows.findIndex(row => row.pairId === 2) < gamesForTable.rows.findIndex(row => row.pairId === 1));
+
+  const positiveGamesTable = calculateStandings(pairs, [straight(1, 3, 6, 0), straight(2, 4, 6, 4)], confirmedRules);
+  assert.ok(positiveGamesTable.rows.findIndex(row => row.pairId === 1) < positiveGamesTable.rows.findIndex(row => row.pairId === 2));
+  assert.deepEqual(positiveGamesTable.rows.map(row => row.position).sort((a, b) => a - b), [1, 2, 3, 4]);
+  assert.ok(positiveGamesTable.rows.every(row => !row.rankingPending));
 });
 
 test('genera siete fechas sin enfrentamientos duplicados', () => {

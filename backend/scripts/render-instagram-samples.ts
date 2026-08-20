@@ -10,6 +10,7 @@ const selections: Omit<InstagramSelection, 'format'>[] = [
   { template: 'next_matchday', zoneId: 1, matchday: 1 },
   { template: 'weekly_fixture', matchday: 1 },
   { template: 'today', zoneId: 2, matchday: 1 },
+  { template: 'today_results', scheduledDate: '2026-08-17' },
   { template: 'individual_result', matchId: 1 },
   { template: 'matchday_results', zoneId: 1, matchday: 1 },
   { template: 'standings', zoneId: 1 },

@@ -4,6 +4,7 @@ export type InstagramTemplate =
   | 'next_matchday'
   | 'weekly_fixture'
   | 'today'
+  | 'today_results'
   | 'individual_result'
   | 'matchday_results'
   | 'standings'

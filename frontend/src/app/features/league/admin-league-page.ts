@@ -123,8 +123,8 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
                   @for (warning of table.warnings; track warning) { <p class="error-notice notice">{{ warning }}</p> }
                   <div class="league-admin-standing-cards" [attr.aria-label]="'Posiciones y estadísticas ' + table.zone.name">
                     @for (row of table.rows; track row.pairId) {
-                      <article [class.ranking-pending]="row.rankingPending">
-                        <header><span><small>POS</small><strong>{{ row.position ?? 'Pend.' }}</strong></span><h4>{{ row.pair }}</h4><span class="points"><small>PTS</small><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></span></header>
+                      <article>
+                        <header><span><small>POS</small><strong>{{ row.position }}</strong></span><h4>{{ row.pair }}</h4><span class="points"><small>PTS</small><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></span></header>
                         <dl><div><dt>PJ</dt><dd>{{ row.played }}</dd></div><div><dt>PG</dt><dd>{{ row.won }}</dd></div><div><dt>PP</dt><dd>{{ row.lost }}</dd></div><div><dt>SF</dt><dd>{{ row.setsFor }}</dd></div><div><dt>SC</dt><dd>{{ row.setsAgainst }}</dd></div><div><dt>DS</dt><dd>{{ signed(row.setDifference) }}</dd></div><div><dt>GF</dt><dd>{{ row.gamesFor }}</dd></div><div><dt>GC</dt><dd>{{ row.gamesAgainst }}</dd></div><div><dt>DG</dt><dd>{{ signed(row.gameDifference) }}</dd></div></dl>
                       </article>
                     } @empty { <div class="empty">Todavía no hay parejas en esta zona.</div> }
@@ -132,7 +132,7 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
                   <p class="league-admin-table-hint" [id]="'admin-standings-hint-' + table.zone.code">Deslizá la tabla para ver todas las estadísticas →</p>
                   <div class="league-admin-table" tabindex="0" [attr.aria-describedby]="'admin-standings-hint-' + table.zone.code" [attr.aria-label]="'Tabla administrativa ' + table.zone.name">
                     <table><thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>PG</th><th>PP</th><th>SF</th><th>SC</th><th>DS</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr></thead><tbody>
-                      @for (row of table.rows; track row.pairId) { <tr><td>{{ row.position ?? 'Pend.' }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr> }
+                      @for (row of table.rows; track row.pairId) { <tr><td>{{ row.position }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr> }
                       @empty { <tr><td colspan="12">Todavía no hay parejas en esta zona.</td></tr> }
                     </tbody></table>
                   </div>

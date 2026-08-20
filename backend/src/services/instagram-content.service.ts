@@ -11,6 +11,7 @@ export const INSTAGRAM_TEMPLATES = [
   'next_matchday',
   'weekly_fixture',
   'today',
+  'today_results',
   'individual_result',
   'matchday_results',
   'standings',
@@ -52,7 +53,7 @@ type Match = {
 type Standing = {
   pairId: number;
   pair: string;
-  position: number | null;
+  position: number;
   played: number;
   won: number;
   lost: number;
@@ -233,6 +234,28 @@ function matchesScheduledFor(payload: InstagramLeaguePayload, scheduledDate: str
   return matches;
 }
 
+function resolveResultsDate(payload: InstagramLeaguePayload, requested?: string) {
+  const matchesWithResults = payload.matches.filter(match => match.status === 'FINISHED' && Boolean(match.result));
+  const dates = [...new Set(matchesWithResults.map(match => match.scheduledDate).filter((date): date is string => Boolean(date)))].sort();
+  if (requested) {
+    if (!dates.includes(requested)) throw new HttpError(409, `No hay resultados cargados para el ${formatDate(requested)}.`);
+    return requested;
+  }
+  if (!dates.length) throw new HttpError(409, 'No hay partidos finalizados con resultado para preparar “Resultados de hoy”.');
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: payload.league.timezone ?? 'America/Argentina/Cordoba', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  return [...dates].reverse().find(date => date <= today) ?? dates.at(-1)!;
+}
+
+function resultsForScheduledDate(payload: InstagramLeaguePayload, scheduledDate: string) {
+  const matches = payload.matches
+    .filter(match => match.scheduledDate === scheduledDate && match.status === 'FINISHED' && Boolean(match.result))
+    .sort((a, b) => `${a.scheduledTime ?? '99:99'}-${a.code}`.localeCompare(`${b.scheduledTime ?? '99:99'}-${b.code}`));
+  if (!matches.length) throw new HttpError(409, `No hay resultados cargados para el ${formatDate(scheduledDate)}.`);
+  return matches;
+}
+
 function longTextWarnings(values: string[], context: string, limit = 38) {
   const warnings: string[] = [];
   if (values.some(value => clean(value).length > limit)) warnings.push(`Se redujo la tipografía en ${context} para conservar nombres completos y legibles.`);
@@ -252,7 +275,7 @@ function pageWarnings(zone: Zone | null, matches: Match[] = [], standings: Stand
   return [...new Set(warnings)];
 }
 
-function nameBlock(value: string, options: { width?: number | string; size?: number; minSize?: number; align?: 'left' | 'center' | 'right'; color?: string; maxLines?: number } = {}) {
+function nameBlock(value: string, options: { width?: number | string; size?: number; minSize?: number; align?: 'left' | 'center' | 'right'; color?: string; weight?: number; maxLines?: number } = {}) {
   const text = clean(value);
   const size = text.length > 64 ? options.minSize ?? 22 : text.length > 44 ? Math.max(options.minSize ?? 22, (options.size ?? 34) - 8) : text.length > 30 ? (options.size ?? 34) - 4 : options.size ?? 34;
   return txt(text, {
@@ -260,7 +283,7 @@ function nameBlock(value: string, options: { width?: number | string; size?: num
     fontFamily: 'Manrope',
     fontSize: size,
     lineHeight: 1.12,
-    fontWeight: 800,
+    fontWeight: options.weight ?? 800,
     color: options.color ?? COLORS.paper,
     textAlign: options.align ?? 'left',
     justifyContent: options.align === 'center' ? 'center' : options.align === 'right' ? 'flex-end' : 'flex-start',
@@ -358,6 +381,36 @@ function minimalFixtureRows(matches: Match[], format: InstagramFormat) {
   );
 }
 
+function minimalResultRows(matches: Match[], format: InstagramFormat) {
+  const rowHeight = Math.min(format === 'story' ? 270 : 185, Math.floor((format === 'story' ? 1120 : 740) / Math.max(matches.length, 1)));
+  const contentWidth = format === 'story' ? 700 : 720;
+  return div({ width: '100%', display: 'flex', justifyContent: 'center' },
+    div({ width: contentWidth, display: 'flex', flexDirection: 'column' },
+      ...matches.map((match, index) => div({
+        width: '100%', height: rowHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+      },
+      div({ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 14 : 9 },
+        nameBlock(matchPair(match, 'home'), {
+          width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21,
+          align: 'center', maxLines: 2, weight: match.result?.winnerSide === 'HOME' ? 900 : 650,
+          color: match.result?.winnerSide === 'HOME' ? COLORS.paper : COLORS.muted
+        }),
+        txt(setScore(match), {
+          fontSize: format === 'story' ? 28 : 23, lineHeight: 1, fontWeight: 900, color: COLORS.lime,
+          letterSpacing: 1.2, textAlign: 'center', justifyContent: 'center'
+        }),
+        nameBlock(matchPair(match, 'away'), {
+          width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21,
+          align: 'center', maxLines: 2, weight: match.result?.winnerSide === 'AWAY' ? 900 : 650,
+          color: match.result?.winnerSide === 'AWAY' ? COLORS.paper : COLORS.muted
+        })
+      ),
+      index < matches.length - 1 ? div({ width: format === 'story' ? 360 : 310, height: 1, flexShrink: 0, background: COLORS.olive, opacity: .72 }) : null
+      ))
+    )
+  );
+}
+
 function coverScene(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, kicker: string, title: string, subtitle: string, zone?: Zone | null) {
   return brandFrame(format, assets, { eyebrow: payload.league.name, zone }, div({ display: 'flex', flexDirection: 'column', justifyContent: 'center', width: '100%', gap: 34 },
     displayTitle(kicker, title, format),
@@ -401,6 +454,23 @@ function fixturePage(payload: InstagramLeaguePayload, format: InstagramFormat, a
     ),
     minimalFixtureRows(matches, format),
     today ? txt(`Resultados y posiciones en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime }) : null
+  ));
+}
+
+function todayResultsPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, zone: Zone | null, matches: Match[]) {
+  const date = matchdayDate(matches);
+  return brandFrame(format, assets, { eyebrow: 'Resultados de hoy', zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 40 : 25 },
+    div({ display: 'flex', flexDirection: format === 'story' ? 'column' : 'row', alignItems: format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: format === 'story' ? 14 : 20 },
+      div({ width: format === 'story' ? '100%' : 700, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 },
+        txt('MARCADORES FINALES', { fontSize: 21, fontWeight: 800, color: COLORS.lime, letterSpacing: 3 }),
+        txt('Resultados de hoy', { fontFamily: 'Null Free', fontSize: format === 'story' ? 76 : 70, lineHeight: .92, color: COLORS.paper, maxWidth: '100%', overflow: 'hidden' })
+      ),
+      div({ maxWidth: 260, flexShrink: 0, ...(format === 'story' ? { alignSelf: 'flex-end' } : {}), display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingBottom: 7, gap: 4 },
+        txt(formatDate(date), { fontSize: 22, fontWeight: 800, color: COLORS.paper, textTransform: 'capitalize', textAlign: 'right' }),
+        venue(payload) ? txt(venue(payload)!, { fontSize: 16, fontWeight: 700, color: COLORS.lime, textAlign: 'right' }) : null
+      )
+    ),
+    minimalResultRows(matches, format)
   ));
 }
 
@@ -452,7 +522,7 @@ function standingsPage(payload: InstagramLeaguePayload, format: InstagramFormat,
         ...['PJ', 'PG', 'PP', 'PTS'].map(label => txt(label, { width: label === 'PTS' ? 72 : 60, fontSize: 14, fontWeight: 900, justifyContent: 'center' }))
       ),
       ...rows.map((row, index) => div({ height: rowHeight, display: 'flex', alignItems: 'center', borderTop: `1px solid ${COLORS.line}`, background: index === 0 ? '#2b432e' : 'transparent' },
-        div({ width: 72, display: 'flex', justifyContent: 'flex-start' }, txt(row.position ?? '—', { width: 46, height: 46, borderRadius: 10, background: row.position === 1 ? COLORS.lime : COLORS.green, color: row.position === 1 ? COLORS.ink : COLORS.paper, fontFamily: 'Manrope', fontSize: 24, fontWeight: 900, alignItems: 'center', justifyContent: 'center' })),
+        div({ width: 72, display: 'flex', justifyContent: 'flex-start' }, txt(row.position, { width: 46, height: 46, borderRadius: 10, background: row.position === 1 ? COLORS.lime : COLORS.green, color: row.position === 1 ? COLORS.ink : COLORS.paper, fontFamily: 'Manrope', fontSize: 24, fontWeight: 900, alignItems: 'center', justifyContent: 'center' })),
         nameBlock(row.pair, { width: 'auto', size: format === 'story' ? 31 : 26, minSize: 19 }),
         div({ marginLeft: 'auto', display: 'flex' },
           txt(row.played, { width: 60, fontSize: 22, fontWeight: 700, justifyContent: 'center' }),
@@ -507,6 +577,9 @@ function descriptionFor(payload: InstagramLeaguePayload, selection: InstagramSel
   if (selection.template === 'today') {
     return ['Hoy juegan por la Liga Suma 12.', date ? formatDate(date) : null, place, `Partidos, horarios y toda la información en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
   }
+  if (selection.template === 'today_results') {
+    return ['Resultados de hoy · Liga Suma 12.', date ? formatDate(date) : null, place, 'Estos fueron los marcadores de la jornada.', ending].filter(Boolean).join('\n');
+  }
   if (['next_matchday', 'weekly_fixture'].includes(selection.template)) {
     return [`Liga Suma 12 · Fecha ${matchday ?? ''}`, zone ? `Estos son los partidos de la ${zone.name}.` : 'Estos son los partidos de la semana.', date ? formatDate(date) : null, place, `Seguí los resultados y posiciones en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
   }
@@ -559,6 +632,15 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
     selectedZone = zoneIds.length === 1 ? payload.zones.find(zone => zone.id === zoneIds[0]) ?? null : null;
     const warnings = pageWarnings(selectedZone, selectedMatches, [], false);
     pages.push(manifestPage(0, 'today', 'Hoy juegan', `${prefix}-hoy-${scheduledDate}-${selection.format}.png`, warnings, assets => fixturePage(payload, selection.format, assets, selectedZone, null, selectedMatches, true)));
+  }
+
+  if (selection.template === 'today_results') {
+    const scheduledDate = resolveResultsDate(payload, selection.scheduledDate);
+    selectedMatches = resultsForScheduledDate(payload, scheduledDate);
+    const zoneIds = [...new Set(selectedMatches.map(match => match.zone?.id).filter((id): id is number => Boolean(id)))];
+    selectedZone = zoneIds.length === 1 ? payload.zones.find(zone => zone.id === zoneIds[0]) ?? null : null;
+    const warnings = pageWarnings(selectedZone, selectedMatches, [], false);
+    pages.push(manifestPage(0, 'today-results', 'Resultados de hoy', `${prefix}-resultados-hoy-${scheduledDate}-${selection.format}.png`, warnings, assets => todayResultsPage(payload, selection.format, assets, selectedZone, selectedMatches)));
   }
 
   if (selection.template === 'weekly_fixture') {

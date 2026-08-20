@@ -44,7 +44,7 @@ export type StandingRow = {
   pairId: number;
   pair: string;
   seedNumber: number;
-  position: number | null;
+  position: number;
   played: number;
   won: number;
   lost: number;

@@ -9,6 +9,7 @@
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "verify:runtime": "node scripts/verify-runtime-imports.mjs",
     "smoke:api": "node scripts/smoke-api.mjs",
+    "smoke:entrypoint": "node scripts/smoke-entrypoint.mjs",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

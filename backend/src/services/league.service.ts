@@ -188,7 +188,7 @@ export async function getLeaguePayload(leagueId?: number) {
     },
     rules: {
       scoring: { ...league.rules, ...scoring },
-      tieBreakCriteria: ['Puntos', 'Partido entre sí', 'Sets a favor', 'Games a favor', 'Games positivos', 'Sorteo'],
+      tieBreakCriteria: ['Puntos', 'Partido entre sí', 'Sets a favor', 'Games a favor', 'Games positivos', 'Número del sorteo'],
       pending: pendingRules(league)
     }
   };

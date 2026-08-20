@@ -132,7 +132,7 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
                       <thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>PG</th><th>PP</th><th>SF</th><th>SC</th><th>DS</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr></thead>
                       <tbody>
                         @for (row of table.rows; track row.pairId) {
-                          <tr [class.ranking-pending]="row.rankingPending" [class.league-top-position]="row.position !== null && row.position <= 3"><td>{{ row.position ?? 'Pend.' }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr>
+                          <tr [class.league-top-position]="row.position <= 3"><td>{{ row.position }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr>
                         } @empty {
                           <tr><td colspan="12">Todavía no hay parejas en esta zona.</td></tr>
                         }
