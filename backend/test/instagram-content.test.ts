@@ -16,6 +16,9 @@ const selections: Omit<InstagramSelection, 'format'>[] = [
   { template: 'weekly_fixture', matchday: 1 },
   { template: 'today', zoneId: 2, matchday: 1 },
   { template: 'today_results', scheduledDate: '2026-08-17' },
+  { template: 'featured_match', matchId: 11 },
+  { template: 'rescheduled_match', matchId: 13 },
+  { template: 'matchday_progress', zoneId: 2, matchday: 1 },
   { template: 'individual_result', matchId: 1 },
   { template: 'matchday_results', zoneId: 1, matchday: 1 },
   { template: 'standings', zoneId: 1 },
@@ -59,7 +62,7 @@ test('genera el ZIP del carrusel en el orden publicado', async () => {
   assert.equal(rendered.fileName, 'liga-suma12-zona-a-fecha-1-carrusel.zip');
 });
 
-test('Hoy juegan filtra por día real y admite partidos de distintas zonas y fechas', async () => {
+test('Partidos por día filtra por día real y admite partidos de distintas zonas y fechas', async () => {
   const daily = instagramTestPayload();
   const first = daily.matches.find(match => match.id === 1)!;
   const second = daily.matches.find(match => match.id === 11)!;
@@ -69,8 +72,8 @@ test('Hoy juegan filtra por día real y admite partidos de distintas zonas y fec
 
   const manifest = getInstagramManifest(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
 
-  assert.equal(manifest.pages[0].label, 'Hoy juegan');
-  assert.equal(manifest.pages[0].fileName, 'liga-suma12-hoy-2026-08-19-story.png');
+  assert.ok(['Hoy juegan', 'Mañana se juega', 'Próximos partidos'].includes(manifest.pages[0].label));
+  assert.equal(manifest.pages[0].fileName, 'liga-suma12-partidos-2026-08-19-story.png');
   assert.doesNotMatch(manifest.description, /Fecha 1/);
   assert.match(manifest.description, /miércoles,? 19 de agosto/i);
   assert.doesNotMatch(manifest.pages[0].warnings.join(' '), /prevé cuatro por zona/i);
@@ -85,7 +88,18 @@ test('Hoy juegan rechaza un día sin partidos programados', () => {
   );
 });
 
-test('Resultados de hoy usa el formato diario y muestra únicamente partidos finalizados con marcador', async () => {
+test('divide una jornada extensa en varias historias legibles', () => {
+  const daily = instagramTestPayload();
+  daily.matches.slice(0, 5).forEach(match => { match.scheduledDate = '2026-08-21'; });
+  const manifest = getInstagramManifest(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-21' });
+
+  assert.equal(manifest.pages.length, 2);
+  assert.match(manifest.pages[0].label, /1\/2/);
+  assert.match(manifest.pages[1].label, /2\/2/);
+  assert.ok(manifest.zipFileName);
+});
+
+test('Resultados del día usa una fecha estable y muestra únicamente partidos finalizados con marcador', async () => {
   const daily = instagramTestPayload();
   const scheduled = daily.matches.find(match => match.id === 11)!;
   const finished = daily.matches.find(match => match.id === 1)!;
@@ -93,9 +107,9 @@ test('Resultados de hoy usa el formato diario y muestra únicamente partidos fin
 
   const manifest = getInstagramManifest(daily, { template: 'today_results', format: 'story', scheduledDate: '2026-08-17' });
 
-  assert.equal(manifest.pages[0].label, 'Resultados de hoy');
-  assert.equal(manifest.pages[0].fileName, 'liga-suma12-resultados-hoy-2026-08-17-story.png');
-  assert.match(manifest.description, /Resultados de hoy/i);
+  assert.equal(manifest.pages[0].label, 'Resultados del día');
+  assert.equal(manifest.pages[0].fileName, 'liga-suma12-resultados-2026-08-17-story.png');
+  assert.match(manifest.description, /Resultados de la jornada/i);
   assert.doesNotMatch(manifest.pages[0].warnings.join(' '), /prevé cuatro por zona/i);
   assert.ok(finished.result);
   assert.equal(scheduled.result, null);
@@ -107,6 +121,26 @@ test('Resultados de hoy rechaza días que todavía no tienen marcadores', () => 
   assert.throws(
     () => getInstagramManifest(payload, { template: 'today_results', format: 'story', scheduledDate: '2026-08-20' }),
     /No hay resultados cargados/i
+  );
+});
+
+test('genera historias coherentes para destacado, reprogramación y avance de fecha', () => {
+  const featured = getInstagramManifest(payload, { template: 'featured_match', format: 'story', matchId: 11 });
+  const rescheduled = getInstagramManifest(payload, { template: 'rescheduled_match', format: 'story', matchId: 13 });
+  const progress = getInstagramManifest(payload, { template: 'matchday_progress', format: 'story', zoneId: 2, matchday: 1 });
+
+  assert.equal(featured.pages[0].label, 'Partido destacado');
+  assert.match(featured.description, /Partido destacado/i);
+  assert.equal(rescheduled.pages[0].label, 'Partido reprogramado');
+  assert.match(rescheduled.description, /Nuevo horario/i);
+  assert.equal(progress.pages[0].label, 'Así va la fecha');
+  assert.match(progress.description, /0 de 4 partidos jugados/i);
+});
+
+test('Fecha finalizada exige todos los resultados oficiales', () => {
+  assert.throws(
+    () => getInstagramManifest(payload, { template: 'results_standings', format: 'story', zoneId: 2, matchday: 1 }),
+    /todavía no terminó/i
   );
 });
 

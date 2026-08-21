@@ -15,7 +15,7 @@ const leaguePayload: any = {
   ],
   matches: [
     { id: 101, code: 'A-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-19', status: 'FINISHED', zone: { id: 10, code: 'A', name: 'Zona A' }, homePair: { displayName: 'Apellido Largo - Otro Apellido' }, awayPair: { displayName: 'Tercero - Cuarto' }, result: { winnerSide: 'HOME' } },
-    { id: 201, code: 'B-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-20', zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
+    { id: 201, code: 'B-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-20', status: 'SCHEDULED', zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
   ],
   standings: [], bracket: [], summary: {}, rules: {}
 };
@@ -99,7 +99,7 @@ describe('InstagramContentPage', () => {
     );
   });
 
-  it('Resultados de hoy fuerza Historia y envía sólo una fecha con marcadores', async () => {
+  it('Resultados del día fuerza Historia y envía sólo una fecha con marcadores', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const component = fixture.componentInstance;
@@ -113,6 +113,28 @@ describe('InstagramContentPage', () => {
       expect.objectContaining({ template: 'today_results', format: 'story', scheduledDate: '2026-08-19' }),
       expect.anything()
     );
+  });
+
+  it('permite elegir historias de partido destacado y reprogramado', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+
+    component.selectTemplate('featured_match');
+    await fixture.whenStable();
+    expect(component.format).toBe('story');
+    expect(component.showMatchSelector()).toBe(true);
+    expect(component.matchId).toBe(201);
+    expect(api.get).toHaveBeenLastCalledWith(
+      '/admin/leagues/1/instagram/manifest',
+      expect.objectContaining({ template: 'featured_match', format: 'story', matchId: 201 }),
+      expect.anything()
+    );
+
+    leaguePayload.matches[1].status = 'RESCHEDULED';
+    component.selectTemplate('rescheduled_match');
+    await fixture.whenStable();
+    expect(component.matchId).toBe(201);
   });
 
   it('muestra el motivo real cuando el backend no puede generar la vista previa', async () => {

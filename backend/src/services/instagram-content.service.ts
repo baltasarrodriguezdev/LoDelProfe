@@ -12,6 +12,9 @@ export const INSTAGRAM_TEMPLATES = [
   'weekly_fixture',
   'today',
   'today_results',
+  'featured_match',
+  'rescheduled_match',
+  'matchday_progress',
   'individual_result',
   'matchday_results',
   'standings',
@@ -155,6 +158,20 @@ function formatDate(value: string | null, compact = false) {
     : { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
 }
 
+function localIsoDate(payload: InstagramLeaguePayload, offsetDays = 0) {
+  const now = new Date();
+  now.setUTCDate(now.getUTCDate() + offsetDays);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: payload.league.timezone ?? 'America/Argentina/Cordoba', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(now);
+}
+
+function dailyFixtureTitle(payload: InstagramLeaguePayload, scheduledDate: string) {
+  if (scheduledDate === localIsoDate(payload)) return 'Hoy juegan';
+  if (scheduledDate === localIsoDate(payload, 1)) return 'Mañana se juega';
+  return 'Próximos partidos';
+}
+
 function statusLabel(status: string, official = false) {
   const labels: Record<string, string> = {
     SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: official ? 'Finalizado' : 'Sin confirmar',
@@ -211,6 +228,10 @@ function resolveMatchday(payload: InstagramLeaguePayload, zone: Zone, requested:
 
 function matchdayDate(matches: Match[]) {
   return matches.find(match => match.scheduledDate)?.scheduledDate ?? null;
+}
+
+function chunkMatches(matches: Match[], size = 4) {
+  return Array.from({ length: Math.ceil(matches.length / size) }, (_, index) => matches.slice(index * size, (index + 1) * size));
 }
 
 function resolveScheduledDate(payload: InstagramLeaguePayload, requested?: string) {
@@ -437,33 +458,34 @@ function zonesPage(payload: InstagramLeaguePayload, format: InstagramFormat, ass
   ));
 }
 
-function fixturePage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, zone: Zone | null, matchday: number | null, matches: Match[], today = false) {
+function fixturePage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, zone: Zone | null, matchday: number | null, matches: Match[], daily = false) {
   const date = matchdayDate(matches);
-  return brandFrame(format, assets, { eyebrow: today ? 'Hoy juegan' : 'Próxima fecha', zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 40 : 25 },
-    div({ display: 'flex', flexDirection: today && format === 'story' ? 'column' : 'row', alignItems: today && format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: today && format === 'story' ? 14 : 20 },
-      today
+  const dailyTitle = date ? dailyFixtureTitle(payload, date) : 'Próximos partidos';
+  return brandFrame(format, assets, { eyebrow: daily ? dailyTitle : 'Próxima fecha', zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 40 : 25 },
+    div({ display: 'flex', flexDirection: daily && format === 'story' ? 'column' : 'row', alignItems: daily && format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: daily && format === 'story' ? 14 : 20 },
+      daily
         ? div({ width: format === 'story' ? '100%' : 620, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 },
           txt('SEGUÍ LOS RESULTADOS', { fontSize: 21, fontWeight: 800, color: COLORS.lime, letterSpacing: 3 }),
-          txt('Hoy juegan', { fontFamily: 'Null Free', fontSize: format === 'story' ? 82 : 80, lineHeight: .92, color: COLORS.paper, maxWidth: format === 'story' ? '100%' : 620, overflow: 'hidden' })
+          txt(dailyTitle, { fontFamily: 'Null Free', fontSize: format === 'story' ? 82 : 80, lineHeight: .92, color: COLORS.paper, maxWidth: format === 'story' ? '100%' : 720, overflow: 'hidden' })
         )
         : displayTitle(`Fecha ${matchday}`, `Fecha ${matchday}`, format),
-      div({ maxWidth: 260, flexShrink: 0, ...(today && format === 'story' ? { alignSelf: 'flex-end' } : {}), display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingBottom: 7, gap: 4 },
+      div({ maxWidth: 260, flexShrink: 0, ...(daily && format === 'story' ? { alignSelf: 'flex-end' } : {}), display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingBottom: 7, gap: 4 },
         txt(formatDate(date), { fontSize: 22, fontWeight: 800, color: COLORS.paper, textTransform: 'capitalize', textAlign: 'right' }),
         venue(payload) ? txt(venue(payload)!, { fontSize: 16, fontWeight: 700, color: COLORS.lime, textAlign: 'right' }) : null
       )
     ),
     minimalFixtureRows(matches, format),
-    today ? txt(`Resultados y posiciones en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime }) : null
+    daily ? txt(`Resultados y posiciones en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime }) : null
   ));
 }
 
 function todayResultsPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, zone: Zone | null, matches: Match[]) {
   const date = matchdayDate(matches);
-  return brandFrame(format, assets, { eyebrow: 'Resultados de hoy', zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 40 : 25 },
+  return brandFrame(format, assets, { eyebrow: 'Resultados del día', zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 40 : 25 },
     div({ display: 'flex', flexDirection: format === 'story' ? 'column' : 'row', alignItems: format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: format === 'story' ? 14 : 20 },
       div({ width: format === 'story' ? '100%' : 700, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 },
         txt('MARCADORES FINALES', { fontSize: 21, fontWeight: 800, color: COLORS.lime, letterSpacing: 3 }),
-        txt('Resultados de hoy', { fontFamily: 'Null Free', fontSize: format === 'story' ? 76 : 70, lineHeight: .92, color: COLORS.paper, maxWidth: '100%', overflow: 'hidden' })
+        txt('Resultados', { fontFamily: 'Null Free', fontSize: format === 'story' ? 82 : 76, lineHeight: .92, color: COLORS.paper, maxWidth: '100%', overflow: 'hidden' })
       ),
       div({ maxWidth: 260, flexShrink: 0, ...(format === 'story' ? { alignSelf: 'flex-end' } : {}), display: 'flex', flexDirection: 'column', alignItems: 'flex-end', paddingBottom: 7, gap: 4 },
         txt(formatDate(date), { fontSize: 22, fontWeight: 800, color: COLORS.paper, textTransform: 'capitalize', textAlign: 'right' }),
@@ -471,6 +493,39 @@ function todayResultsPage(payload: InstagramLeaguePayload, format: InstagramForm
       )
     ),
     minimalResultRows(matches, format)
+  ));
+}
+
+function featuredMatchPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, match: Match, rescheduled = false) {
+  const zone = payload.zones.find(item => item.id === match.zone?.id) ?? null;
+  const title = rescheduled ? 'Partido reprogramado' : 'Partido destacado';
+  return brandFrame(format, assets, { eyebrow: title, zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 54 : 34 },
+    div({ display: 'flex', flexDirection: format === 'story' ? 'column' : 'row', alignItems: format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: 14 },
+      div({ display: 'flex', flexDirection: 'column', gap: 14 },
+        txt(rescheduled ? 'NUEVO DÍA Y HORARIO' : 'EL DUELO DE LA JORNADA', { fontSize: 21, fontWeight: 800, color: COLORS.lime, letterSpacing: 3 }),
+        txt(title, { fontFamily: 'Null Free', fontSize: format === 'story' ? 78 : 70, lineHeight: .92, color: COLORS.paper, maxWidth: 820, overflow: 'hidden' })
+      ),
+      div({ ...(format === 'story' ? { alignSelf: 'flex-end' } : {}), display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 },
+        txt(formatDate(match.scheduledDate), { fontSize: 22, fontWeight: 800, color: COLORS.paper, textTransform: 'capitalize', textAlign: 'right' }),
+        venue(payload) ? txt(venue(payload)!, { fontSize: 16, fontWeight: 700, color: COLORS.lime, textAlign: 'right' }) : null
+      )
+    ),
+    div({ flex: 1, display: 'flex', alignItems: 'center', width: '100%' }, minimalFixtureRows([match], format)),
+    txt(rescheduled ? 'Agendá el nuevo horario' : `Seguí el partido en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime })
+  ));
+}
+
+function matchdayProgressPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, zone: Zone, matchday: number, matches: Match[]) {
+  const completed = matches.filter(match => match.status === 'FINISHED' && Boolean(match.result));
+  return brandFrame(format, assets, { eyebrow: `Fecha ${matchday} en juego`, zone }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: format === 'story' ? 38 : 24 },
+    div({ display: 'flex', flexDirection: format === 'story' ? 'column' : 'row', alignItems: format === 'story' ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: 14 },
+      div({ display: 'flex', flexDirection: 'column', gap: 14 },
+        txt(`${completed.length} DE ${matches.length} PARTIDOS JUGADOS`, { fontSize: 21, fontWeight: 800, color: COLORS.lime, letterSpacing: 3 }),
+        txt(`Así va la Fecha ${matchday}`, { fontFamily: 'Null Free', fontSize: format === 'story' ? 76 : 68, lineHeight: .92, color: COLORS.paper, maxWidth: 820, overflow: 'hidden' })
+      )
+    ),
+    fixtureRows(matches, format, 'results'),
+    txt(completed.length === matches.length ? 'Jornada completa' : `${matches.length - completed.length} partido${matches.length - completed.length === 1 ? '' : 's'} por jugar`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime })
   ));
 }
 
@@ -575,15 +630,29 @@ function descriptionFor(payload: InstagramLeaguePayload, selection: InstagramSel
   const place = venue(payload);
   const ending = `Toda la información de la Liga Suma 12 en ${SITE} #LoDelProfe #LigaSuma12`;
   if (selection.template === 'today') {
-    return ['Hoy juegan por la Liga Suma 12.', date ? formatDate(date) : null, place, `Partidos, horarios y toda la información en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
+    const title = date ? dailyFixtureTitle(payload, date) : 'Próximos partidos';
+    return [`${title} por la Liga Suma 12.`, date ? formatDate(date) : null, place, `Partidos, horarios y toda la información en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
   }
   if (selection.template === 'today_results') {
-    return ['Resultados de hoy · Liga Suma 12.', date ? formatDate(date) : null, place, 'Estos fueron los marcadores de la jornada.', ending].filter(Boolean).join('\n');
+    return ['Resultados de la jornada · Liga Suma 12.', date ? formatDate(date) : null, place, 'Estos fueron los marcadores del día.', ending].filter(Boolean).join('\n');
+  }
+  if (selection.template === 'featured_match') {
+    return ['Partido destacado · Liga Suma 12.', matches[0] ? `${matchPair(matches[0], 'home')} vs. ${matchPair(matches[0], 'away')}` : null, date ? formatDate(date) : null, place, ending].filter(Boolean).join('\n');
+  }
+  if (selection.template === 'rescheduled_match') {
+    return ['Partido reprogramado · Liga Suma 12.', matches[0] ? `${matchPair(matches[0], 'home')} vs. ${matchPair(matches[0], 'away')}` : null, date ? formatDate(date) : null, matches[0]?.scheduledTime ? `Nuevo horario: ${matches[0].scheduledTime}` : null, place, ending].filter(Boolean).join('\n');
+  }
+  if (selection.template === 'matchday_progress') {
+    const completed = matches.filter(match => match.status === 'FINISHED' && Boolean(match.result)).length;
+    return [`Así va la Fecha ${matchday ?? ''}${zone ? ` de la ${zone.name}` : ''}.`, `${completed} de ${matches.length} partidos jugados.`, ending].join('\n');
   }
   if (['next_matchday', 'weekly_fixture'].includes(selection.template)) {
     return [`Liga Suma 12 · Fecha ${matchday ?? ''}`, zone ? `Estos son los partidos de la ${zone.name}.` : 'Estos son los partidos de la semana.', date ? formatDate(date) : null, place, `Seguí los resultados y posiciones en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
   }
-  if (['matchday_results', 'results_standings'].includes(selection.template)) {
+  if (selection.template === 'matchday_results') {
+    return [`Resultados de la Fecha ${matchday ?? ''}${zone ? ` de la ${zone.name}` : ''}.`, 'Estos fueron los marcadores cargados hasta el momento.', ending].join('\n');
+  }
+  if (selection.template === 'results_standings') {
     return [`Finalizó la Fecha ${matchday ?? ''}${zone ? ` de la ${zone.name}` : ''}.`, 'Estos fueron los resultados y así quedó la tabla de posiciones.', ending].join('\n');
   }
   if (selection.template === 'standings') return [`Así está la tabla de posiciones${zone ? ` de la ${zone.name}` : ''}.`, ending].join('\n');
@@ -614,7 +683,7 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
     payload.zones.forEach((zone, index) => pages.push(manifestPage(index + 1, `zona-${slug(zone.code)}`, zone.name, `${String(index + 2).padStart(2, '0')}-zona-${slug(zone.code)}.png`, pageWarnings(zone), assets => zonesPage(payload, selection.format, assets, zone))));
   }
 
-  if (['next_matchday', 'matchday_results', 'standings', 'results_standings'].includes(selection.template)) {
+  if (['next_matchday', 'matchday_progress', 'matchday_results', 'standings', 'results_standings'].includes(selection.template)) {
     selectedZone = zoneBy(payload, selection.zoneId);
   }
 
@@ -631,7 +700,16 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
     const zoneIds = [...new Set(selectedMatches.map(match => match.zone?.id).filter((id): id is number => Boolean(id)))];
     selectedZone = zoneIds.length === 1 ? payload.zones.find(zone => zone.id === zoneIds[0]) ?? null : null;
     const warnings = pageWarnings(selectedZone, selectedMatches, [], false);
-    pages.push(manifestPage(0, 'today', 'Hoy juegan', `${prefix}-hoy-${scheduledDate}-${selection.format}.png`, warnings, assets => fixturePage(payload, selection.format, assets, selectedZone, null, selectedMatches, true)));
+    const label = dailyFixtureTitle(payload, scheduledDate);
+    const groups = chunkMatches(selectedMatches);
+    groups.forEach((matches, index) => pages.push(manifestPage(
+      index,
+      `daily-fixture-${index + 1}`,
+      groups.length > 1 ? `${label} ${index + 1}/${groups.length}` : label,
+      groups.length > 1 ? `${String(index + 1).padStart(2, '0')}-partidos-${scheduledDate}.png` : `${prefix}-partidos-${scheduledDate}-${selection.format}.png`,
+      warnings,
+      assets => fixturePage(payload, selection.format, assets, selectedZone, null, matches, true)
+    )));
   }
 
   if (selection.template === 'today_results') {
@@ -640,7 +718,35 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
     const zoneIds = [...new Set(selectedMatches.map(match => match.zone?.id).filter((id): id is number => Boolean(id)))];
     selectedZone = zoneIds.length === 1 ? payload.zones.find(zone => zone.id === zoneIds[0]) ?? null : null;
     const warnings = pageWarnings(selectedZone, selectedMatches, [], false);
-    pages.push(manifestPage(0, 'today-results', 'Resultados de hoy', `${prefix}-resultados-hoy-${scheduledDate}-${selection.format}.png`, warnings, assets => todayResultsPage(payload, selection.format, assets, selectedZone, selectedMatches)));
+    const groups = chunkMatches(selectedMatches);
+    groups.forEach((matches, index) => pages.push(manifestPage(
+      index,
+      `daily-results-${index + 1}`,
+      groups.length > 1 ? `Resultados ${index + 1}/${groups.length}` : 'Resultados del día',
+      groups.length > 1 ? `${String(index + 1).padStart(2, '0')}-resultados-${scheduledDate}.png` : `${prefix}-resultados-${scheduledDate}-${selection.format}.png`,
+      warnings,
+      assets => todayResultsPage(payload, selection.format, assets, selectedZone, matches)
+    )));
+  }
+
+  if (selection.template === 'featured_match' || selection.template === 'rescheduled_match') {
+    const candidates = selection.template === 'rescheduled_match'
+      ? payload.matches.filter(match => match.status === 'RESCHEDULED')
+      : payload.matches.filter(match => ['SCHEDULED', 'LIVE', 'RESCHEDULED'].includes(match.status) && match.homePair && match.awayPair);
+    const match = selection.matchId ? candidates.find(item => item.id === selection.matchId) : candidates[0];
+    if (!match) throw new HttpError(409, selection.template === 'rescheduled_match' ? 'No hay partidos reprogramados disponibles.' : 'No hay partidos programados disponibles para destacar.');
+    selectedMatches = [match];
+    selectedZone = payload.zones.find(zone => zone.id === match.zone?.id) ?? null;
+    selectedMatchday = match.matchday;
+    const suffix = selection.template === 'rescheduled_match' ? 'reprogramado' : 'destacado';
+    const label = selection.template === 'rescheduled_match' ? 'Partido reprogramado' : 'Partido destacado';
+    pages.push(manifestPage(0, suffix, label, individualName(payload, selection, selectedZone, selectedMatchday, suffix), pageWarnings(selectedZone, [match], [], false), assets => featuredMatchPage(payload, selection.format, assets, match, selection.template === 'rescheduled_match')));
+  }
+
+  if (selection.template === 'matchday_progress') {
+    selectedMatchday = resolveMatchday(payload, selectedZone!, selection.matchday, 'results');
+    selectedMatches = groupMatches(payload, selectedZone!, selectedMatchday);
+    pages.push(manifestPage(0, 'avance', 'Así va la fecha', individualName(payload, selection, selectedZone, selectedMatchday, 'avance'), pageWarnings(selectedZone, selectedMatches), assets => matchdayProgressPage(payload, selection.format, assets, selectedZone!, selectedMatchday!, selectedMatches)));
   }
 
   if (selection.template === 'weekly_fixture') {
@@ -672,6 +778,8 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
       pages.push(manifestPage(0, 'resultados', 'Resultados', individualName(payload, selection, selectedZone, selectedMatchday, 'resultados'), pageWarnings(selectedZone, selectedMatches), assets => resultsPage(payload, selection.format, assets, selectedZone!, selectedMatchday!, selectedMatches)));
     } else {
       if (!table) throw new HttpError(409, 'No hay tabla de posiciones disponible para la zona.');
+      const incomplete = selectedMatches.filter(match => match.status !== 'FINISHED' || !match.official || !match.result);
+      if (incomplete.length) throw new HttpError(409, `La Fecha ${selectedMatchday} todavía no terminó: faltan ${incomplete.length} resultado(s) oficial(es). Usá “Así va la fecha” para publicar el avance.`);
       pages.push(manifestPage(0, 'portada', 'Portada', '01-portada.png', [], assets => coverScene(payload, selection.format, assets, `Fecha ${selectedMatchday}`, `${selectedZone!.name} · jornada completa`, 'Resultados y posiciones actualizadas', selectedZone)));
       pages.push(manifestPage(1, 'resultados', 'Resultados', '02-resultados.png', pageWarnings(selectedZone, selectedMatches), assets => resultsPage(payload, selection.format, assets, selectedZone!, selectedMatchday!, selectedMatches)));
       pages.push(manifestPage(2, 'posiciones', 'Posiciones', '03-posiciones.png', [...pageWarnings(selectedZone, [], table.rows), ...table.warnings], assets => standingsPage(payload, selection.format, assets, selectedZone!, table.rows)));
