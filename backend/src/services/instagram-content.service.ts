@@ -355,14 +355,17 @@ function displayTitle(kicker: string, title: string, format: InstagramFormat, da
 }
 
 function fixtureRows(matches: Match[], format: InstagramFormat, mode: 'fixture' | 'today' | 'results') {
-  const rowHeight = Math.min(format === 'story' ? 236 : 176, Math.floor((format === 'story' ? 1100 : 710) / Math.max(matches.length, 1)));
-  return div({ display: 'flex', flexDirection: 'column', gap: format === 'story' ? 20 : 14, width: '100%' },
+  const count = Math.max(matches.length, 1);
+  const storyRowHeight = count === 1 ? 430 : count === 2 ? 340 : count === 3 ? 280 : 236;
+  const rowHeight = Math.min(format === 'story' ? storyRowHeight : 176, Math.floor((format === 'story' ? 1120 : 710) / count));
+  const storyNameSize = count === 1 ? 43 : count === 2 ? 38 : count === 3 ? 34 : 31;
+  return div({ display: 'flex', flex: 1, flexDirection: 'column', justifyContent: 'center', gap: format === 'story' ? 20 : 14, width: '100%' },
     ...matches.map((match, index) => div({
       height: rowHeight, display: 'flex', alignItems: 'center', borderRadius: 20,
       background: index % 2 ? '#2b412e' : '#263b29', border: `1px solid ${COLORS.line}`, overflow: 'hidden'
     },
     div({ width: 126, height: '100%', background: index === 0 ? COLORS.lime : COLORS.green, color: index === 0 ? COLORS.ink : COLORS.paper, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 },
-      txt(match.scheduledTime ?? 'A conf.', { fontSize: match.scheduledTime ? 31 : 20, fontWeight: 800 }),
+      txt(match.scheduledTime ?? 'A conf.', { fontSize: match.scheduledTime ? (format === 'story' && count <= 2 ? 36 : 31) : 20, fontWeight: 800 }),
       txt(mode === 'results'
         ? statusLabel(match.status, match.official).toUpperCase()
         : mode === 'today'
@@ -370,31 +373,36 @@ function fixtureRows(matches: Match[], format: InstagramFormat, mode: 'fixture' 
           : `PARTIDO ${index + 1}`, { fontSize: mode === 'today' ? 10 : 12, fontWeight: 800, letterSpacing: mode === 'today' ? .5 : 1.2, textAlign: 'center', justifyContent: 'center', padding: '0 5px' })
     ),
     div({ flex: 1, padding: '16px 25px', display: 'flex', alignItems: 'center', gap: 18 },
-      nameBlock(matchPair(match, 'home'), { width: '38%', size: format === 'story' ? 31 : 27, minSize: 20 }),
+      nameBlock(matchPair(match, 'home'), { width: '38%', size: format === 'story' ? storyNameSize : 27, minSize: format === 'story' && count <= 2 ? 24 : 20 }),
       div({ width: '22%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5 },
-        txt(mode === 'results' ? setScore(match) : 'VS', { fontSize: mode === 'results' ? 28 : 20, fontWeight: 800, color: mode === 'results' && match.sets.length ? COLORS.lime : COLORS.muted, textAlign: 'center', justifyContent: 'center' }),
+        txt(mode === 'results' ? setScore(match) : 'VS', { fontSize: mode === 'results' ? (format === 'story' && count <= 2 ? 34 : 28) : 20, fontWeight: 800, color: mode === 'results' && match.sets.length ? COLORS.lime : COLORS.muted, textAlign: 'center', justifyContent: 'center' }),
         mode === 'results' && match.sets.length && !match.official ? txt('SIN CONFIRMAR', { fontSize: 10, fontWeight: 800, color: COLORS.olive, letterSpacing: 1, textAlign: 'center' }) : null
       ),
-      nameBlock(matchPair(match, 'away'), { width: '38%', size: format === 'story' ? 31 : 27, minSize: 20, align: 'right' })
+      nameBlock(matchPair(match, 'away'), { width: '38%', size: format === 'story' ? storyNameSize : 27, minSize: format === 'story' && count <= 2 ? 24 : 20, align: 'right' })
     ))));
 }
 
 function minimalFixtureRows(matches: Match[], format: InstagramFormat) {
-  const rowHeight = Math.min(format === 'story' ? 270 : 185, Math.floor((format === 'story' ? 1120 : 740) / Math.max(matches.length, 1)));
-  const contentWidth = format === 'story' ? 700 : 720;
-  return div({ width: '100%', display: 'flex', justifyContent: 'center' },
+  const count = Math.max(matches.length, 1);
+  const storyRowHeight = count === 1 ? 590 : count === 2 ? 430 : count === 3 ? 340 : 270;
+  const rowHeight = Math.min(format === 'story' ? storyRowHeight : 185, Math.floor((format === 'story' ? 1160 : 740) / count));
+  const contentWidth = format === 'story' ? (count <= 2 ? 820 : count === 3 ? 760 : 700) : 720;
+  const nameSize = format === 'story' ? (count === 1 ? 53 : count === 2 ? 46 : count === 3 ? 40 : 35) : 29;
+  const minNameSize = format === 'story' ? (count === 1 ? 31 : count === 2 ? 28 : 24) : 21;
+  const timeSize = format === 'story' ? (count === 1 ? 43 : count === 2 ? 39 : count === 3 ? 35 : 32) : 27;
+  return div({ width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' },
     div({ width: contentWidth, display: 'flex', flexDirection: 'column' },
       ...matches.map((match, index) => div({
         width: '100%', height: rowHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
       },
       div({ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 14 : 9 },
         txt(match.scheduledTime ?? 'Horario a confirmar', {
-          fontSize: match.scheduledTime ? (format === 'story' ? 32 : 27) : (format === 'story' ? 22 : 18),
+          fontSize: match.scheduledTime ? timeSize : (format === 'story' ? Math.max(24, timeSize - 10) : 18),
           lineHeight: 1, fontWeight: 800, color: COLORS.lime, textAlign: 'center', justifyContent: 'center'
         }),
-        nameBlock(matchPair(match, 'home'), { width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21, align: 'center', maxLines: 2 }),
-        txt('VS', { fontSize: format === 'story' ? 18 : 15, lineHeight: 1, fontWeight: 800, color: COLORS.lime, letterSpacing: 1.5, textAlign: 'center', justifyContent: 'center' }),
-        nameBlock(matchPair(match, 'away'), { width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21, align: 'center', maxLines: 2 })
+        nameBlock(matchPair(match, 'home'), { width: '100%', size: nameSize, minSize: minNameSize, align: 'center', maxLines: 2 }),
+        txt('VS', { fontSize: format === 'story' ? (count <= 2 ? 22 : 18) : 15, lineHeight: 1, fontWeight: 800, color: COLORS.lime, letterSpacing: 1.5, textAlign: 'center', justifyContent: 'center' }),
+        nameBlock(matchPair(match, 'away'), { width: '100%', size: nameSize, minSize: minNameSize, align: 'center', maxLines: 2 })
       ),
       index < matches.length - 1 ? div({ width: format === 'story' ? 360 : 310, height: 1, flexShrink: 0, background: COLORS.olive, opacity: .72 }) : null
       ))
@@ -403,25 +411,30 @@ function minimalFixtureRows(matches: Match[], format: InstagramFormat) {
 }
 
 function minimalResultRows(matches: Match[], format: InstagramFormat) {
-  const rowHeight = Math.min(format === 'story' ? 270 : 185, Math.floor((format === 'story' ? 1120 : 740) / Math.max(matches.length, 1)));
-  const contentWidth = format === 'story' ? 700 : 720;
-  return div({ width: '100%', display: 'flex', justifyContent: 'center' },
+  const count = Math.max(matches.length, 1);
+  const storyRowHeight = count === 1 ? 590 : count === 2 ? 430 : count === 3 ? 340 : 270;
+  const rowHeight = Math.min(format === 'story' ? storyRowHeight : 185, Math.floor((format === 'story' ? 1160 : 740) / count));
+  const contentWidth = format === 'story' ? (count <= 2 ? 820 : count === 3 ? 760 : 700) : 720;
+  const nameSize = format === 'story' ? (count === 1 ? 53 : count === 2 ? 46 : count === 3 ? 40 : 35) : 29;
+  const minNameSize = format === 'story' ? (count === 1 ? 31 : count === 2 ? 28 : 24) : 21;
+  const scoreSize = format === 'story' ? (count === 1 ? 42 : count === 2 ? 36 : count === 3 ? 31 : 28) : 23;
+  return div({ width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' },
     div({ width: contentWidth, display: 'flex', flexDirection: 'column' },
       ...matches.map((match, index) => div({
         width: '100%', height: rowHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
       },
       div({ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 14 : 9 },
         nameBlock(matchPair(match, 'home'), {
-          width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21,
+          width: '100%', size: nameSize, minSize: minNameSize,
           align: 'center', maxLines: 2, weight: match.result?.winnerSide === 'HOME' ? 900 : 650,
           color: match.result?.winnerSide === 'HOME' ? COLORS.paper : COLORS.muted
         }),
         txt(setScore(match), {
-          fontSize: format === 'story' ? 28 : 23, lineHeight: 1, fontWeight: 900, color: COLORS.lime,
+          fontSize: scoreSize, lineHeight: 1, fontWeight: 900, color: COLORS.lime,
           letterSpacing: 1.2, textAlign: 'center', justifyContent: 'center'
         }),
         nameBlock(matchPair(match, 'away'), {
-          width: '100%', size: format === 'story' ? 35 : 29, minSize: format === 'story' ? 24 : 21,
+          width: '100%', size: nameSize, minSize: minNameSize,
           align: 'center', maxLines: 2, weight: match.result?.winnerSide === 'AWAY' ? 900 : 650,
           color: match.result?.winnerSide === 'AWAY' ? COLORS.paper : COLORS.muted
         })
@@ -510,7 +523,7 @@ function featuredMatchPage(payload: InstagramLeaguePayload, format: InstagramFor
         venue(payload) ? txt(venue(payload)!, { fontSize: 16, fontWeight: 700, color: COLORS.lime, textAlign: 'right' }) : null
       )
     ),
-    div({ flex: 1, display: 'flex', alignItems: 'center', width: '100%' }, minimalFixtureRows([match], format)),
+    minimalFixtureRows([match], format),
     txt(rescheduled ? 'Agendá el nuevo horario' : `Seguí el partido en ${SITE}`, { marginTop: 'auto', fontSize: 25, fontWeight: 800, color: COLORS.lime })
   ));
 }
