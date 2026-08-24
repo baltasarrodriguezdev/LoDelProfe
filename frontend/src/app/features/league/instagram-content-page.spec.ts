@@ -15,7 +15,7 @@ const leaguePayload: any = {
   ],
   matches: [
     { id: 101, code: 'A-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-19', status: 'FINISHED', zone: { id: 10, code: 'A', name: 'Zona A' }, homePair: { displayName: 'Apellido Largo - Otro Apellido' }, awayPair: { displayName: 'Tercero - Cuarto' }, result: { winnerSide: 'HOME' } },
-    { id: 201, code: 'B-F1-M1', stage: 'GROUP_STAGE', matchday: 1, scheduledDate: '2026-08-20', status: 'SCHEDULED', zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
+    { id: 201, code: 'B-F2-M1', stage: 'GROUP_STAGE', matchday: 2, scheduledDate: '2026-08-19', status: 'SCHEDULED', zone: { id: 20, code: 'B', name: 'Zona B' }, homePair: { displayName: 'Quinto - Sexto' }, awayPair: { displayName: 'Séptimo - Octavo' }, result: null }
   ],
   standings: [], bracket: [], summary: {}, rules: {}
 };
@@ -92,6 +92,7 @@ describe('InstagramContentPage', () => {
 
     expect(component.showZoneSelector()).toBe(false);
     expect(component.showMatchdaySelector()).toBe(false);
+    expect(component.dailyDateLabel('2026-08-19')).toContain('F1/F2 · Zona A/Zona B');
     expect(api.get).toHaveBeenLastCalledWith(
       '/admin/leagues/1/instagram/manifest',
       expect.objectContaining({ template: 'today', format: 'story', scheduledDate: component.scheduledDate }),

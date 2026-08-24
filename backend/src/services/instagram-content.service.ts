@@ -191,6 +191,18 @@ function matchPair(match: Match, side: 'home' | 'away') {
   return clean(side === 'home' ? match.homePair?.displayName ?? match.homePlaceholder : match.awayPair?.displayName ?? match.awayPlaceholder);
 }
 
+function matchRoundLabel(match: Match) {
+  return match.matchday ? `FECHA ${match.matchday}` : stageLabel(match.stage).toUpperCase();
+}
+
+function matchZoneLabel(match: Match) {
+  return match.zone?.name?.toUpperCase() ?? stageLabel(match.stage).toUpperCase();
+}
+
+function matchMetadata(match: Match) {
+  return `${matchRoundLabel(match)} · ${matchZoneLabel(match)} · ${match.scheduledTime ?? 'HORARIO A CONFIRMAR'}`;
+}
+
 function setScore(match: Match) {
   return match.sets.length
     ? match.sets.map(set => `${set.homeGames}–${set.awayGames}`).join(' · ')
@@ -382,6 +394,27 @@ function fixtureRows(matches: Match[], format: InstagramFormat, mode: 'fixture' 
     ))));
 }
 
+function matchMetadataRow(match: Match, format: InstagramFormat, count: number) {
+  const compact = format === 'feed' || count >= 4;
+  const items = [matchRoundLabel(match), matchZoneLabel(match), match.scheduledTime ?? 'A CONFIRMAR'];
+  return div({ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: compact ? 7 : 10, flexWrap: 'wrap' },
+    ...items.map((item, index) => div({
+      border: `1px solid ${index === 2 ? COLORS.lime : COLORS.line}`,
+      borderRadius: 999,
+      padding: compact ? '5px 10px' : '7px 14px',
+      background: index === 2 ? '#304829' : '#263b29',
+      display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }, txt(item, {
+      fontSize: compact ? 12 : 15,
+      lineHeight: 1,
+      fontWeight: 900,
+      color: index === 2 ? COLORS.lime : COLORS.paper,
+      letterSpacing: compact ? .7 : 1.1,
+      textAlign: 'center', justifyContent: 'center'
+    })))
+  );
+}
+
 function minimalFixtureRows(matches: Match[], format: InstagramFormat) {
   const count = Math.max(matches.length, 1);
   const storyRowHeight = count === 1 ? 590 : count === 2 ? 430 : count === 3 ? 340 : 270;
@@ -389,17 +422,13 @@ function minimalFixtureRows(matches: Match[], format: InstagramFormat) {
   const contentWidth = format === 'story' ? (count <= 2 ? 820 : count === 3 ? 760 : 700) : 720;
   const nameSize = format === 'story' ? (count === 1 ? 53 : count === 2 ? 46 : count === 3 ? 40 : 35) : 29;
   const minNameSize = format === 'story' ? (count === 1 ? 31 : count === 2 ? 28 : 24) : 21;
-  const timeSize = format === 'story' ? (count === 1 ? 43 : count === 2 ? 39 : count === 3 ? 35 : 32) : 27;
   return div({ width: '100%', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' },
     div({ width: contentWidth, display: 'flex', flexDirection: 'column' },
       ...matches.map((match, index) => div({
         width: '100%', height: rowHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
       },
       div({ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 14 : 9 },
-        txt(match.scheduledTime ?? 'Horario a confirmar', {
-          fontSize: match.scheduledTime ? timeSize : (format === 'story' ? Math.max(24, timeSize - 10) : 18),
-          lineHeight: 1, fontWeight: 800, color: COLORS.lime, textAlign: 'center', justifyContent: 'center'
-        }),
+        matchMetadataRow(match, format, count),
         nameBlock(matchPair(match, 'home'), { width: '100%', size: nameSize, minSize: minNameSize, align: 'center', maxLines: 2 }),
         txt('VS', { fontSize: format === 'story' ? (count <= 2 ? 22 : 18) : 15, lineHeight: 1, fontWeight: 800, color: COLORS.lime, letterSpacing: 1.5, textAlign: 'center', justifyContent: 'center' }),
         nameBlock(matchPair(match, 'away'), { width: '100%', size: nameSize, minSize: minNameSize, align: 'center', maxLines: 2 })
@@ -424,6 +453,7 @@ function minimalResultRows(matches: Match[], format: InstagramFormat) {
         width: '100%', height: rowHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
       },
       div({ width: '100%', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 14 : 9 },
+        matchMetadataRow(match, format, count),
         nameBlock(matchPair(match, 'home'), {
           width: '100%', size: nameSize, minSize: minNameSize,
           align: 'center', maxLines: 2, weight: match.result?.winnerSide === 'HOME' ? 900 : 650,
@@ -644,10 +674,12 @@ function descriptionFor(payload: InstagramLeaguePayload, selection: InstagramSel
   const ending = `Toda la información de la Liga Suma 12 en ${SITE} #LoDelProfe #LigaSuma12`;
   if (selection.template === 'today') {
     const title = date ? dailyFixtureTitle(payload, date) : 'Próximos partidos';
-    return [`${title} por la Liga Suma 12.`, date ? formatDate(date) : null, place, `Partidos, horarios y toda la información en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
+    const details = matches.map(match => `${matchMetadata(match)} · ${matchPair(match, 'home')} vs. ${matchPair(match, 'away')}`);
+    return [`${title} por la Liga Suma 12.`, date ? formatDate(date) : null, ...details, place, `Partidos, horarios y toda la información en ${SITE} #LoDelProfe #LigaSuma12`].filter(Boolean).join('\n');
   }
   if (selection.template === 'today_results') {
-    return ['Resultados de la jornada · Liga Suma 12.', date ? formatDate(date) : null, place, 'Estos fueron los marcadores del día.', ending].filter(Boolean).join('\n');
+    const details = matches.map(match => `${matchMetadata(match)} · ${matchPair(match, 'home')} ${setScore(match)} ${matchPair(match, 'away')}`);
+    return ['Resultados de la jornada · Liga Suma 12.', date ? formatDate(date) : null, ...details, place, 'Estos fueron los marcadores del día.', ending].filter(Boolean).join('\n');
   }
   if (selection.template === 'featured_match') {
     return ['Partido destacado · Liga Suma 12.', matches[0] ? `${matchPair(matches[0], 'home')} vs. ${matchPair(matches[0], 'away')}` : null, date ? formatDate(date) : null, place, ending].filter(Boolean).join('\n');

@@ -65,17 +65,20 @@ test('genera el ZIP del carrusel en el orden publicado', async () => {
 test('Partidos por día filtra por día real y admite partidos de distintas zonas y fechas', async () => {
   const daily = instagramTestPayload();
   const first = daily.matches.find(match => match.id === 1)!;
-  const second = daily.matches.find(match => match.id === 11)!;
   first.scheduledDate = '2026-08-19';
-  second.scheduledDate = '2026-08-19';
-  second.matchday = 2;
+  daily.matches.filter(match => [11, 12, 13].includes(match.id)).forEach(match => {
+    match.scheduledDate = '2026-08-19';
+    match.matchday = 2;
+  });
 
   const manifest = getInstagramManifest(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
 
   assert.ok(['Hoy juegan', 'Mañana se juega', 'Próximos partidos'].includes(manifest.pages[0].label));
   assert.equal(manifest.pages[0].fileName, 'liga-suma12-partidos-2026-08-19-story.png');
-  assert.doesNotMatch(manifest.description, /Fecha 1/);
+  assert.doesNotMatch(manifest.description.split('\n').slice(0, 2).join(' '), /Fecha \d/i);
   assert.match(manifest.description, /miércoles,? 19 de agosto/i);
+  assert.match(manifest.description, /FECHA 1 · ZONA A · 19:00/);
+  assert.match(manifest.description, /FECHA 2 · ZONA B · 19:00/);
   assert.doesNotMatch(manifest.pages[0].warnings.join(' '), /prevé cuatro por zona/i);
   const rendered = await renderInstagramPng(daily, { template: 'today', format: 'story', scheduledDate: '2026-08-19' });
   assert.deepEqual(pngDimensions(rendered.buffer), { width: 1080, height: 1920 });

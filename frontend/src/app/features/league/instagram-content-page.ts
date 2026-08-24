@@ -78,7 +78,7 @@ type LeagueSummary = { id: number; name: string; seasonYear: number; status: str
                 <select [(ngModel)]="scheduledDate" (ngModelChange)="selectionChanged()">
                   @for (date of dailyDates(); track date) { <option [ngValue]="date">{{ dailyDateLabel(date) }}</option> }
                 </select>
-                <small>{{ template === 'today_results' ? 'Usa el día real del partido y sólo resultados cargados.' : 'El título cambia automáticamente entre Hoy, Mañana o Próximos partidos.' }}</small>
+                <small>{{ template === 'today_results' ? 'Usa el día real del partido y sólo resultados cargados.' : 'Cada partido muestra su propia fecha, zona y horario, aunque el día mezcle jornadas.' }}</small>
               </label>
             }
             @if (showMatchSelector()) {
@@ -297,7 +297,11 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   dailyDates() { return this.template === 'today_results' ? this.availableResultDates() : this.availableScheduledDates(); }
   dailyDateLabel(value: string) {
     const matches = (this.leagueData()?.matches ?? []).filter(match => match.scheduledDate === value && (this.template !== 'today_results' || (match.status === 'FINISHED' && Boolean(match.result))));
-    return `${this.dateLabel(value)} · ${matches.length} ${matches.length === 1 ? 'partido' : 'partidos'}`;
+    const matchdays = [...new Set(matches.map(match => match.matchday).filter((round): round is number => Boolean(round)))].sort((a, b) => a - b);
+    const zones = [...new Set(matches.map(match => match.zone?.name).filter((zone): zone is string => Boolean(zone)))];
+    const roundsLabel = matchdays.length ? ` · ${matchdays.map(round => `F${round}`).join('/')}` : '';
+    const zonesLabel = zones.length ? ` · ${zones.join('/')}` : '';
+    return `${this.dateLabel(value)} · ${matches.length} ${matches.length === 1 ? 'partido' : 'partidos'}${roundsLabel}${zonesLabel}`;
   }
   selectableMatches() {
     if (this.template === 'rescheduled_match') return this.rescheduledMatches();
