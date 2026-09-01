@@ -1,6 +1,6 @@
 export const VENUE = {
   name: 'Lo del Profe',
-  whatsapp: '5493576468131',
+  whatsapp: '5493576418907',
   address: 'X2433, Villa Concepción del Tío, Córdoba',
   latitude: -31.3275897,
   longitude: -62.8115027,
