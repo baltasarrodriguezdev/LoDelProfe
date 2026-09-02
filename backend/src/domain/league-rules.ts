@@ -14,7 +14,7 @@ export type LeagueScoringRules = {
   straightSetsWinPoints: number;
   threeSetsWinPoints: number;
   threeSetsLossPoints: number;
-  straightSetsLossPoints: number | null;
+  straightSetsLossPoints: number;
 };
 
 export type StandingsPair = {
@@ -37,6 +37,8 @@ export type StandingRow = {
   seedNumber: number;
   position: number | null;
   played: number;
+  won: number;
+  lost: number;
   setsFor: number;
   setsAgainst: number;
   setDifference: number;
@@ -178,6 +180,8 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     seedNumber: pair.seedNumber,
     position: null,
     played: 0,
+    won: 0,
+    lost: 0,
     setsFor: 0,
     setsAgainst: 0,
     setDifference: 0,
@@ -201,6 +205,13 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     completed.push({ ...match, summary });
     home.played++;
     away.played++;
+    if (summary.winnerSide === 'HOME') {
+      home.won++;
+      away.lost++;
+    } else {
+      away.won++;
+      home.lost++;
+    }
     home.setsFor += summary.homeSets;
     home.setsAgainst += summary.awaySets;
     away.setsFor += summary.awaySets;
@@ -209,16 +220,14 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     home.gamesAgainst += summary.awayGames;
     away.gamesFor += summary.awayGames;
     away.gamesAgainst += summary.homeGames;
-    if (points.homePoints == null) home.pendingPointsMatches++;
-    else home.confirmedPoints += points.homePoints;
-    if (points.awayPoints == null) away.pendingPointsMatches++;
-    else away.confirmedPoints += points.awayPoints;
+    home.confirmedPoints += points.homePoints;
+    away.confirmedPoints += points.awayPoints;
   }
 
   for (const row of rows.values()) {
     row.setDifference = row.setsFor - row.setsAgainst;
     row.gameDifference = calculateGamesPositive(row.gamesFor, row.gamesAgainst);
-    row.points = row.pendingPointsMatches ? null : row.confirmedPoints;
+    row.points = row.confirmedPoints;
   }
 
   const warnings: string[] = [];
@@ -228,12 +237,6 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     if (right.points == null) return -1;
     return right.points - left.points || left.seedNumber - right.seedNumber;
   });
-
-  if (ordered.some(row => row.points == null)) {
-    warnings.push('Hay resultados 2–0 cuyo puntaje para la pareja perdedora sigue pendiente de definición. Las posiciones no pueden calcularse correctamente.');
-    for (const row of ordered) row.rankingPending = true;
-    return { rows: ordered, warnings, rankingComplete: false };
-  }
 
   let cursor = 0;
   while (cursor < ordered.length) {

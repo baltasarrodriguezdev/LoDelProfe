@@ -1,10 +1,15 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { WebSocket } from 'ws';
-import { httpServer } from '../src/app.js';
+import { app } from '../src/app.js';
 import { config } from '../src/config.js';
 import { publishRealtimeEvent } from '../src/realtime/events.js';
+import { attachRealtimeServer } from '../src/realtime/server.js';
+
+const httpServer = createServer(app);
+attachRealtimeServer(httpServer);
 
 let baseUrl = '';
 const sockets: WebSocket[] = [];

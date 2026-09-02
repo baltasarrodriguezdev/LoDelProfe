@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-08-14T16:58:26.115Z",
+  "baseUrl": "http://localhost:4200",
+  "userAuthenticated": false,
+  "adminAuthenticated": true,
+  "widths": [
+    390
+  ],
+  "totalChecks": 1,
+  "failures": [],
+  "checks": [
+    {
+      "route": "/admin/contenido-instagram",
+      "width": 390,
+      "state": "admin",
+      "viewport": 390,
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "bodyScrollWidth": 390,
+      "overflow": false,
+      "offenders": [
+        {
+          "tag": "main",
+          "className": "studio-preview",
+          "text": "VISTA PREVIA FIELCarrusel semanal1080 × 1350 px1Portada 2Zona A 3Zona B Descargar PNGDescargar carru",
+          "left": -13,
+          "right": 377,
+          "width": 390
+        }
+      ],
+      "title": "Lo del Profe · Cancha de Pádel",
+      "url": "/admin/contenido-instagram"
+    }
+  ]
+}

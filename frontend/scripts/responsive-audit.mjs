@@ -7,11 +7,17 @@ const baseUrl = process.env.RESPONSIVE_BASE_URL ?? 'http://localhost:4200';
 const browserPath = process.env.RESPONSIVE_BROWSER_PATH
   ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const outputDir = resolve(process.env.RESPONSIVE_OUTPUT_DIR ?? 'responsive-results');
-const widths = [320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440];
+const targetedAdminRoute = process.env.RESPONSIVE_ADMIN_ROUTE?.trim();
+const targetedScrollSelector = process.env.RESPONSIVE_SCROLL_SELECTOR?.trim();
+const widths = process.env.RESPONSIVE_WIDTHS
+  ? process.env.RESPONSIVE_WIDTHS.split(',').map(Number).filter(Number.isFinite)
+  : [320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440];
+const settleTimeoutMs = Number(process.env.RESPONSIVE_SETTLE_MS ?? 5_000);
+const runInteractionScenarios = !targetedAdminRoute;
 const screenshotWidths = new Set([390, 768, 1440]);
-const publicRoutes = ['/', '/ingresar', '/registro', '/recuperar-contrasena', '/reservar', '/la-liga'];
-const authenticatedRoutes = ['/validar-telefono', '/confirmar-reserva', '/mis-turnos', '/historial'];
-const adminRoutes = [
+const publicRoutes = targetedAdminRoute ? [] : ['/', '/ingresar', '/registro', '/recuperar-contrasena', '/reservar', '/la-liga'];
+const authenticatedRoutes = targetedAdminRoute ? [] : ['/validar-telefono', '/confirmar-reserva', '/mis-turnos', '/historial'];
+const adminRoutes = targetedAdminRoute ? [targetedAdminRoute] : [
   '/admin',
   '/admin/agenda-diaria',
   '/admin/agenda-semanal',
@@ -25,6 +31,7 @@ const adminRoutes = [
   '/admin/caja',
   '/admin/estadisticas',
   '/admin/marketing/historias-instagram',
+  '/admin/contenido-instagram',
   '/admin/la-liga'
 ];
 
@@ -128,11 +135,12 @@ async function navigate(client, sessionId, url) {
 }
 
 async function waitForUiSettled(client, sessionId) {
-  const deadline = Date.now() + 5_000;
+  await delay(350);
+  const deadline = Date.now() + settleTimeoutMs;
   while (Date.now() < deadline) {
     const loading = await evaluate(client, sessionId, `(() => {
-      const pattern = /^(Cargando|Buscando|Calculando|Actualizando)/i;
-      return [...document.querySelectorAll('.empty, button, [aria-busy="true"]')]
+      const pattern = /^(Cargando|Buscando|Calculando|Actualizando|Generando|Esperando)/i;
+      return [...document.querySelectorAll('.empty, button, [aria-busy="true"], .preview-state, .preview-refreshing')]
         .some(element => pattern.test((element.textContent ?? '').trim()));
     })()`);
     if (!loading) break;
@@ -219,18 +227,20 @@ function slug(route) {
 
 async function login(client, sessionId, phone, password) {
   if (!phone || !password) return false;
-  return evaluate(client, sessionId, `(async () => {
+  const result = await evaluate(client, sessionId, `(async () => {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(${JSON.stringify({ phone, password })})
     });
-    if (!response.ok) return false;
+    if (!response.ok) return { ok: false, status: response.status };
     const data = await response.json();
     localStorage.setItem('user', JSON.stringify(data.user));
-    return true;
+    return { ok: true, status: response.status };
   })()`);
+  if (!result?.ok) console.warn(`El login del auditor responsive falló con HTTP ${result?.status ?? 'desconocido'}.`);
+  return Boolean(result?.ok);
 }
 
 function loginAsUser(client, sessionId) {
@@ -274,13 +284,15 @@ async function main() {
         if (screenshotWidths.has(width)) await screenshot(client, sessionId, `${slug(route)}-${width}.png`);
       }
     }
+    if (targetedAdminRoute) await navigate(client, sessionId, baseUrl);
 
-    await setViewport(client, sessionId, 390);
-    await navigate(client, sessionId, `${baseUrl}/`);
-    const menuOpened = await clickFirst(client, sessionId, '.mobile-menu-toggle');
-    if (menuOpened) {
-      await captureInteraction(client, sessionId, report, { route: '/', width: 390, state: 'menu-open', screenshot: 'inicio-menu-abierto-390.png' });
-    }
+    if (runInteractionScenarios) {
+      await setViewport(client, sessionId, 390);
+      await navigate(client, sessionId, `${baseUrl}/`);
+      const menuOpened = await clickFirst(client, sessionId, '.mobile-menu-toggle');
+      if (menuOpened) {
+        await captureInteraction(client, sessionId, report, { route: '/', width: 390, state: 'menu-open', screenshot: 'inicio-menu-abierto-390.png' });
+      }
 
     await navigate(client, sessionId, `${baseUrl}/registro`);
     const validationOpened = await evaluate(client, sessionId, `(() => {
@@ -304,9 +316,10 @@ async function main() {
     if (standingsOpened) {
       await captureInteraction(client, sessionId, report, { route: '/la-liga', width: 390, state: 'standings', screenshot: 'la-liga-posiciones-390.png' });
     }
-    const bracketOpened = await clickFirst(client, sessionId, '.league-tabs button:nth-of-type(5)');
-    if (bracketOpened) {
-      await captureInteraction(client, sessionId, report, { route: '/la-liga', width: 390, state: 'bracket', screenshot: 'la-liga-eliminatorias-390.png' });
+      const bracketOpened = await clickFirst(client, sessionId, '.league-tabs button:nth-of-type(5)');
+      if (bracketOpened) {
+        await captureInteraction(client, sessionId, report, { route: '/la-liga', width: 390, state: 'bracket', screenshot: 'la-liga-eliminatorias-390.png' });
+      }
     }
 
     const userAuthenticated = await loginAsUser(client, sessionId);
@@ -328,18 +341,23 @@ async function main() {
         await setViewport(client, sessionId, width);
         for (const route of adminRoutes) {
           await navigate(client, sessionId, `${baseUrl}${route}`);
+          if (targetedScrollSelector) {
+            await evaluate(client, sessionId, `document.querySelector(${JSON.stringify(targetedScrollSelector)})?.scrollIntoView({ block: 'start' })`);
+            await delay(250);
+          }
           const result = await inspectLayout(client, sessionId);
           report.push({ route, width, state: 'admin', ...result });
           if (screenshotWidths.has(width)) await screenshot(client, sessionId, `${slug(route)}-${width}.png`);
         }
       }
 
-      await setViewport(client, sessionId, 390);
-      await navigate(client, sessionId, `${baseUrl}/admin`);
-      const authenticatedMenuOpened = await clickFirst(client, sessionId, '.mobile-menu-toggle');
-      if (authenticatedMenuOpened) {
-        await captureInteraction(client, sessionId, report, { route: '/admin', width: 390, state: 'authenticated-menu-open', screenshot: 'admin-menu-principal-abierto-390.png' });
-      }
+      if (runInteractionScenarios) {
+        await setViewport(client, sessionId, 390);
+        await navigate(client, sessionId, `${baseUrl}/admin`);
+        const authenticatedMenuOpened = await clickFirst(client, sessionId, '.mobile-menu-toggle');
+        if (authenticatedMenuOpened) {
+          await captureInteraction(client, sessionId, report, { route: '/admin', width: 390, state: 'authenticated-menu-open', screenshot: 'admin-menu-principal-abierto-390.png' });
+        }
 
       await navigate(client, sessionId, `${baseUrl}/admin/agenda-diaria`);
       const adminMenuOpened = await clickFirst(client, sessionId, '.admin-navigation-toggle');
@@ -370,8 +388,9 @@ async function main() {
 
       await navigate(client, sessionId, `${baseUrl}/admin/la-liga`);
       const leagueResultsOpened = await clickFirst(client, sessionId, '.league-admin-tabs button:nth-of-type(4)');
-      if (leagueResultsOpened) {
-        await captureInteraction(client, sessionId, report, { route: '/admin/la-liga', width: 390, state: 'league-results', screenshot: 'admin-la-liga-resultados-390.png' });
+        if (leagueResultsOpened) {
+          await captureInteraction(client, sessionId, report, { route: '/admin/la-liga', width: 390, state: 'league-results', screenshot: 'admin-la-liga-resultados-390.png' });
+        }
       }
     }
 

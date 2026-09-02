@@ -39,11 +39,12 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
         }
 
         @if (loading()) {
-          <div class="empty league-admin-loading">Cargando gestión de La Liga...</div>
+          <div class="empty league-admin-loading">Cargando gestión de La Liga…</div>
         } @else if (data(); as leagueData) {
           <nav class="league-admin-tabs" aria-label="Herramientas de administración de la liga">
             @for (tab of tabs; track tab.id) { <button type="button" [class.active]="activeTab() === tab.id" (click)="activeTab.set(tab.id)">{{ tab.label }}@if (tab.id === 'results' && pendingScores().length) { <span>{{ pendingScores().length }}</span> }</button> }
           </nav>
+          <small class="league-admin-tabs-hint" aria-hidden="true">Deslizá para ver todas las herramientas →</small>
 
           @if (activeTab() === 'season') {
             <form class="panel league-admin-form" (ngSubmit)="saveSeason()">
@@ -110,12 +111,34 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
           }
 
           @if (activeTab() === 'rules') {
-            <form class="panel league-rules-form" (ngSubmit)="saveRules()"><header><div><span class="eyebrow">REGLAMENTO</span><h2>Puntajes y definiciones</h2></div><span>{{ leagueData.rules.pending.length }} pendiente(s)</span></header><p class="league-rule-notice">Sólo la derrota 0–2 interviene automáticamente en el cálculo. Los demás textos se publican como definiciones administrativas, sin inferir lógica que el reglamento no explique.</p><div class="form-grid three"><label>Victoria 2–0<input type="number" [(ngModel)]="rulesForm.straightSetsWinPoints" name="r1" min="0"></label><label>Victoria 2–1<input type="number" [(ngModel)]="rulesForm.threeSetsWinPoints" name="r2" min="0"></label><label>Derrota 1–2<input type="number" [(ngModel)]="rulesForm.threeSetsLossPoints" name="r3" min="0"></label><label>Derrota 0–2<input type="number" [(ngModel)]="rulesForm.straightSetsLossPoints" name="r4" min="0" placeholder="Pendiente"></label><label class="wide">Definición de “games positivos”<textarea [(ngModel)]="rulesForm.gamesPositiveDefinition" name="r5" placeholder="Pendiente de definición"></textarea></label><label class="wide">Empate entre tres o más parejas<textarea [(ngModel)]="rulesForm.multiPairTieRule" name="r6" placeholder="Pendiente de definición"></textarea></label><label>Walkover / ausencia<textarea [(ngModel)]="rulesForm.walkoverRule" name="r7"></textarea></label><label>Abandono por lesión<textarea [(ngModel)]="rulesForm.retirementRule" name="r8"></textarea></label><label>Partido inconcluso<textarea [(ngModel)]="rulesForm.incompleteMatchRule" name="r9"></textarea></label><label>Reprogramaciones<textarea [(ngModel)]="rulesForm.reschedulingRule" name="r10"></textarea></label><label>Tie-break en 6–6<textarea [(ngModel)]="rulesForm.sixAllTiebreakRule" name="r11"></textarea></label></div><button class="btn primary" [disabled]="saving()">Guardar reglas</button></form>
+            <form class="panel league-rules-form" (ngSubmit)="saveRules()"><header><div><span class="eyebrow">REGLAMENTO</span><h2>Puntajes y definiciones</h2></div><span>{{ leagueData.rules.pending.length }} pendiente(s)</span></header><p class="league-rule-notice">Los puntajes confirmados se aplican automáticamente. Las definiciones todavía pendientes se publican como advertencias, sin inferir reglas que el reglamento no explique.</p><div class="form-grid three"><label>Victoria 2–0<input type="number" [(ngModel)]="rulesForm.straightSetsWinPoints" name="r1" min="0"></label><label>Victoria 2–1<input type="number" [(ngModel)]="rulesForm.threeSetsWinPoints" name="r2" min="0"></label><label>Derrota 1–2<input type="number" [(ngModel)]="rulesForm.threeSetsLossPoints" name="r3" min="0"></label><label>Derrota 0–2<input type="number" [(ngModel)]="rulesForm.straightSetsLossPoints" name="r4" min="0" required></label><label class="wide">Definición de “games positivos”<textarea [(ngModel)]="rulesForm.gamesPositiveDefinition" name="r5" placeholder="Pendiente de definición"></textarea></label><label class="wide">Empate entre tres o más parejas<textarea [(ngModel)]="rulesForm.multiPairTieRule" name="r6" placeholder="Pendiente de definición"></textarea></label><label>Walkover / ausencia<textarea [(ngModel)]="rulesForm.walkoverRule" name="r7"></textarea></label><label>Abandono por lesión<textarea [(ngModel)]="rulesForm.retirementRule" name="r8"></textarea></label><label>Partido inconcluso<textarea [(ngModel)]="rulesForm.incompleteMatchRule" name="r9"></textarea></label><label>Reprogramaciones<textarea [(ngModel)]="rulesForm.reschedulingRule" name="r10"></textarea></label><label>Tie-break en 6–6<textarea [(ngModel)]="rulesForm.sixAllTiebreakRule" name="r11"></textarea></label></div><button class="btn primary" [disabled]="saving()">Guardar reglas</button></form>
           }
 
           @if (activeTab() === 'standings') {
             <div class="league-admin-section-title"><div><span class="eyebrow">CÁLCULO AUTOMÁTICO</span><h2>Posiciones</h2><p>Vista administrativa de las tablas derivadas de resultados oficiales.</p></div></div>
-            <div class="league-admin-zones">@for (table of leagueData.standings; track table.zone.id) { <section class="panel"><header><h3>{{ table.zone.name }}</h3><span>{{ table.rankingComplete ? 'Calculada' : 'Pendiente' }}</span></header>@for (warning of table.warnings; track warning) { <p class="error-notice notice">{{ warning }}</p> }<div class="league-admin-table"><table><thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>DS</th><th>DG</th><th>PTS</th></tr></thead><tbody>@for (row of table.rows; track row.pairId) { <tr><td>{{ row.position ?? '—' }}</td><th>{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.setDifference }}</td><td>{{ row.gameDifference }}</td><td>{{ row.points === null ? 'Pend.' : row.points }}</td></tr> }</tbody></table></div></section> }</div>
+            <div class="league-admin-zones league-admin-standings">
+              @for (table of leagueData.standings; track table.zone.id) {
+                <section class="panel league-admin-standings-panel">
+                  <header><h3>{{ table.zone.name }}</h3><span>{{ table.rankingComplete ? 'Calculada' : 'Pendiente' }}</span></header>
+                  @for (warning of table.warnings; track warning) { <p class="error-notice notice">{{ warning }}</p> }
+                  <div class="league-admin-standing-cards" [attr.aria-label]="'Posiciones y estadísticas ' + table.zone.name">
+                    @for (row of table.rows; track row.pairId) {
+                      <article [class.ranking-pending]="row.rankingPending">
+                        <header><span><small>POS</small><strong>{{ row.position ?? 'Pend.' }}</strong></span><h4>{{ row.pair }}</h4><span class="points"><small>PTS</small><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></span></header>
+                        <dl><div><dt>PJ</dt><dd>{{ row.played }}</dd></div><div><dt>PG</dt><dd>{{ row.won }}</dd></div><div><dt>PP</dt><dd>{{ row.lost }}</dd></div><div><dt>SF</dt><dd>{{ row.setsFor }}</dd></div><div><dt>SC</dt><dd>{{ row.setsAgainst }}</dd></div><div><dt>DS</dt><dd>{{ signed(row.setDifference) }}</dd></div><div><dt>GF</dt><dd>{{ row.gamesFor }}</dd></div><div><dt>GC</dt><dd>{{ row.gamesAgainst }}</dd></div><div><dt>DG</dt><dd>{{ signed(row.gameDifference) }}</dd></div></dl>
+                      </article>
+                    } @empty { <div class="empty">Todavía no hay parejas en esta zona.</div> }
+                  </div>
+                  <p class="league-admin-table-hint" [id]="'admin-standings-hint-' + table.zone.code">Deslizá la tabla para ver todas las estadísticas →</p>
+                  <div class="league-admin-table" tabindex="0" [attr.aria-describedby]="'admin-standings-hint-' + table.zone.code" [attr.aria-label]="'Tabla administrativa ' + table.zone.name">
+                    <table><thead><tr><th>POS</th><th>PAREJA</th><th>PJ</th><th>PG</th><th>PP</th><th>SF</th><th>SC</th><th>DS</th><th>GF</th><th>GC</th><th>DG</th><th>PTS</th></tr></thead><tbody>
+                      @for (row of table.rows; track row.pairId) { <tr><td>{{ row.position ?? 'Pend.' }}</td><th scope="row">{{ row.pair }}</th><td>{{ row.played }}</td><td>{{ row.won }}</td><td>{{ row.lost }}</td><td>{{ row.setsFor }}</td><td>{{ row.setsAgainst }}</td><td>{{ signed(row.setDifference) }}</td><td>{{ row.gamesFor }}</td><td>{{ row.gamesAgainst }}</td><td>{{ signed(row.gameDifference) }}</td><td><strong>{{ row.points === null ? 'Pend.' : row.points }}</strong></td></tr> }
+                      @empty { <tr><td colspan="12">Todavía no hay parejas en esta zona.</td></tr> }
+                    </tbody></table>
+                  </div>
+                </section>
+              }
+            </div>
           }
 
           @if (activeTab() === 'bracket') {
@@ -137,7 +160,44 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
     @media(max-width:1100px){.league-admin-head{align-items:start;flex-direction:column}.league-admin-head-actions{width:100%;flex-wrap:wrap}.league-create-form{grid-template-columns:repeat(2,1fr)}.league-create-form>div{grid-column:1/-1}.league-admin-zones,.league-fixture-admin{grid-template-columns:1fr}.league-add-pair{grid-template-columns:repeat(2,1fr)}.league-add-pair>div{grid-column:1/-1}.league-results-layout{grid-template-columns:1fr}.league-result-list{grid-template-columns:repeat(2,1fr);max-height:420px}}
     @media(max-width:700px){.league-admin-head h1{font-size:3.4rem}.league-admin-head-actions{display:grid}.league-admin-head-actions label{min-width:0}.league-create-form,.league-add-pair{grid-template-columns:1fr}.league-pair-list article{grid-template-columns:58px 1fr 1fr}.league-pair-list article>span{display:none}.league-pair-list article label:nth-of-type(4),.league-pair-list article button{grid-column:auto}.league-admin-section-title{align-items:start;flex-direction:column}.league-fixture-admin footer{align-items:stretch;flex-direction:column}.league-match-edit{grid-template-columns:1fr}.league-match-edit .wide{grid-column:auto}.league-result-list{grid-template-columns:1fr}.league-set-editor>div{grid-template-columns:minmax(100px,1fr) repeat(3,55px)}.league-set-editor>div:not(.league-set-header)>strong{font-size:.68rem}.league-admin-form .form-grid,.league-rules-form .form-grid{grid-template-columns:1fr}.league-admin-form .wide,.league-rules-form .wide{grid-column:auto}}
   `,
-  `.league-result-feedback{margin:12px 0 0;border-left:4px solid var(--color-brand-green);border-radius:7px;padding:11px 13px;background:#e6efe1;color:var(--color-brand-green);font-size:.76rem;font-weight:700}.league-result-feedback.error{border-left-color:#a94738;background:#f9e2dc;color:#812f25}`]
+  `.league-result-feedback{margin:12px 0 0;border-left:4px solid var(--color-brand-green);border-radius:7px;padding:11px 13px;background:#e6efe1;color:var(--color-brand-green);font-size:.76rem;font-weight:700}.league-result-feedback.error{border-left-color:#a94738;background:#f9e2dc;color:#812f25}`,
+  `
+    .league-admin-tabs{overscroll-behavior-inline:contain;scrollbar-width:thin;scroll-snap-type:x proximity}
+    .league-admin-tabs button{scroll-snap-align:start}
+    .league-admin-tabs-hint{display:none}
+    .league-admin-standings{grid-template-columns:minmax(0,1fr)}
+    .league-admin-standing-cards{display:none}
+    .league-admin-table-hint{display:none;margin:10px 0 0;border-bottom:1px solid var(--color-brand-border);padding:9px 12px;background:#fff6d9;color:#6f551a;font-size:.7rem;font-weight:750}
+    .league-admin-table{overscroll-behavior-inline:contain;scrollbar-gutter:stable;scrollbar-width:thin;touch-action:pan-x pan-y}
+    .league-admin-table table{min-width:1020px;font-variant-numeric:tabular-nums}
+    .league-admin-table th,.league-admin-table td{font-variant-numeric:tabular-nums}
+    .league-admin-table th:first-child,.league-admin-table td:first-child{position:sticky;left:0;z-index:2;width:62px;background:var(--color-brand-paper)}
+    .league-admin-table th:nth-child(2){position:sticky;left:62px;z-index:2;width:240px;max-width:240px;background:var(--color-brand-paper);box-shadow:7px 0 10px -10px rgba(20,40,27,.8);white-space:normal;overflow-wrap:anywhere}
+    .league-admin-table th:last-child,.league-admin-table td:last-child{position:sticky;right:0;z-index:2;min-width:68px;background:var(--color-brand-paper);box-shadow:-7px 0 10px -10px rgba(20,40,27,.8)}
+    .league-admin-table thead th:first-child,.league-admin-table thead th:nth-child(2),.league-admin-table thead th:last-child{z-index:3;background:#ece9dd}
+    .league-admin-table td:last-child strong{font-size:.9rem;color:var(--color-brand-green)}
+    @media(min-width:701px) and (max-width:1180px){.league-admin-table-hint{display:block}}
+    @media(max-width:700px){
+      .league-admin-tabs-hint{display:block;margin:-25px 0 24px;padding-top:4px;color:var(--color-brand-muted);font-size:.62rem;text-align:right}
+      .league-admin-table,.league-admin-table-hint{display:none}
+      .league-admin-standing-cards{display:grid;gap:9px;margin-top:12px}
+      .league-admin-standing-cards>article{overflow:hidden;border:1px solid var(--color-brand-border);border-radius:10px;background:var(--color-brand-paper)}
+      .league-admin-standing-cards>article>header{display:grid;grid-template-columns:48px minmax(0,1fr) 54px;align-items:stretch;gap:9px;min-height:68px;border-bottom:1px solid var(--color-brand-border)}
+      .league-admin-standing-cards h4{align-self:center;margin:0;padding:9px 0;font-family:var(--font-body);font-size:.78rem;line-height:1.35;overflow-wrap:anywhere}
+      .league-admin-standing-cards header>span{display:grid;align-content:center;justify-items:center;gap:2px;padding:7px 4px;background:#f1eee3;font-variant-numeric:tabular-nums}
+      .league-admin-standing-cards header>span:first-child{border-right:1px solid var(--color-brand-border)}
+      .league-admin-standing-cards header>span.points{border-left:1px solid rgba(255,255,255,.16);background:var(--color-brand-dark);color:#fff}
+      .league-admin-standing-cards header small{font-family:var(--font-display);font-size:.56rem;letter-spacing:.07em}
+      .league-admin-standing-cards header strong{font-family:var(--font-display);font-size:1rem;color:var(--color-brand-green)}
+      .league-admin-standing-cards header .points strong{font-size:1.55rem;line-height:1;color:#fff}
+      .league-admin-standing-cards .ranking-pending header>span:first-child strong{font-size:.7rem;color:#8a681d}
+      .league-admin-standing-cards dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;padding:5px 7px 8px}
+      .league-admin-standing-cards dl div{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:4px;min-height:36px;border-bottom:1px solid rgba(31,51,38,.09);padding:3px 6px}
+      .league-admin-standing-cards dt{font-family:var(--font-display);font-size:.6rem;color:var(--color-brand-muted)}
+      .league-admin-standing-cards dd{margin:0;text-align:right;font-family:var(--font-display);font-size:.86rem;font-variant-numeric:tabular-nums}
+    }
+    @media(max-width:420px){.league-set-editor>div{grid-template-columns:minmax(0,1fr) repeat(3,minmax(44px,52px));gap:4px}.league-set-editor input{padding-right:2px;padding-left:2px}}
+  `]
 })
 export class AdminLeaguePage implements OnInit {
   private readonly api = inject(Api);
@@ -302,7 +362,7 @@ export class AdminLeaguePage implements OnInit {
 
   saveRules() {
     const leagueId = this.selectedLeagueId(); if (!leagueId) return;
-    const payload = { ...this.rulesForm, straightSetsWinPoints: Number(this.rulesForm.straightSetsWinPoints), threeSetsWinPoints: Number(this.rulesForm.threeSetsWinPoints), threeSetsLossPoints: Number(this.rulesForm.threeSetsLossPoints), straightSetsLossPoints: this.rulesForm.straightSetsLossPoints === '' || this.rulesForm.straightSetsLossPoints == null ? null : Number(this.rulesForm.straightSetsLossPoints) };
+    const payload = { ...this.rulesForm, straightSetsWinPoints: Number(this.rulesForm.straightSetsWinPoints), threeSetsWinPoints: Number(this.rulesForm.threeSetsWinPoints), threeSetsLossPoints: Number(this.rulesForm.threeSetsLossPoints), straightSetsLossPoints: Number(this.rulesForm.straightSetsLossPoints) };
     delete payload.id; delete payload.leagueId; delete payload.createdAt; delete payload.updatedAt; delete payload.updatedById;
     this.runSave(this.api.put(`/admin/leagues/${leagueId}/rules`, payload), 'Reglas guardadas.', () => this.loadLeague(leagueId, true));
   }
@@ -313,6 +373,7 @@ export class AdminLeaguePage implements OnInit {
   seasonStatusLabel(status: string) { return ({ DRAFT: 'Borrador', ACTIVE: 'Activa', CLOSED: 'Cerrada' } as Record<string, string>)[status] ?? status; }
   statusLabel(status: string) { return ({ SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Finalizado', RESCHEDULED: 'Reprogramado', SUSPENDED: 'Suspendido', PENDING: 'Pendiente' } as Record<string, string>)[status] ?? status; }
   stageLabel(stage: string) { return ({ GROUP_STAGE: 'Zonas', ROUND_OF_16: 'Octavos', QUARTERFINAL: 'Cuartos', SEMIFINAL: 'Semifinales', FINAL: 'Final' } as Record<string, string>)[stage] ?? stage; }
+  signed(value: number) { return value > 0 ? `+${value}` : String(value); }
 
   private runSave<T>(request: Observable<T>, success: string, next?: (response: T) => void) {
     if (this.saving()) return;

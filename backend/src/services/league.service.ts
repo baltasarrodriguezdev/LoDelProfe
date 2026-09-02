@@ -45,7 +45,7 @@ function rulesFrom(league: any): LeagueScoringRules {
     straightSetsWinPoints: Number(league.rules?.straightSetsWinPoints ?? 3),
     threeSetsWinPoints: Number(league.rules?.threeSetsWinPoints ?? 2),
     threeSetsLossPoints: Number(league.rules?.threeSetsLossPoints ?? 1),
-    straightSetsLossPoints: league.rules?.straightSetsLossPoints == null ? null : Number(league.rules.straightSetsLossPoints)
+    straightSetsLossPoints: Number(league.rules?.straightSetsLossPoints ?? 0)
   };
 }
 
@@ -56,7 +56,6 @@ function serializedMatch(match: any, scoring: LeagueScoringRules) {
     try {
       const summary = validateLeagueResult(match.sets);
       const points = pointsForResult(summary, scoring);
-      scoringPending = points.homePoints == null || points.awayPoints == null;
       result = { ...summary, ...points };
     } catch {
       // Los borradores incompletos no se exponen como resultados válidos.
@@ -108,7 +107,6 @@ export function standingsForLeague(league: any) {
 function pendingRules(league: any) {
   const rules = league.rules ?? {};
   const pending = [
-    [rules.straightSetsLossPoints == null, 'Puntaje de la pareja perdedora en un resultado 0–2.'],
     [!rules.gamesPositiveDefinition, 'Definición de “games positivos”.'],
     [!rules.multiPairTieRule, 'Desempate entre tres o más parejas.'],
     [!rules.walkoverRule, 'Walkover o ausencia.'],

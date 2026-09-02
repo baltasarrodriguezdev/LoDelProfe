@@ -1,5 +1,4 @@
-import { createServer } from 'node:http';
-import express from'express';import cors from'cors';import{config}from'./config.js';import auth from'./routes/auth.routes.js';import pub from'./routes/public.routes.js';import bookings from'./routes/booking.routes.js';import admin from'./routes/admin.routes.js';import dashboard from'./routes/dashboard.routes.js';import leaguePublic from'./routes/league-public.routes.js';import leagueAdmin from'./routes/league-admin.routes.js';import{errorHandler,notFound}from'./middlewares/error.js';import{csrfProtection,securityHeaders}from'./middlewares/security.js';import{HttpError}from'./utils/http-error.js';import{attachRealtimeServer}from'./realtime/server.js';
+import express from'express';import cors from'cors';import{config}from'./config.js';import auth from'./routes/auth.routes.js';import pub from'./routes/public.routes.js';import bookings from'./routes/booking.routes.js';import admin from'./routes/admin.routes.js';import dashboard from'./routes/dashboard.routes.js';import leaguePublic from'./routes/league-public.routes.js';import leagueAdmin from'./routes/league-admin.routes.js';import{errorHandler,notFound}from'./middlewares/error.js';import{csrfProtection,securityHeaders}from'./middlewares/security.js';import{HttpError}from'./utils/http-error.js';
 export const app=express();
 app.set('trust proxy',1);
 app.use(securityHeaders,cors({origin:config.frontendUrls,credentials:true}),express.json({limit:'100kb'}));
@@ -8,5 +7,4 @@ app.use(csrfProtection);
 const routes=express.Router();
 routes.get('/health',(_,p)=>p.json({status:'ok'}));routes.get('/realtime',(_req,res)=>res.status(426).set('Upgrade','websocket').json({message:'Este endpoint requiere una conexión WebSocket.'}));routes.use('/auth',auth);routes.use(pub);routes.use('/league',leaguePublic);routes.use('/bookings',bookings);routes.use('/admin/leagues',leagueAdmin);routes.use('/admin',dashboard);routes.use('/admin',admin);
 app.use('/api',routes);app.use(routes);app.use(notFound);app.use(errorHandler);
-export const httpServer=createServer(app);attachRealtimeServer(httpServer);
-export default httpServer;
+export default app;

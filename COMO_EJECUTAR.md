@@ -24,7 +24,7 @@ Todos los comandos parten desde la carpeta raíz del proyecto.
 
 ```powershell
 docker compose up -d
-docker compose ps
+
 ```
 
 El contenedor utiliza MySQL 8.4 y expone el puerto `3306`.

@@ -87,6 +87,7 @@ export class AdminNavigationComponent {
     { label: 'Agregar turno', route: '/admin/turno' },
     { label: 'Bloquear horario', route: '/admin/turno', queryParams: { mode: 'block' } },
     { label: 'La Liga', route: '/admin/la-liga' },
+    { label: 'Contenido para Instagram', route: '/admin/contenido-instagram' },
     { label: 'Historias Instagram', route: '/admin/marketing/historias-instagram' }
   ];
 
