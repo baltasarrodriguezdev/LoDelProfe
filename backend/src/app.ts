@@ -47,6 +47,7 @@ routes.use(pub);
 routes.use('/league', lazyRouter('league-public', () => import('./routes/league-public.routes.js')));
 routes.use('/bookings', lazyRouter('bookings', () => import('./routes/booking.routes.js')));
 routes.use('/admin/leagues', lazyRouter('league-admin', () => import('./routes/league-admin.routes.js')));
+routes.use('/admin/push', lazyRouter('push', () => import('./routes/push.routes.js')));
 routes.use('/admin', lazyRouter('dashboard', () => import('./routes/dashboard.routes.js')));
 routes.use('/admin', lazyRouter('admin', () => import('./routes/admin.routes.js')));
 

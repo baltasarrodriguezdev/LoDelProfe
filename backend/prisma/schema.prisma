@@ -108,9 +108,27 @@ model User {
   passwordResetRequests PasswordResetRequest[]
   bookings Booking[]
   recurring RecurringBooking[]
+  pushSubscriptions PushSubscription[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("users")
+}
+
+model PushSubscription {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint String @db.Text
+  endpointHash String @unique @db.Char(64)
+  p256dh String @db.VarChar(255)
+  auth String @db.VarChar(255)
+  userAgent String? @db.VarChar(512)
+  failureCount Int @default(0)
+  lastSuccessAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 model PasswordResetRequest {
   id String @id @default(cuid()) @db.VarChar(30)

@@ -32,6 +32,7 @@
     "jszip": "^3.10.1",
     "luxon": "3.6.1",
     "satori": "^0.29.0",
+    "web-push": "^3.6.7",
     "ws": "^8.21.3",
     "zod": "3.25.28"
   },
@@ -42,6 +43,7 @@
     "@types/jsonwebtoken": "9.0.9",
     "@types/luxon": "3.6.2",
     "@types/node": "22.15.21",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "prisma": "6.8.2",
     "tsx": "4.19.4",

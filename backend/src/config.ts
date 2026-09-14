@@ -14,6 +14,14 @@ const frontendUrls = [
   'https://www.lodelprofe.com'
 ].map(url => url.trim()).filter(Boolean);
 
+const webPushPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY?.trim() ?? '';
+const webPushPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim() ?? '';
+const webPushSubject = process.env.WEB_PUSH_VAPID_SUBJECT?.trim() ?? '';
+const hasPartialWebPushConfig = Boolean(webPushPublicKey || webPushPrivateKey || webPushSubject);
+if (hasPartialWebPushConfig && !(webPushPublicKey && webPushPrivateKey && webPushSubject)) {
+  throw new Error('WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY y WEB_PUSH_VAPID_SUBJECT deben configurarse juntos');
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   production,
@@ -32,6 +40,12 @@ export const config = {
   },
   timezone: process.env.APP_TIMEZONE ?? 'America/Argentina/Buenos_Aires',
   businessWhatsappPhone: process.env.BUSINESS_WHATSAPP_PHONE?.replace(/\D/g, ''),
+  webPush: {
+    enabled: Boolean(webPushPublicKey && webPushPrivateKey && webPushSubject),
+    publicKey: webPushPublicKey,
+    privateKey: webPushPrivateKey,
+    subject: webPushSubject
+  },
   booking: {
     slotStepMinutes: 30,
     minBookableMinutes: 60,

@@ -178,6 +178,18 @@ booking: BookingChange, previous?: BookingChange) {
     events.push(publishRealtimeEvent({ audience: 'USER', targetUserId: userId, type, resource }));
   }
   await Promise.all(events);
+  if (config.webPush.enabled && (type === 'BOOKING_CREATED' || type === 'BOOKING_CANCELLED')) {
+    try {
+      const { notifyBookingChange } = await import('../services/push-notification.service.js');
+      await notifyBookingChange(type, booking.id);
+    } catch (error) {
+      console.error('[web-push] el evento se guardó pero no pudo generar el aviso', {
+        bookingId: booking.id,
+        type,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
 }
 
 export async function publishUserChange(type: 'USER_CREATED' | 'USER_UPDATED' | 'USER_VERIFICATION_CHANGED', userId: number) {

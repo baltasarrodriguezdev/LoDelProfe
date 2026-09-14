@@ -72,6 +72,10 @@ export class Api {
   delete<T>(path: string, options?: ApiOptions) {
     return applyRequestControls(this.http.delete<T>(API + path, { headers: requestHeaders(options) }), options);
   }
+
+  deleteWithBody<T>(path: string, body: unknown, options?: ApiOptions) {
+    return applyRequestControls(this.http.delete<T>(API + path, { body, headers: requestHeaders(options) }), options);
+  }
 }
 
 @Injectable({ providedIn: 'root' })

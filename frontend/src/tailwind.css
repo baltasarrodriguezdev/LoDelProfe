@@ -290,7 +290,7 @@ app-admin-navigation {
 
 .admin-navigation-tools {
   position: relative;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .admin-navigation-tools > summary {

@@ -52,7 +52,19 @@ const establish = (res: Response, result: { token: string; user: unknown }, stat
 router.post('/register', authRateLimit, asyncHandler(async (req, res) => {
   const data = registrationSchema.parse(req.body);
   const result = await auth.register(data);
-  await publishUserChange('USER_CREATED', (result.user as { id: number }).id);
+  const userId = (result.user as { id: number }).id;
+  await publishUserChange('USER_CREATED', userId);
+  if (config.webPush.enabled) {
+    try {
+      const { notifyPendingUser } = await import('../services/push-notification.service.js');
+      await notifyPendingUser(userId);
+    } catch (error) {
+      console.error('[web-push] el usuario se registró pero no pudo generar el aviso', {
+        userId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
   establish(res, result, 201);
 }));
 router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
