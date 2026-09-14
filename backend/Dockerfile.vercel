@@ -13,7 +13,8 @@ COPY src ./src
 COPY scripts ./scripts
 COPY assets ./assets
 
-RUN npm run build \
+RUN npm run prisma:deploy \
+    && npm run build \
     && npm run verify:runtime \
     && npm prune --omit=dev --workspaces=false \
     && rm -rf node_modules/.cache node_modules/@prisma/engines node_modules/@prisma/client/generator-build \
