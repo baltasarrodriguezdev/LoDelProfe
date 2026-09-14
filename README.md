@@ -151,7 +151,7 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 
 `VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.
 
-El build del backend ejecuta `prisma migrate deploy` antes de compilar. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
+El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
 
 Las notificaciones Web Push se activan una vez por dispositivo desde la barra del panel administrador. Avisan nuevas reservas, cancelaciones y registros pendientes aunque la web esté cerrada. Requieren HTTPS, las tres variables `WEB_PUSH_VAPID_*` y la migración `push_subscriptions`; si falta la configuración, el botón lo informa sin afectar el resto del sistema.
 
