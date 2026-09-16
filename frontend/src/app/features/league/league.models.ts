@@ -6,6 +6,8 @@ export type LeaguePair = {
   displayName: string;
   firstPlayer: { id: number; displayName: string };
   secondPlayer: { id: number; displayName: string };
+  responsibleClientName: string | null;
+  responsibleClientPhone: string | null;
 };
 
 export type LeagueZone = {
@@ -37,7 +39,19 @@ export type LeagueMatch = {
   result: { homeSets: number; awaySets: number; homeGames: number; awayGames: number; winnerSide: 'HOME' | 'AWAY'; wentToThreeSets: boolean; homePoints: number | null; awayPoints: number | null } | null;
   scoringPending: boolean;
   rescheduleNote: string | null;
+  booking: LeagueBooking | null;
   updatedAt: string;
+};
+
+export type LeagueBooking = {
+  id: number;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  status: string;
+  paymentStatus: string;
+  amountPaid: number;
+  clientName: string;
 };
 
 export type StandingRow = {

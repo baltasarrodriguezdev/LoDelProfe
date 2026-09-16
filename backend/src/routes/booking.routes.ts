@@ -8,6 +8,7 @@ import { HttpError } from '../utils/http-error.js';
 import { localDateTime } from '../utils/time.js';
 import { writeAudit } from '../services/audit.service.js';
 import { publishBookingChange } from '../realtime/events.js';
+import { onLinkedBookingCancelled } from '../services/league.service.js';
 
 const r = Router();
 r.use(authenticate);
@@ -110,6 +111,7 @@ r.patch('/:id/cancel', asyncHandler(async (req, res) => {
   }
   const updated = await prisma.booking.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date() } });
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CLIENT_CANCELLED', entityType: 'BOOKING', entityId: id });
+  await onLinkedBookingCancelled(id);
   await publishBookingChange('BOOKING_CANCELLED', updated, booking);
   res.json(updated);
 }));

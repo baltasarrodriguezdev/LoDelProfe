@@ -213,6 +213,8 @@ model LeaguePair {
   secondPlayerId Int
   secondPlayer LeaguePlayer @relation("LeaguePairSecondPlayer", fields: [secondPlayerId], references: [id])
   active Boolean @default(true)
+  responsibleClientName String? @db.VarChar(120)
+  responsibleClientPhone String? @db.VarChar(30)
   homeMatches LeagueMatch[] @relation("LeagueHomePair")
   awayMatches LeagueMatch[] @relation("LeagueAwayPair")
   createdAt DateTime @default(now())
@@ -269,6 +271,8 @@ model LeagueMatch {
   nextMatch LeagueMatch? @relation("LeagueProgression", fields: [nextMatchId], references: [id])
   previousMatches LeagueMatch[] @relation("LeagueProgression")
   nextSlot LeagueBracketSlot?
+  bookingId Int? @unique
+  booking Booking? @relation("LeagueMatchBooking", fields: [bookingId], references: [id], onDelete: SetNull)
   sets LeagueMatchSet[]
   updatedById Int?
   createdAt DateTime @default(now())
@@ -333,6 +337,7 @@ model Booking {
   cancelledAt DateTime?
   cancellationReason String? @db.Text
   createdBy Int
+  leagueMatch LeagueMatch? @relation("LeagueMatchBooking")
   cashMovements CashMovement[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -55,6 +55,17 @@ export function calculateGamesPositive(gamesFor: number, gamesAgainst: number) {
   return gamesFor - gamesAgainst;
 }
 
+export function linkedBookingConfirmAction(booking: { status: string; startTime: Date }, now = new Date()) {
+  if (['CANCELLED', 'BLOCKED', 'NO_SHOW'].includes(booking.status)) {
+    return { allowed: false, markPlayed: false, reason: 'El turno vinculado está cancelado, bloqueado o ausente; no se puede confirmar el resultado.' };
+  }
+  if (booking.status === 'CONFIRMED' && booking.startTime > now) {
+    return { allowed: false, markPlayed: false, reason: 'El turno vinculado todavía no empezó. Confirmá el resultado cuando se juegue.' };
+  }
+  const markPlayed = ['CONFIRMED', 'PENDING'].includes(booking.status) && booking.startTime <= now;
+  return { allowed: true, markPlayed, reason: null };
+}
+
 export const SUMA_12_FIXTURE_PATTERN = [
   [[1, 2], [3, 4], [5, 6], [7, 8]],
   [[1, 8], [4, 5], [6, 7], [2, 3]],

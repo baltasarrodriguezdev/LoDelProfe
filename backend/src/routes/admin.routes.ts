@@ -40,6 +40,7 @@ import {
   publishUserChange,
   type RealtimeEventType
 } from '../realtime/events.js';
+import { onLinkedBookingCancelled, syncLeagueMatchFromBooking } from '../services/league.service.js';
 
 const r = Router();
 r.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
@@ -562,6 +563,7 @@ r.patch('/bookings/:id', asyncHandler(async (req, res) => {
   const previous = await prisma.booking.findUnique({ where: { id } });
   if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await updateBooking(id, bookingSchema.partial().parse(req.body));
+  await syncLeagueMatchFromBooking(id);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_UPDATED', entityType: 'BOOKING', entityId: id });
   await publishBookingChange('BOOKING_UPDATED', updated, previous);
   res.json(updated);
@@ -573,6 +575,7 @@ r.patch('/bookings/:id/status', asyncHandler(async (req, res) => {
   const previous = await prisma.booking.findUnique({ where: { id } });
   if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await transitionBookingStatus(id, status);
+  if (status === 'CANCELLED') await onLinkedBookingCancelled(id);
   await writeAudit({
     actorId: req.auth!.userId,
     action: `BOOKING_${status}`,
@@ -628,6 +631,7 @@ r.patch('/reservations/:id/cancel', asyncHandler(async (req, res) => {
     data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: data.cancellationReason },
     include: reservationInclude()
   });
+  await onLinkedBookingCancelled(id);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CANCELLED', entityType: 'BOOKING', entityId: id, details: data });
   await publishBookingChange('BOOKING_CANCELLED', updated, booking);
   res.json(updated);
@@ -638,6 +642,7 @@ r.delete('/bookings/:id', asyncHandler(async (req, res) => {
   const previous = await prisma.booking.findUnique({ where: { id } });
   if (!previous) throw new HttpError(404, 'Turno no encontrado');
   const updated = await transitionBookingStatus(id, 'CANCELLED');
+  await onLinkedBookingCancelled(id);
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CANCELLED', entityType: 'BOOKING', entityId: id });
   await publishBookingChange(bookingEventForStatus(updated.status, previous.status), updated, previous);
   res.json(updated);

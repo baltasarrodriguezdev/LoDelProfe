@@ -8,7 +8,8 @@ import { RealtimeService } from '../../core/realtime';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import type { LeagueMatch, LeaguePayload } from './league.models';
 
-type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'standings' | 'bracket';
+type AdminLeagueTab = 'quick' | 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'standings' | 'bracket';
+type QuickFilter = 'all' | 'unscheduled' | 'scheduled' | 'pending' | 'finished';
 
 @Component({
   standalone: true,
@@ -109,6 +110,40 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
             </div>
           }
 
+          @if (activeTab() === 'quick') {
+            <div class="league-admin-section-title">
+              <div><span class="eyebrow">ACCESO RÁPIDO</span><h2>Carga rápida</h2><p>Busqué el partido, programalo y cargá el resultado. Disponible también para uso desde el celular.</p></div>
+            </div>
+            <div class="league-quick-toolbar">
+              <label class="league-quick-search"><span>Buscar por jugador o pareja</span><input [ngModel]="quickQuery()" (ngModelChange)="quickQuery.set($event)" name="quickSearch" placeholder="Ej: Fabián, Marcos y Nando…"></label>
+              <div class="league-quick-filters" role="group" aria-label="Filtrar partidos">
+                @for (filter of quickFilters; track filter.id) {
+                  <button type="button" [class.active]="quickFilter() === filter.id" (click)="quickFilter.set(filter.id)">{{ filter.label }}@if (filter.id === 'pending' && pendingQuickCount()) { <span>{{ pendingQuickCount() }}</span> }</button>
+                }
+              </div>
+            </div>
+            <div class="league-quick-list">
+              @for (match of quickMatches(); track match.id) {
+                <article class="panel league-quick-card">
+                  <header><div><span class="tag">{{ match.zone?.name || stageLabel(match.stage) }}</span><strong>{{ match.matchday ? 'Fecha ' + match.matchday : match.code }}</strong></div><span [attr.data-status]="match.status">{{ statusLabel(match.status) }}</span></header>
+                  <div class="league-quick-who"><strong>{{ match.homePair?.displayName || match.homePlaceholder }}</strong><span>vs.</span><strong>{{ match.awayPair?.displayName || match.awayPlaceholder }}</strong></div>
+                  <p class="league-quick-when">{{ scheduleText(match) }}</p>
+                  <footer class="league-quick-actions">
+                    @if (match.official && match.status === 'FINISHED') {
+                      <span class="league-quick-score">{{ match.result?.homeSets }}–{{ match.result?.awaySets }}</span>
+                      <span class="league-quick-done">Resultado cargado. ¡Listo!</span>
+                    } @else {
+                      <button type="button" class="btn ghost" (click)="openSchedule(match)">{{ match.booking ? 'Reprogramar / reserva' : 'Programar y reservar' }}</button>
+                      <button type="button" class="btn primary" [disabled]="!match.homePair || !match.awayPair" (click)="openResult(match)">{{ match.sets.length ? 'Editar resultado' : 'Cargar resultado' }}</button>
+                    }
+                  </footer>
+                </article>
+              } @empty {
+                <div class="empty">No hay partidos con ese filtro todavía.</div>
+              }
+            </div>
+          }
+
           @if (activeTab() === 'rules') {
             <form class="panel league-rules-form" (ngSubmit)="saveRules()"><header><div><span class="eyebrow">REGLAMENTO</span><h2>Puntajes y definiciones</h2></div><span>{{ leagueData.rules.pending.length }} pendiente(s)</span></header><p class="league-rule-notice">Sólo la derrota 0–2 interviene automáticamente en el cálculo. Los demás textos se publican como definiciones administrativas, sin inferir lógica que el reglamento no explique.</p><div class="form-grid three"><label>Victoria 2–0<input type="number" [(ngModel)]="rulesForm.straightSetsWinPoints" name="r1" min="0"></label><label>Victoria 2–1<input type="number" [(ngModel)]="rulesForm.threeSetsWinPoints" name="r2" min="0"></label><label>Derrota 1–2<input type="number" [(ngModel)]="rulesForm.threeSetsLossPoints" name="r3" min="0"></label><label>Derrota 0–2<input type="number" [(ngModel)]="rulesForm.straightSetsLossPoints" name="r4" min="0" placeholder="Pendiente"></label><label class="wide">Definición de “games positivos”<textarea [(ngModel)]="rulesForm.gamesPositiveDefinition" name="r5" placeholder="Pendiente de definición"></textarea></label><label class="wide">Empate entre tres o más parejas<textarea [(ngModel)]="rulesForm.multiPairTieRule" name="r6" placeholder="Pendiente de definición"></textarea></label><label>Walkover / ausencia<textarea [(ngModel)]="rulesForm.walkoverRule" name="r7"></textarea></label><label>Abandono por lesión<textarea [(ngModel)]="rulesForm.retirementRule" name="r8"></textarea></label><label>Partido inconcluso<textarea [(ngModel)]="rulesForm.incompleteMatchRule" name="r9"></textarea></label><label>Reprogramaciones<textarea [(ngModel)]="rulesForm.reschedulingRule" name="r10"></textarea></label><label>Tie-break en 6–6<textarea [(ngModel)]="rulesForm.sixAllTiebreakRule" name="r11"></textarea></label></div><button class="btn primary" [disabled]="saving()">Guardar reglas</button></form>
           }
@@ -121,6 +156,46 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
           @if (activeTab() === 'bracket') {
             <div class="league-admin-section-title"><div><span class="eyebrow">ELIMINATORIAS</span><h2>Progresión del cuadro</h2><p>Los ganadores avanzan al confirmar oficialmente cada partido.</p></div></div>
             <div class="league-admin-bracket">@for (round of leagueData.bracket; track round.stage) { <section><h3>{{ stageLabel(round.stage) }}</h3>@for (match of round.matches; track match.id) { <article><span>{{ match.code }} · {{ match.scheduledDate || 'Fecha pendiente' }} · {{ match.scheduledTime || 'Hora pendiente' }}</span><strong>{{ match.homePair?.displayName || match.homePlaceholder }}</strong><b>vs.</b><strong>{{ match.awayPair?.displayName || match.awayPlaceholder }}</strong>@if (match.official) { <em>{{ match.result?.homeSets }}–{{ match.result?.awaySets }}</em> }</article> }</section> }</div>
+          }
+
+          @if (schedulingMatch(); as scheduled) {
+            <form class="league-quick-modal" (ngSubmit)="submitSchedule()">
+              <button type="button" class="league-quick-modal-backdrop" aria-label="Cerrar" (click)="closeSchedule()"></button>
+              <section class="panel league-quick-modal-card" role="dialog" aria-modal="true" aria-labelledby="quickScheduleTitle">
+                <header><div><span class="tag">{{ scheduled.code }}</span><h3 id="quickScheduleTitle">Programar y reservar</h3></div><button type="button" class="league-modal-close" aria-label="Cerrar" (click)="closeSchedule()">×</button></header>
+                <p class="league-quick-who"><strong>{{ scheduled.homePair?.displayName }}</strong><span>vs.</span><strong>{{ scheduled.awayPair?.displayName }}</strong></p>
+                @if (scheduled.booking) { <p class="notice">Ya tiene un turno reservado (n.º {{ scheduled.booking.id }}). Al guardar se reagenda la cancha conservando pagos.</p> }
+                <div class="league-quick-form">
+                  <label>Fecha<input type="date" [(ngModel)]="scheduleForm.date" name="qsDate" required></label>
+                  <label>Hora<input type="time" [(ngModel)]="scheduleForm.startTime" name="qsTime" required></label>
+                  <label>Duración<select [(ngModel)]="scheduleForm.durationMinutes" name="qsDuration"><option [ngValue]="60">60 minutos</option><option [ngValue]="90">90 minutos</option><option [ngValue]="120">120 minutos</option></select></label>
+                  <label>Pareja responsable<select [(ngModel)]="scheduleForm.responsiblePairId" name="qsResponsible" (ngModelChange)="onResponsiblePairChange()"><option [ngValue]="scheduled.homePair?.id">{{ scheduled.homePair?.displayName }} (local)</option>@if (scheduled.awayPair?.id !== scheduled.homePair?.id) { <option [ngValue]="scheduled.awayPair?.id">{{ scheduled.awayPair?.displayName }} (visitante)</option> }</select></label>
+                  <label>Nombre del responsable<input [(ngModel)]="scheduleForm.responsibleClientName" name="qsName" placeholder="Quién reserva"></label>
+                  <label>Teléfono del responsable<input [(ngModel)]="scheduleForm.responsibleClientPhone" name="qsPhone" placeholder="Ej: 3515551234"></label>
+                </div>
+                <label class="league-quick-link-toggle"><input type="checkbox" [(ngModel)]="scheduleForm.linkExisting" name="qsLinkExisting"> El turno ya está reservado por separado. Quiero vincularlo.</label>
+                @if (scheduleForm.linkExisting) {
+                  <div class="league-quick-form"><label class="wide">Número de turno a vincular<input type="number" min="1" [(ngModel)]="scheduleForm.bookingId" name="qsBookingId" required></label></div>
+                }
+                @if (quickError()) { <p class="notice error-notice" role="status">{{ quickError() }}</p> }
+                <div class="actions"><button type="button" class="btn ghost" (click)="closeSchedule()">Cancelar</button><button class="btn primary" [disabled]="saving()">{{ saving() ? 'Guardando...' : (scheduleForm.linkExisting ? 'Vincular turno' : 'Reservar y programar') }}</button></div>
+              </section>
+            </form>
+          }
+
+          @if (resultingMatch(); as scored) {
+            <form class="league-quick-modal" (ngSubmit)="saveQuickResult(true)">
+              <button type="button" class="league-quick-modal-backdrop" aria-label="Cerrar" (click)="closeResult()"></button>
+              <section class="panel league-quick-modal-card" role="dialog" aria-modal="true" aria-labelledby="quickResultTitle">
+                <header><div><span class="tag">{{ scored.code }}</span><h3 id="quickResultTitle">Cargar resultado</h3></div><button type="button" class="league-modal-close" aria-label="Cerrar" (click)="closeResult()">×</button></header>
+                <p class="league-quick-who"><strong>{{ scored.homePair?.displayName || scored.homePlaceholder }}</strong><span>vs.</span><strong>{{ scored.awayPair?.displayName || scored.awayPlaceholder }}</strong></p>
+                <div class="league-set-editor"><div class="league-set-header"><span></span>@for (set of quickSets; track $index) { <b>SET {{ $index + 1 }}</b> }</div><div><strong>{{ scored.homePair?.displayName || scored.homePlaceholder }}</strong>@for (set of quickSets; track $index) { <input type="number" min="0" max="7" [(ngModel)]="set.homeGames" [attr.aria-label]="'Games local set ' + ($index + 1)"> }</div><div><strong>{{ scored.awayPair?.displayName || scored.awayPlaceholder }}</strong>@for (set of quickSets; track $index) { <input type="number" min="0" max="7" [(ngModel)]="set.awayGames" [attr.aria-label]="'Games visitante set ' + ($index + 1)"> }</div></div>
+                <div class="league-result-tools">@if (quickSets.length === 2) { <button type="button" class="link" (click)="addQuickSet()">+ Agregar tercer set</button> } @else { <button type="button" class="link danger-text" (click)="removeQuickSet()">Quitar tercer set</button> }</div>
+                <p class="league-result-help">Marcadores por set: 6–0 a 6–4, 7–5 o 7–6. Al confirmar el resultado se oficializa y actualiza posiciones.</p>
+                @if (quickError()) { <p class="notice error-notice" role="status">{{ quickError() }}</p> }
+                <div class="actions"><button type="button" class="btn ghost" [disabled]="saving()" (click)="saveQuickResult(false)">Guardar borrador</button><button type="submit" class="btn primary" [disabled]="saving()">{{ saving() ? 'Guardando...' : 'Confirmar resultado' }}</button></div>
+              </section>
+            </form>
           }
         } @else if (!leagues().length && !showCreate()) {
           <div class="empty"><strong>No hay temporadas creadas.</strong><button type="button" class="btn primary" (click)="showCreate.set(true)">Crear la primera</button></div>
@@ -137,7 +212,10 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
     @media(max-width:1100px){.league-admin-head{align-items:start;flex-direction:column}.league-admin-head-actions{width:100%;flex-wrap:wrap}.league-create-form{grid-template-columns:repeat(2,1fr)}.league-create-form>div{grid-column:1/-1}.league-admin-zones,.league-fixture-admin{grid-template-columns:1fr}.league-add-pair{grid-template-columns:repeat(2,1fr)}.league-add-pair>div{grid-column:1/-1}.league-results-layout{grid-template-columns:1fr}.league-result-list{grid-template-columns:repeat(2,1fr);max-height:420px}}
     @media(max-width:700px){.league-admin-head h1{font-size:3.4rem}.league-admin-head-actions{display:grid}.league-admin-head-actions label{min-width:0}.league-create-form,.league-add-pair{grid-template-columns:1fr}.league-pair-list article{grid-template-columns:58px 1fr 1fr}.league-pair-list article>span{display:none}.league-pair-list article label:nth-of-type(4),.league-pair-list article button{grid-column:auto}.league-admin-section-title{align-items:start;flex-direction:column}.league-fixture-admin footer{align-items:stretch;flex-direction:column}.league-match-edit{grid-template-columns:1fr}.league-match-edit .wide{grid-column:auto}.league-result-list{grid-template-columns:1fr}.league-set-editor>div{grid-template-columns:minmax(100px,1fr) repeat(3,55px)}.league-set-editor>div:not(.league-set-header)>strong{font-size:.68rem}.league-admin-form .form-grid,.league-rules-form .form-grid{grid-template-columns:1fr}.league-admin-form .wide,.league-rules-form .wide{grid-column:auto}}
   `,
-  `.league-result-feedback{margin:12px 0 0;border-left:4px solid var(--color-brand-green);border-radius:7px;padding:11px 13px;background:#e6efe1;color:var(--color-brand-green);font-size:.76rem;font-weight:700}.league-result-feedback.error{border-left-color:#a94738;background:#f9e2dc;color:#812f25}`]
+  `.league-result-feedback{margin:12px 0 0;border-left:4px solid var(--color-brand-green);border-radius:7px;padding:11px 13px;background:#e6efe1;color:var(--color-brand-green);font-size:.76rem;font-weight:700}.league-result-feedback.error{border-left-color:#a94738;background:#f9e2dc;color:#812f25}`,
+  `.league-quick-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:22px}.league-quick-search{display:grid;gap:6px;flex:1;max-width:360px;font-size:.68rem;font-weight:800;color:var(--color-brand-muted)}.league-quick-search input{width:100%;margin-top:2px;border:1px solid var(--color-brand-border);border-radius:10px;padding:13px 15px;background:var(--color-brand-paper);color:var(--color-brand-dark);font-size:.95rem}.league-quick-filters{display:flex;flex-wrap:wrap;gap:7px}.league-quick-filters button{display:inline-flex;align-items:center;min-height:42px;border:1px solid var(--color-brand-border);border-radius:99px;padding:0 15px;background:transparent;color:var(--color-brand-muted);font-size:.72rem;font-weight:800}.league-quick-filters button.active{background:var(--color-brand-green);border-color:var(--color-brand-green);color:#fff}.league-quick-filters button span{display:inline-grid;min-width:18px;height:18px;place-content:center;margin-left:7px;border-radius:50%;background:rgba(0,0,0,.13);font-size:.6rem;color:inherit}.league-quick-list{display:grid;gap:12px}.league-quick-card header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.league-quick-card header strong{font-size:1.05rem}.league-quick-who{display:flex;align-items:center;gap:11px;margin:0 0 7px}.league-quick-card .league-quick-who strong{flex:1;font-size:1.1rem;line-height:1.25}.league-quick-who>span{color:var(--color-brand-gold)}.league-quick-when{margin:0 0 14px;font-size:.74rem;color:var(--color-brand-muted)}.league-quick-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.league-quick-actions .btn{flex:1;min-height:46px;font-size:.8rem}.league-quick-score{display:inline-grid;min-width:48px;height:44px;place-content:center;border-radius:12px;background:var(--color-brand-green);color:#fff;font-size:1.25rem;font-weight:900}.league-quick-done{font-size:.72rem;color:var(--color-brand-muted)}.league-quick-modal{position:fixed;inset:0;z-index:70;display:grid;place-items:center;padding:18px}.league-quick-modal-backdrop{position:absolute;inset:0;border:0;background:rgba(16,25,17,.5);cursor:pointer}.league-quick-modal-card{position:relative;width:min(500px,100%);max-height:calc(100vh - 36px);overflow:auto}.league-quick-modal-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}.league-quick-modal-card h3{margin:0;font-size:1.45rem}.league-quick-modal-card .league-quick-who{margin-bottom:14px}.league-quick-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.league-quick-form label{display:grid;gap:6px;font-size:.68rem;font-weight:800;color:var(--color-brand-muted)}.league-quick-form label.wide{grid-column:1/-1}.league-quick-form input,.league-quick-form select{width:100%;border:1px solid var(--color-brand-border);border-radius:9px;padding:12px 13px;background:var(--color-brand-paper);color:var(--color-brand-dark);font-size:.95rem}.league-quick-link-toggle{display:flex;align-items:flex-start;gap:9px;margin:13px 0;font-size:.73rem;font-weight:700;cursor:pointer}.league-quick-link-toggle input{width:19px;height:19px;flex:0 0 auto;margin-top:1px;accent-color:var(--color-brand-green)}.league-modal-close{width:40px;height:40px;border:1px solid var(--color-brand-border);border-radius:50%;background:transparent;color:var(--color-brand-muted);font-size:1.4rem;line-height:1;cursor:pointer}`,
+  `.league-quick-actions .btn.ghost{flex:1.1}.league-result-help{font-size:.7rem;margin:10px 0 0}`,
+  `@media(max-width:700px){.league-quick-toolbar{align-items:stretch;flex-direction:column}.league-quick-search{max-width:none}.league-quick-filters{overflow-x:auto;flex-wrap:nowrap;margin:-4px;padding:4px}.league-quick-filters button{flex:0 0 auto}.league-quick-form{grid-template-columns:1fr}.league-quick-form label.wide{grid-column:auto}.league-quick-modal{place-items:end center}.league-quick-modal-card{width:100%;border-radius:18px 18px 0 0}}`]
 })
 export class AdminLeaguePage implements OnInit {
   private readonly api = inject(Api);
@@ -160,7 +238,7 @@ export class AdminLeaguePage implements OnInit {
   readonly resultFeedbackError = signal(false);
   private requestId = 0;
   readonly tabs: Array<{ id: AdminLeagueTab; label: string }> = [
-    { id: 'season', label: 'Temporada' }, { id: 'pairs', label: 'Parejas' }, { id: 'fixture', label: 'Fixture' },
+    { id: 'quick', label: 'Carga rápida' }, { id: 'season', label: 'Temporada' }, { id: 'pairs', label: 'Parejas' }, { id: 'fixture', label: 'Fixture' },
     { id: 'results', label: 'Resultados' }, { id: 'rules', label: 'Reglas' }, { id: 'standings', label: 'Posiciones' }, { id: 'bracket', label: 'Eliminatorias' }
   ];
   createForm: any = { name: 'Liga Suma 12', slug: 'liga-suma-12-2026', seasonYear: 2026, status: 'DRAFT', currentStage: 'GROUP_STAGE', timezone: 'America/Argentina/Cordoba' };
@@ -171,6 +249,17 @@ export class AdminLeaguePage implements OnInit {
   matchHome: Record<number, number | null> = {};
   matchAway: Record<number, number | null> = {};
   resultSets: Array<{ homeGames: number | null; awayGames: number | null }> = [{ homeGames: null, awayGames: null }, { homeGames: null, awayGames: null }];
+  readonly quickQuery = signal('');
+  readonly quickFilter = signal<QuickFilter>('pending');
+  readonly schedulingMatch = signal<LeagueMatch | null>(null);
+  readonly resultingMatch = signal<LeagueMatch | null>(null);
+  readonly quickError = signal('');
+  readonly quickFilters: Array<{ id: QuickFilter; label: string }> = [
+    { id: 'all', label: 'Todos' }, { id: 'unscheduled', label: 'Sin programar' }, { id: 'scheduled', label: 'Programados' },
+    { id: 'pending', label: 'Sin resultado' }, { id: 'finished', label: 'Finalizados' }
+  ];
+  scheduleForm: any = { date: '', startTime: '', durationMinutes: 60, responsiblePairId: null, responsibleClientName: '', responsibleClientPhone: '', linkExisting: false, bookingId: null };
+  quickSets: Array<{ homeGames: number | null; awayGames: number | null }> = [{ homeGames: null, awayGames: null }, { homeGames: null, awayGames: null }];
 
   ngOnInit() {
     this.loadLeagues();
@@ -191,7 +280,7 @@ export class AdminLeaguePage implements OnInit {
     });
   }
 
-  selectLeague(id: number) { this.selectedLeagueId.set(Number(id)); this.resultMatch.set(null); this.loadLeague(Number(id)); }
+  selectLeague(id: number) { this.selectedLeagueId.set(Number(id)); this.resultMatch.set(null); this.schedulingMatch.set(null); this.resultingMatch.set(null); this.loadLeague(Number(id)); }
 
   loadLeague(id: number, background = false) {
     const requestId = ++this.requestId;
@@ -283,6 +372,116 @@ export class AdminLeaguePage implements OnInit {
     const leagueId = this.selectedLeagueId(); if (!leagueId) return;
     this.runSave(this.api.post<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/confirm`, {}), 'Resultado confirmado oficialmente.', data => { this.data.set(data); const updated = data.matches.find(item => item.id === match.id)!; this.editResult(updated); });
   }
+
+  quickMatches() {
+    const data = this.data(); if (!data) return [];
+    const query = this.quickQuery().trim().toLowerCase();
+    const filter = this.quickFilter();
+    return data.matches.filter(match => {
+      const haystack = [match.homePair?.displayName, match.awayPair?.displayName, match.homePlaceholder, match.awayPlaceholder, match.code].filter(Boolean).join(' ').toLowerCase();
+      const matchesQuery = !query || haystack.includes(query);
+      const isFinished = match.official && match.status === 'FINISHED';
+      switch (filter) {
+        case 'unscheduled': return matchesQuery && !match.scheduledDate && !match.scheduledTime && !match.booking;
+        case 'scheduled': return matchesQuery && (!!match.scheduledDate || !!match.booking);
+        case 'pending': return matchesQuery && !isFinished;
+        case 'finished': return matchesQuery && isFinished;
+        default: return matchesQuery;
+      }
+    });
+  }
+  pendingQuickCount() { return (this.data()?.matches.filter(match => !(match.official && match.status === 'FINISHED')) ?? []).length; }
+  findPair(pairId: number | null | undefined) { return this.data()?.zones.flatMap(zone => zone.pairs).find(pair => pair.id === pairId) ?? null; }
+
+  openSchedule(match: LeagueMatch) {
+    if (match.status === 'FINISHED' && match.official) return;
+    const responsible = this.findPair(match.homePair?.id) ?? this.findPair(match.awayPair?.id);
+    this.scheduleForm = {
+      date: match.scheduledDate || this.todayIso(),
+      startTime: match.scheduledTime || '20:00',
+      durationMinutes: match.booking?.durationMinutes || 60,
+      responsiblePairId: responsible?.id ?? null,
+      responsibleClientName: match.booking?.clientName || responsible?.responsibleClientName || '',
+      responsibleClientPhone: responsible?.responsibleClientPhone || '',
+      linkExisting: false,
+      bookingId: null
+    };
+    this.quickError.set('');
+    this.schedulingMatch.set(match);
+  }
+  onResponsiblePairChange() {
+    const pair = this.findPair(this.scheduleForm.responsiblePairId);
+    if (!pair) return;
+    if (pair.responsibleClientName) this.scheduleForm.responsibleClientName = pair.responsibleClientName;
+    if (pair.responsibleClientPhone) this.scheduleForm.responsibleClientPhone = pair.responsibleClientPhone;
+  }
+  closeSchedule() { if (!this.saving()) this.schedulingMatch.set(null); }
+
+  submitSchedule() {
+    const leagueId = this.selectedLeagueId(); const match = this.schedulingMatch(); if (!leagueId || !match || this.saving()) return;
+    if (this.scheduleForm.linkExisting) {
+      const bookingId = Number(this.scheduleForm.bookingId);
+      if (!bookingId) { this.quickError.set('Ingresá el número de turno a vincular.'); return; }
+      this.saving.set(true);
+      this.api.post<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/link-booking`, { bookingId }).pipe(finalize(() => this.saving.set(false))).subscribe({
+        next: data => { this.data.set(data); this.showNotice('Turno vinculado al partido de La Liga.'); this.schedulingMatch.set(null); },
+        error: error => { this.saving.set(false); this.quickError.set(error.error?.message ?? 'No se pudo vincular el turno.'); }
+      });
+      return;
+    }
+    const payload = {
+      date: this.scheduleForm.date,
+      startTime: this.scheduleForm.startTime,
+      durationMinutes: Number(this.scheduleForm.durationMinutes),
+      responsiblePairId: Number(this.scheduleForm.responsiblePairId),
+      responsibleClientName: (this.scheduleForm.responsibleClientName || '').trim() || undefined,
+      responsibleClientPhone: (this.scheduleForm.responsibleClientPhone || '').trim() || undefined
+    };
+    if (!payload.date || !payload.startTime || !payload.responsiblePairId) { this.quickError.set('Completá fecha, hora y pareja responsable.'); return; }
+    this.saving.set(true);
+    this.api.post<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/schedule`, payload).pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: data => { this.data.set(data); this.showNotice('Partido programado y cancha reservada.'); this.schedulingMatch.set(null); },
+      error: error => { this.saving.set(false); this.quickError.set(error.error?.message ?? 'No se pudo programar el partido.'); }
+    });
+  }
+
+  openResult(match: LeagueMatch) {
+    this.quickSets = match.sets.length ? match.sets.map(set => ({ homeGames: set.homeGames, awayGames: set.awayGames })) : [{ homeGames: null, awayGames: null }, { homeGames: null, awayGames: null }];
+    this.quickError.set('');
+    this.resultingMatch.set(match);
+  }
+  addQuickSet() { if (this.quickSets.length === 2) this.quickSets = [...this.quickSets, { homeGames: null, awayGames: null }]; }
+  removeQuickSet() { this.quickSets = this.quickSets.slice(0, 2); }
+  closeResult() { if (!this.saving()) this.resultingMatch.set(null); }
+
+  saveQuickResult(confirm: boolean) {
+    const leagueId = this.selectedLeagueId(); const match = this.resultingMatch(); if (!leagueId || !match || this.saving()) return;
+    const incomplete = this.quickSets.some(set => set.homeGames == null || set.awayGames == null || !Number.isInteger(Number(set.homeGames)) || !Number.isInteger(Number(set.awayGames)));
+    if (incomplete) { this.quickError.set('Completá los games de todos los sets antes de guardar.'); return; }
+    const sets = this.quickSets.map(set => ({ homeGames: Number(set.homeGames), awayGames: Number(set.awayGames) }));
+    this.saving.set(true);
+    this.quickError.set('');
+    this.api.put<LeaguePayload>(`/admin/leagues/${leagueId}/matches/${match.id}/result`, { sets, confirm }).pipe(finalize(() => this.saving.set(false))).subscribe({
+      next: data => { this.data.set(data); this.showNotice(confirm ? 'Resultado confirmado oficialmente. Posiciones y cruces actualizados.' : 'Borrador guardado. Todavía no es oficial.'); this.resultingMatch.set(null); },
+      error: error => { this.saving.set(false); this.quickError.set(error.error?.message ?? 'No se pudo guardar el resultado.'); }
+    });
+  }
+
+  scheduleText(match: LeagueMatch) {
+    const timezone = this.data()?.league.timezone ?? 'America/Argentina/Cordoba';
+    if (match.booking) return `${this.formatBookingTime(match.booking.startTime, timezone)} · ${match.booking.durationMinutes} min · ${this.bookingStatusLabel(match.booking.status)}`;
+    if (match.scheduledDate) return `${match.scheduledDate}${match.scheduledTime ? ' · ' + match.scheduledTime : ''} · Sin reserva`;
+    return 'Sin programar. Todavía sin día, horario ni reserva.';
+  }
+  bookingStatusLabel(status: string) { return ({ CONFIRMED: 'Reservado', PENDING: 'Pendiente de confirmar', CANCELLED: 'Cancelado', PLAYED: 'Jugado', NO_SHOW: 'Ausente', BLOCKED: 'Bloqueado' } as Record<string, string>)[status] ?? status; }
+  formatBookingTime(iso: string, timezone: string) {
+    const date = new Date(iso);
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+    const field = (type: string) => parts.find(part => part.type === type)?.value ?? '';
+    const time = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+    return `${field('year')}-${field('month')}-${field('day')} · ${time}`;
+  }
+  private todayIso() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 
   cancelCorrection() { if (!this.saving()) { this.correctionPending.set(false); this.dialogError.set(''); } }
 

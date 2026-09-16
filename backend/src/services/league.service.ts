@@ -1,9 +1,12 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { DateTime } from 'luxon';
 import { prisma } from '../prisma/client.js';
+import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
 import {
   calculateStandings,
   generateSevenMatchdays,
+  linkedBookingConfirmAction,
   pointsForResult,
   SUMA_12_KNOCKOUT,
   validateLeagueResult,
@@ -11,6 +14,12 @@ import {
   type LeagueSetInput
 } from '../domain/league-rules.js';
 import { writeAudit } from './audit.service.js';
+import {
+  bookingTransactionOptions,
+  createBookingInTransaction,
+  updateBookingInTransaction
+} from './booking.service.js';
+import { publishBookingChange, publishLeagueChange } from '../realtime/events.js';
 
 const leagueInclude = {
   court: { select: { id: true, name: true } },
@@ -36,8 +45,35 @@ const leagueInclude = {
   }
 } satisfies Prisma.LeagueSeasonInclude;
 
+const bookingSummarySelect = {
+  id: true, startTime: true, endTime: true, durationMinutes: true, priceTotal: true,
+  status: true, paymentStatus: true, amountPaid: true, clientName: true
+} as const;
+
+const adminLeagueInclude = {
+  ...leagueInclude,
+  matches: {
+    ...leagueInclude.matches,
+    include: { ...leagueInclude.matches.include, booking: { select: bookingSummarySelect } }
+  }
+} satisfies Prisma.LeagueSeasonInclude;
+
 function dateString(value?: Date | null) {
   return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function serializedBooking(booking: any) {
+  if (!booking) return null;
+  return {
+    id: booking.id,
+    startTime: booking.startTime.toISOString(),
+    endTime: booking.endTime.toISOString(),
+    durationMinutes: booking.durationMinutes,
+    status: booking.status,
+    paymentStatus: booking.paymentStatus,
+    amountPaid: Number(booking.amountPaid),
+    clientName: booking.clientName
+  };
 }
 
 function rulesFrom(league: any): LeagueScoringRules {
@@ -120,27 +156,25 @@ function pendingRules(league: any) {
   return pending.filter(([isPending]) => isPending).map(([, label]) => label);
 }
 
-export async function getLeaguePayload(leagueId?: number) {
-  const league = leagueId
-    ? await prisma.leagueSeason.findUnique({ where: { id: leagueId }, include: leagueInclude })
-    : await prisma.leagueSeason.findFirst({
-        where: { status: 'ACTIVE' },
-        orderBy: [{ seasonYear: 'desc' }, { id: 'desc' }],
-        include: leagueInclude
-      });
-  if (!league) throw new HttpError(404, 'No hay una liga activa publicada.');
+function serializedMatchFor(match: any, scoring: LeagueScoringRules, admin: boolean) {
+  return admin
+    ? { ...serializedMatch(match, scoring), booking: serializedBooking(match.booking ?? null) }
+    : serializedMatch(match, scoring);
+}
+
+function buildLeaguePayload(league: any, admin: boolean) {
   const scoring = rulesFrom(league);
-  const matches = league.matches.map(match => serializedMatch(match, scoring));
+  const matches = league.matches.map((match: any) => serializedMatchFor(match, scoring, admin));
   const standings = standingsForLeague(league);
   const datedUpcoming = matches
-    .filter(match => !match.official && ['SCHEDULED', 'LIVE', 'RESCHEDULED', 'PENDING'].includes(match.status))
-    .filter(match => match.scheduledDate)
-    .sort((a, b) => `${a.scheduledDate}T${a.scheduledTime ?? '99:99'}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime ?? '99:99'}`));
+    .filter((match: any) => !match.official && ['SCHEDULED', 'LIVE', 'RESCHEDULED', 'PENDING'].includes(match.status))
+    .filter((match: any) => match.scheduledDate)
+    .sort((a: any, b: any) => `${a.scheduledDate}T${a.scheduledTime ?? '99:99'}`.localeCompare(`${b.scheduledDate}T${b.scheduledTime ?? '99:99'}`));
   const latestResults = matches
-    .filter(match => match.official && match.status === 'FINISHED')
-    .sort((a, b) => `${b.scheduledDate ?? ''}T${b.scheduledTime ?? ''}`.localeCompare(`${a.scheduledDate ?? ''}T${a.scheduledTime ?? ''}`))
+    .filter((match: any) => match.official && match.status === 'FINISHED')
+    .sort((a: any, b: any) => `${b.scheduledDate ?? ''}T${b.scheduledTime ?? ''}`.localeCompare(`${a.scheduledDate ?? ''}T${a.scheduledTime ?? ''}`))
     .slice(0, 4);
-  const nextGroupMatch = datedUpcoming.find(match => match.stage === 'GROUP_STAGE');
+  const nextGroupMatch = datedUpcoming.find((match: any) => match.stage === 'GROUP_STAGE');
   return {
     league: {
       id: league.id,
@@ -164,24 +198,25 @@ export async function getLeaguePayload(leagueId?: number) {
       createdAt: league.createdAt,
       updatedAt: league.updatedAt
     },
-    zones: league.zones.map(zone => ({
+    zones: league.zones.map((zone: any) => ({
       id: zone.id,
       code: zone.code,
       name: zone.name,
       regularDay: zone.regularDay,
-      pairs: zone.pairs.map(pair => ({
+      pairs: zone.pairs.map((pair: any) => ({
         id: pair.id,
         seedNumber: pair.seedNumber,
         displayName: pair.displayName,
         firstPlayer: { id: pair.firstPlayer.id, displayName: pair.firstPlayer.displayName },
-        secondPlayer: { id: pair.secondPlayer.id, displayName: pair.secondPlayer.displayName }
+        secondPlayer: { id: pair.secondPlayer.id, displayName: pair.secondPlayer.displayName },
+        ...(admin ? { responsibleClientName: pair.responsibleClientName, responsibleClientPhone: pair.responsibleClientPhone } : {})
       }))
     })),
     matches,
     standings,
     bracket: ['ROUND_OF_16', 'QUARTERFINAL', 'SEMIFINAL', 'FINAL'].map(stage => ({
       stage,
-      matches: matches.filter(match => match.stage === stage)
+      matches: matches.filter((match: any) => match.stage === stage)
     })),
     summary: {
       nextMatchday: nextGroupMatch ? { number: nextGroupMatch.matchday, zone: nextGroupMatch.zone, date: nextGroupMatch.scheduledDate } : null,
@@ -196,6 +231,30 @@ export async function getLeaguePayload(leagueId?: number) {
   };
 }
 
+export async function getLeaguePayload(leagueId?: number) {
+  const league = leagueId
+    ? await prisma.leagueSeason.findUnique({ where: { id: leagueId }, include: leagueInclude })
+    : await prisma.leagueSeason.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: [{ seasonYear: 'desc' }, { id: 'desc' }],
+        include: leagueInclude
+      });
+  if (!league) throw new HttpError(404, 'No hay una liga activa publicada.');
+  return buildLeaguePayload(league, false);
+}
+
+export async function getLeagueAdminPayload(leagueId?: number) {
+  const league = leagueId
+    ? await prisma.leagueSeason.findUnique({ where: { id: leagueId }, include: adminLeagueInclude })
+    : await prisma.leagueSeason.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: [{ seasonYear: 'desc' }, { id: 'desc' }],
+        include: adminLeagueInclude
+      });
+  if (!league) throw new HttpError(404, 'No hay una liga activa publicada.');
+  return buildLeaguePayload(league, true);
+}
+
 export async function listLeagues() {
   return prisma.leagueSeason.findMany({
     orderBy: [{ seasonYear: 'desc' }, { id: 'desc' }],
@@ -203,7 +262,15 @@ export async function listLeagues() {
   });
 }
 
-export type LeaguePairInput = { zoneId: number; seedNumber: number; firstPlayer: string; secondPlayer: string; active?: boolean };
+export type LeaguePairInput = {
+  zoneId: number;
+  seedNumber: number;
+  firstPlayer: string;
+  secondPlayer: string;
+  active?: boolean;
+  responsibleClientName?: string | null;
+  responsibleClientPhone?: string | null;
+};
 
 function pairDisplayName(input: Pick<LeaguePairInput, 'firstPlayer' | 'secondPlayer'>) {
   return `${input.firstPlayer.trim()} - ${input.secondPlayer.trim()}`;
@@ -252,7 +319,11 @@ export async function updateLeaguePair(leagueId: number, pairId: number, input: 
     ]);
     const updated = await tx.leaguePair.update({
       where: { id: pair.id },
-      data: { zoneId: input.zoneId, seedNumber: input.seedNumber, displayName, active: input.active ?? true }
+      data: {
+        zoneId: input.zoneId, seedNumber: input.seedNumber, displayName, active: input.active ?? true,
+        ...(input.responsibleClientName !== undefined ? { responsibleClientName: input.responsibleClientName?.trim() || null } : {}),
+        ...(input.responsibleClientPhone !== undefined ? { responsibleClientPhone: input.responsibleClientPhone?.replace(/\D/g, '') || null } : {})
+      }
     });
     await writeAudit({ actorId, action: 'LEAGUE_PAIR_UPDATED', entityType: 'LEAGUE_PAIR', entityId: pair.id, details: { zoneId: input.zoneId, seedNumber: input.seedNumber } }, tx);
     return updated;
@@ -417,16 +488,191 @@ export async function saveLeagueMatchResult(matchId: number, sets: LeagueSetInpu
 }
 
 export async function confirmLeagueMatchResult(matchId: number, actorId: number) {
-  const match = await prisma.leagueMatch.findUnique({ where: { id: matchId }, include: { sets: { orderBy: { setNumber: 'asc' } } } });
+  const match = await prisma.leagueMatch.findUnique({
+    where: { id: matchId },
+    include: { sets: { orderBy: { setNumber: 'asc' } }, booking: true }
+  });
   if (!match) throw new HttpError(404, 'Partido no encontrado.');
   if (!match.homePairId || !match.awayPairId || match.homePairId === match.awayPairId) throw new HttpError(409, 'El partido no tiene dos parejas válidas.');
   validateLeagueResult(match.sets);
+  const now = new Date();
+  const booking = match.booking;
+  const bookingAction = booking ? linkedBookingConfirmAction({ status: booking.status, startTime: booking.startTime }, now) : null;
+  if (bookingAction && !bookingAction.allowed) throw new HttpError(409, bookingAction.reason ?? 'El turno vinculado no permite confirmar este resultado.');
   await prisma.$transaction(async tx => {
-    await tx.leagueMatch.update({ where: { id: matchId }, data: { status: 'FINISHED', official: true, officialAt: new Date(), updatedById: actorId } });
+    await tx.leagueMatch.update({ where: { id: matchId }, data: { status: 'FINISHED', official: true, officialAt: now, updatedById: actorId } });
+    if (booking && bookingAction?.markPlayed) {
+      await tx.booking.update({ where: { id: booking.id }, data: { status: 'PLAYED' } });
+    }
     await writeAudit({ actorId, action: 'LEAGUE_RESULT_CONFIRMED', entityType: 'LEAGUE_MATCH', entityId: matchId }, tx);
   });
+  if (booking && bookingAction?.markPlayed) {
+    await publishBookingChange('BOOKING_STATUS_CHANGED', {
+      id: booking.id, courtId: booking.courtId, userId: booking.userId,
+      startTime: booking.startTime, status: 'PLAYED', holdExpiresAt: null
+    });
+  }
   await reconcileLeagueBracket(match.leagueId);
-  return getLeaguePayload(match.leagueId);
+  return getLeagueAdminPayload(match.leagueId);
+}
+
+export async function saveAndConfirmLeagueMatchResult(matchId: number, sets: LeagueSetInput[], actorId: number, correctionConfirmed = false) {
+  await saveLeagueMatchResult(matchId, sets, actorId, correctionConfirmed);
+  return confirmLeagueMatchResult(matchId, actorId);
+}
+
+async function activeCourtId(client: PrismaClient | Prisma.TransactionClient, league: { courtId: number | null }) {
+  if (league.courtId) return league.courtId;
+  const court = await client.court.findFirst({ where: { active: true }, orderBy: { id: 'asc' } });
+  if (!court) throw new HttpError(409, 'No hay una cancha activa configurada.');
+  return court.id;
+}
+
+export type LeagueScheduleInput = {
+  date: string;
+  startTime: string;
+  durationMinutes: number;
+  responsiblePairId: number;
+  responsibleClientName?: string;
+  responsibleClientPhone?: string;
+};
+
+export async function scheduleLeagueMatch(matchId: number, input: LeagueScheduleInput, actorId: number) {
+  const match = await prisma.leagueMatch.findUnique({
+    where: { id: matchId },
+    include: {
+      booking: { select: bookingSummarySelect },
+      league: { select: { id: true, courtId: true } }
+    }
+  });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  if (match.status === 'FINISHED' && match.official) throw new HttpError(409, 'Un partido finalizado no puede reprogramarse.');
+
+  const responsible = await prisma.leaguePair.findUnique({ where: { id: input.responsiblePairId } });
+  if (!responsible || responsible.leagueId !== match.leagueId) throw new HttpError(400, 'La pareja responsable no pertenece a esta temporada.');
+  if (![match.homePairId, match.awayPairId].includes(responsible.id)) {
+    throw new HttpError(400, 'La pareja responsable debe ser local o visitante de este partido.');
+  }
+
+  const clientName = input.responsibleClientName?.trim() || responsible.responsibleClientName || responsible.displayName;
+  const clientPhone = input.responsibleClientPhone?.replace(/\D/g, '') || responsible.responsibleClientPhone || '';
+  if (!clientPhone) throw new HttpError(400, `La pareja ${responsible.displayName} no tiene teléfono guardado. Completá el responsable al reservar.`);
+
+  const courtId = await activeCourtId(prisma, match.league);
+  const existing = match.booking;
+  const booking = await prisma.$transaction(async tx => {
+    if (existing && existing.status !== 'CANCELLED') {
+      const paid = Number(existing.amountPaid);
+      const sameDuration = existing.durationMinutes === input.durationMinutes;
+      const priceTotal = sameDuration ? Number(existing.priceTotal) : null;
+      if (!sameDuration) {
+        const price = await tx.price.findFirst({ where: { durationMinutes: input.durationMinutes, active: true } });
+        if (!price) throw new HttpError(400, 'Duración sin precio activo');
+        if (Number(price.price) < paid) throw new HttpError(409, 'El nuevo importe sería menor a lo ya cobrado en esa reserva.');
+      }
+      return updateBookingInTransaction(tx, existing.id, {
+        courtId, clientName, clientPhone, date: input.date, startTime: input.startTime,
+        durationMinutes: input.durationMinutes, status: 'CONFIRMED', origin: 'MANUAL',
+        priceTotal: priceTotal ?? undefined
+      });
+    }
+    return createBookingInTransaction(tx, {
+      courtId, clientName, clientPhone, date: input.date, startTime: input.startTime,
+      durationMinutes: input.durationMinutes, playersCount: 4, status: 'CONFIRMED', origin: 'MANUAL'
+    }, actorId);
+  }, bookingTransactionOptions);
+
+  await prisma.$transaction(async tx => {
+    await tx.leagueMatch.update({
+      where: { id: matchId },
+      data: {
+        scheduledDate: new Date(`${input.date}T00:00:00.000Z`),
+        scheduledTime: input.startTime,
+        status: 'SCHEDULED',
+        bookingId: booking.id,
+        rescheduleNote: existing && existing.status !== 'CANCELLED' && Number(existing.amountPaid) > 0
+          ? match.rescheduleNote ?? `Seña ${Number(existing.amountPaid)} al reprogramar el ${input.date} ${input.startTime}`
+          : match.rescheduleNote
+      }
+    });
+    if (input.responsibleClientName !== undefined || input.responsibleClientPhone !== undefined) {
+      await tx.leaguePair.update({
+        where: { id: responsible.id },
+        data: {
+          ...(input.responsibleClientName !== undefined ? { responsibleClientName: input.responsibleClientName?.trim() || null } : {}),
+          ...(input.responsibleClientPhone !== undefined ? { responsibleClientPhone: input.responsibleClientPhone?.replace(/\D/g, '') || null } : {})
+        }
+      });
+    }
+    await writeAudit({
+      actorId,
+      action: existing ? 'LEAGUE_MATCH_RESCHEDULED' : 'LEAGUE_MATCH_SCHEDULED',
+      entityType: 'LEAGUE_MATCH', entityId: matchId,
+      details: { date: input.date, startTime: input.startTime, durationMinutes: input.durationMinutes, bookingId: booking.id }
+    }, tx);
+  });
+
+  await publishBookingChange(existing ? 'BOOKING_UPDATED' : 'BOOKING_CREATED', booking);
+  await publishLeagueChange(match.leagueId, matchId);
+  return getLeagueAdminPayload(match.leagueId);
+}
+
+export async function linkLeagueMatchBooking(matchId: number, bookingId: number, actorId: number) {
+  const match = await prisma.leagueMatch.findUnique({
+    where: { id: matchId },
+    include: { league: { select: { id: true, courtId: true } } }
+  });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  if (match.status === 'FINISHED' && match.official) throw new HttpError(409, 'Un partido finalizado no puede vincularse a una reserva.');
+  if (match.bookingId) {
+    if (match.bookingId === bookingId) throw new HttpError(409, 'Ese turno ya está vinculado a este partido.');
+    throw new HttpError(409, 'El partido ya tiene una reserva vinculada. Cancelá o reprogramá la existente.');
+  }
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new HttpError(404, 'Turno no encontrado.');
+  const alreadyLinked = await prisma.leagueMatch.findFirst({ where: { bookingId } });
+  if (alreadyLinked) throw new HttpError(409, `Ese turno ya está vinculado al partido ${alreadyLinked.code}.`);
+  if (['CANCELLED', 'BLOCKED', 'NO_SHOW', 'PLAYED'].includes(booking.status)) {
+    throw new HttpError(409, 'Solo se pueden vincular turnos pendientes o confirmados.');
+  }
+  const courtId = await activeCourtId(prisma, match.league);
+  if (booking.courtId !== courtId) throw new HttpError(400, 'El turno debe pertenecer a la cancha activa de la liga.');
+
+  const start = DateTime.fromJSDate(booking.startTime, { zone: config.timezone });
+  await prisma.$transaction(async tx => {
+    await tx.leagueMatch.update({
+      where: { id: matchId },
+      data: {
+        bookingId: booking.id,
+        scheduledDate: new Date(`${start.toISODate()}T00:00:00.000Z`),
+        scheduledTime: start.toFormat('HH:mm'),
+        status: 'SCHEDULED'
+      }
+    });
+    await writeAudit({ actorId, action: 'LEAGUE_MATCH_BOOKING_LINKED', entityType: 'LEAGUE_MATCH', entityId: matchId, details: { bookingId } }, tx);
+  });
+  await publishLeagueChange(match.leagueId, matchId);
+  return getLeagueAdminPayload(match.leagueId);
+}
+
+export async function syncLeagueMatchFromBooking(bookingId: number) {
+  const match = await prisma.leagueMatch.findFirst({ where: { bookingId } });
+  if (!match || (match.status === 'FINISHED' && match.official)) return;
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { startTime: true, status: true } });
+  if (!booking || booking.status === 'CANCELLED') return;
+  const start = DateTime.fromJSDate(booking.startTime, { zone: config.timezone });
+  await prisma.leagueMatch.update({
+    where: { id: match.id },
+    data: { scheduledDate: new Date(`${start.toISODate()}T00:00:00.000Z`), scheduledTime: start.toFormat('HH:mm'), status: 'SCHEDULED' }
+  });
+  await publishLeagueChange(match.leagueId, match.id);
+}
+
+export async function onLinkedBookingCancelled(bookingId: number) {
+  const match = await prisma.leagueMatch.findFirst({ where: { bookingId } });
+  if (!match || (match.status === 'FINISHED' && match.official)) return;
+  await prisma.leagueMatch.update({ where: { id: match.id }, data: { status: 'PENDING', bookingId: null } });
+  await publishLeagueChange(match.leagueId, match.id);
 }
 
 export function knockoutTemplateData() {

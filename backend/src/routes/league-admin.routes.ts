@@ -10,9 +10,12 @@ import {
   confirmLeagueMatchResult,
   createLeaguePair,
   generateLeagueFixture,
-  getLeaguePayload,
+  getLeagueAdminPayload,
+  linkLeagueMatchBooking,
   listLeagues,
+  saveAndConfirmLeagueMatchResult,
   saveLeagueMatchResult,
+  scheduleLeagueMatch,
   updateLeaguePair
 } from '../services/league.service.js';
 import { publishLeagueChange } from '../realtime/events.js';
@@ -46,7 +49,9 @@ const pairSchema = z.object({
   seedNumber: z.number().int().min(1).max(8),
   firstPlayer: z.string().trim().min(1).max(120),
   secondPlayer: z.string().trim().min(1).max(120),
-  active: z.boolean().optional()
+  active: z.boolean().optional(),
+  responsibleClientName: z.string().trim().max(120).nullable().optional(),
+  responsibleClientPhone: z.string().trim().max(30).nullable().optional()
 }).strict();
 const rulesSchema = z.object({
   straightSetsWinPoints: z.number().int().min(0).max(20),
@@ -80,7 +85,7 @@ async function ensureOnlyActive(leagueId: number, status?: LeagueSeasonStatus) {
 }
 
 router.get('/', asyncHandler(async (_req, res) => res.json(await listLeagues())));
-router.get('/:leagueId', asyncHandler(async (req, res) => res.json(await getLeaguePayload(id(req.params.leagueId)))));
+router.get('/:leagueId', asyncHandler(async (req, res) => res.json(await getLeagueAdminPayload(id(req.params.leagueId)))));
 
 router.post('/', asyncHandler(async (req, res) => {
   const data = createLeagueSchema.parse(req.body);
@@ -107,7 +112,7 @@ router.post('/', asyncHandler(async (req, res) => {
     return created;
   });
   await publishLeagueChange(league.id);
-  res.status(201).json(await getLeaguePayload(league.id));
+  res.status(201).json(await getLeagueAdminPayload(league.id));
 }));
 
 router.patch('/:leagueId', asyncHandler(async (req, res) => {
@@ -146,7 +151,36 @@ router.post('/:leagueId/fixture/generate', asyncHandler(async (req, res) => {
   }).strict().parse(req.body ?? {});
   await generateLeagueFixture(leagueId, req.auth!.userId, data.dates);
   await publishLeagueChange(leagueId);
-  res.json(await getLeaguePayload(leagueId));
+  res.json(await getLeagueAdminPayload(leagueId));
+}));
+
+router.post('/:leagueId/matches/:matchId/schedule', asyncHandler(async (req, res) => {
+  const leagueId = id(req.params.leagueId);
+  const matchId = id(req.params.matchId);
+  const data = z.object({
+    date: z.string().date(),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    durationMinutes: z.number().int().positive(),
+    responsiblePairId: z.number().int().positive(),
+    responsibleClientName: z.string().trim().max(120).optional(),
+    responsibleClientPhone: z.string().trim().max(30).optional()
+  }).strict().parse(req.body);
+  const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  const payload = await scheduleLeagueMatch(matchId, data, req.auth!.userId);
+  await publishLeagueChange(leagueId, matchId);
+  res.json(payload);
+}));
+
+router.post('/:leagueId/matches/:matchId/link-booking', asyncHandler(async (req, res) => {
+  const leagueId = id(req.params.leagueId);
+  const matchId = id(req.params.matchId);
+  const data = z.object({ bookingId: z.number().int().positive() }).strict().parse(req.body);
+  const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  const payload = await linkLeagueMatchBooking(matchId, data.bookingId, req.auth!.userId);
+  await publishLeagueChange(leagueId, matchId);
+  res.json(payload);
 }));
 
 router.patch('/:leagueId/matches/:matchId', asyncHandler(async (req, res) => {
@@ -183,10 +217,16 @@ router.patch('/:leagueId/matches/:matchId', asyncHandler(async (req, res) => {
 router.put('/:leagueId/matches/:matchId/result', asyncHandler(async (req, res) => {
   const leagueId = id(req.params.leagueId);
   const matchId = id(req.params.matchId);
-  const data = z.object({ sets: z.array(setSchema).min(2).max(3), correctionConfirmed: z.boolean().default(false) }).strict().parse(req.body);
+  const data = z.object({
+    sets: z.array(setSchema).min(2).max(3),
+    correctionConfirmed: z.boolean().default(false),
+    confirm: z.boolean().default(false)
+  }).strict().parse(req.body);
   const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
   if (!match) throw new HttpError(404, 'Partido no encontrado.');
-  const payload = await saveLeagueMatchResult(matchId, data.sets, req.auth!.userId, data.correctionConfirmed);
+  const payload = data.confirm
+    ? await saveAndConfirmLeagueMatchResult(matchId, data.sets, req.auth!.userId, data.correctionConfirmed)
+    : await saveLeagueMatchResult(matchId, data.sets, req.auth!.userId, data.correctionConfirmed);
   await publishLeagueChange(leagueId, matchId);
   res.json(payload);
 }));

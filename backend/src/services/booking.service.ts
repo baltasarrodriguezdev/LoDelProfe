@@ -297,8 +297,8 @@ export async function freeAvailability(date: string, courtId: number) {
   });
 }
 
-export async function updateBooking(id: number, data: Partial<BookingInput>) {
-  const old = await prisma.booking.findUnique({ where: { id } });
+export async function updateBookingInTransaction(tx: Prisma.TransactionClient, id: number, data: Partial<BookingInput>) {
+  const old = await tx.booking.findUnique({ where: { id } });
   if (!old) throw new HttpError(404, 'Turno no encontrado');
   const input: BookingInput = {
     courtId: data.courtId ?? old.courtId, userId: data.userId ?? old.userId,
@@ -310,19 +310,21 @@ export async function updateBooking(id: number, data: Partial<BookingInput>) {
     status: data.status ?? old.status, origin: data.origin ?? old.origin,
     priceTotal: data.priceTotal ?? Number(old.priceTotal)
   };
-  return prisma.$transaction(async tx => {
-    const { start, end, price } = await validate(tx, input, id);
-    return tx.booking.update({
-      where: { id },
-      data: {
-        courtId: input.courtId, userId: input.userId, clientName: input.clientName,
-        clientPhone: input.clientPhone, startTime: start.toJSDate(), endTime: end.toJSDate(),
-        durationMinutes: input.durationMinutes, playersCount: input.playersCount, notes: input.notes,
-        status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price,
-        holdExpiresAt: input.status === 'PENDING' ? old.holdExpiresAt ?? pendingBookingExpiresAt() : null
-      }
-    });
-  }, bookingTransactionOptions);
+  const { start, end, price } = await validate(tx, input, id);
+  return tx.booking.update({
+    where: { id },
+    data: {
+      courtId: input.courtId, userId: input.userId, clientName: input.clientName,
+      clientPhone: input.clientPhone, startTime: start.toJSDate(), endTime: end.toJSDate(),
+      durationMinutes: input.durationMinutes, playersCount: input.playersCount, notes: input.notes,
+      status: input.status, origin: input.origin, priceTotal: input.priceTotal ?? price.price,
+      holdExpiresAt: input.status === 'PENDING' ? old.holdExpiresAt ?? pendingBookingExpiresAt() : null
+    }
+  });
+}
+
+export async function updateBooking(id: number, data: Partial<BookingInput>) {
+  return prisma.$transaction(tx => updateBookingInTransaction(tx, id, data), bookingTransactionOptions);
 }
 
 const allowedTransitions: Record<BookingStatus, BookingStatus[]> = {

@@ -58,6 +58,7 @@ beforeEach(() => {
   db.booking.update = async ({ where, data }: any) => ({ id: where.id, ...data });
   db.booking.updateMany = async () => ({ count: 0 });
   db.auditLog.create = async ({ data }: any) => ({ id: 1n, ...data });
+  db.leagueMatch.findFirst = async () => null;
 });
 
 test('un visitante no puede crear una reserva web', async () => {
