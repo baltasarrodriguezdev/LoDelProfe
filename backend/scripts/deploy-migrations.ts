@@ -1,6 +1,10 @@
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { databaseUrlForConnection } from '../src/utils/database-url.js';
+
+const require = createRequire(import.meta.url);
 
 type Result = { status: number | null; stdout?: string; stderr?: string; error?: Error };
 
@@ -21,7 +25,7 @@ export async function deployWithRetry(
   return 1;
 }
 
-if (require.main === module) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const url = databaseUrlForConnection(process.env.DATABASE_URL);
   deployWithRetry(() => {
     const result = spawnSync(process.execPath, [require.resolve('prisma/build/index.js'), 'migrate', 'deploy'], {
