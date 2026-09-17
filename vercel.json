@@ -4,7 +4,7 @@
     "frontend": {
       "root": "frontend",
       "framework": "angular",
-      "installCommand": "npm ci --include=dev --include=optional",
+      "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
       "buildCommand": "npm run build",
       "outputDirectory": "dist/frontend/browser"
     },
@@ -12,8 +12,8 @@
       "root": "backend",
       "framework": "express",
       "entrypoint": "src/app.ts",
-      "installCommand": "npm ci --include=dev --include=optional",
-      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime"
+      "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
+      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime -- --service-local"
     }
   },
   "rewrites": [

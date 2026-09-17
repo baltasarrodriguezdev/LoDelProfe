@@ -129,6 +129,8 @@ El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` env
 
 ### Vercel Services
 
+Cada servicio instala con `npm ci --workspaces=false --include=dev --include=optional`, usando su propio `package-lock.json`. Esto mantiene las dependencias del backend en `backend/node_modules`, dentro de la raíz que Vercel empaqueta, en lugar de depender del hoisting al workspace raíz. El build verifica además que todas las dependencias de runtime se resuelvan dentro del servicio mediante `npm run verify:runtime -- --service-local`.
+
 En la configuración del proyecto de Vercel, seleccioná **Services** como framework y cargá estas variables para Production:
 
 - `NODE_ENV=production`
