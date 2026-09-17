@@ -14,11 +14,11 @@
       "entrypoint": "src/app.ts",
       "functions": {
         "src/app.ts": {
-          "includeFiles": "backend/node_modules/**"
+          "includeFiles": "node_modules/**"
         }
       },
       "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
-      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime -- --service-local"
+      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime -- --service-local && npm run prepare:vercel"
     }
   },
   "rewrites": [

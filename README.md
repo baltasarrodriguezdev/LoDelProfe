@@ -129,7 +129,7 @@ El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` env
 
 ### Vercel Services
 
-Cada servicio instala con `npm ci --workspaces=false --include=dev --include=optional`, usando su propio `package-lock.json`. Esto mantiene las dependencias del backend en `backend/node_modules`, dentro de la raíz del servicio, en lugar de depender del hoisting al workspace raíz. El backend declara `type: module` para que Vercel genere referencias a dependencias con el contexto correcto del servicio. La función incluye explícitamente `backend/node_modules/**`, relativo al repositorio, para conservar las dependencias en el paquete desplegado. El build verifica además que todas las dependencias de runtime se resuelvan dentro del servicio mediante `npm run verify:runtime -- --service-local`.
+Cada servicio instala con `npm ci --workspaces=false --include=dev --include=optional`, usando su propio `package-lock.json`. El build verifica las dependencias locales mediante `npm run verify:runtime -- --service-local`. Vercel Services reubica `src/app.js` en la raíz de la función: tanto la raíz del repositorio como el backend declaran `type: module`, y `prepare:vercel` copia las dependencias del backend a `node_modules` en la raíz. La función incluye explícitamente ese directorio para que las importaciones sigan funcionando después del empaquetado.
 
 Para conexiones a `*.tidbcloud.com`, el runtime y las migraciones agregan `sslaccept=strict` y `connect_timeout=20` si esas opciones no están configuradas. `prisma:deploy` reintenta hasta tres veces únicamente ante `P1001`; otros errores de migración detienen el build inmediatamente.
 
