@@ -14,7 +14,7 @@
       "entrypoint": "src/app.ts",
       "functions": {
         "src/app.ts": {
-          "includeFiles": "node_modules/**"
+          "includeFiles": "{node_modules/**,package.json}"
         }
       },
       "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
