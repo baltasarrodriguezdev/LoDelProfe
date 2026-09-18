@@ -50,6 +50,13 @@ export class Api {
     );
   }
 
+  getBlob(path: string, params?: Record<string, string | number>, options?: ApiOptions) {
+    return applyRequestControls(
+      this.http.get(API + path, { params: params as any, headers: requestHeaders(options), responseType: 'blob' }),
+      options
+    );
+  }
+
   post<T>(path: string, body: unknown, options?: ApiOptions) {
     return applyRequestControls(this.http.post<T>(API + path, body, { headers: requestHeaders(options) }), options);
   }
@@ -64,6 +71,10 @@ export class Api {
 
   delete<T>(path: string, options?: ApiOptions) {
     return applyRequestControls(this.http.delete<T>(API + path, { headers: requestHeaders(options) }), options);
+  }
+
+  deleteWithBody<T>(path: string, body: unknown, options?: ApiOptions) {
+    return applyRequestControls(this.http.delete<T>(API + path, { body, headers: requestHeaders(options) }), options);
   }
 }
 

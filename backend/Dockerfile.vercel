@@ -1,0 +1,39 @@
+FROM node:22.20.0-alpine3.22 AS build
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates openssl
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci --workspaces=false --include=dev --include=optional
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY scripts ./scripts
+COPY assets ./assets
+
+RUN npm run build \
+    && npm run verify:runtime \
+    && npm prune --omit=dev --workspaces=false \
+    && rm -rf node_modules/.cache node_modules/@prisma/client/generator-build \
+    && find node_modules/@prisma/client/runtime -type f -name '*.wasm' -delete \
+    && find node_modules -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.map' \) -delete \
+    && node scripts/verify-runtime-imports.mjs \
+    && node scripts/smoke-entrypoint.mjs
+
+FROM alpine:3.22 AS runtime
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates libssl3 libstdc++
+
+COPY --from=build /usr/local/bin/node /usr/local/bin/node
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/prisma ./prisma
+
+ENV NODE_ENV=production
+ENV PORT=80
+EXPOSE 80
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node dist/src/server.js"]

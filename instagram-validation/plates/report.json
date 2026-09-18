@@ -1,0 +1,293 @@
+{
+  "generatedAt": "2026-08-14T20:50:13.815Z",
+  "pages": [
+    {
+      "template": "zones",
+      "format": "feed",
+      "page": "portada",
+      "file": "feed/zones-portada.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 42817
+    },
+    {
+      "template": "zones",
+      "format": "feed",
+      "page": "zona-a",
+      "file": "feed/zones-zona-a.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 74789
+    },
+    {
+      "template": "zones",
+      "format": "feed",
+      "page": "zona-b",
+      "file": "feed/zones-zona-b.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 76681
+    },
+    {
+      "template": "next_matchday",
+      "format": "feed",
+      "page": "next_matchday",
+      "file": "feed/next_matchday-next_matchday.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 69682
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "feed",
+      "page": "portada",
+      "file": "feed/weekly_fixture-portada.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 35435
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "feed",
+      "page": "zona-a",
+      "file": "feed/weekly_fixture-zona-a.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 69682
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "feed",
+      "page": "zona-b",
+      "file": "feed/weekly_fixture-zona-b.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 71040
+    },
+    {
+      "template": "today",
+      "format": "feed",
+      "page": "today",
+      "file": "feed/today-today.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 93385
+    },
+    {
+      "template": "individual_result",
+      "format": "feed",
+      "page": "resultado",
+      "file": "feed/individual_result-resultado.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 54547
+    },
+    {
+      "template": "matchday_results",
+      "format": "feed",
+      "page": "resultados",
+      "file": "feed/matchday_results-resultados.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 88285
+    },
+    {
+      "template": "standings",
+      "format": "feed",
+      "page": "posiciones",
+      "file": "feed/standings-posiciones.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 75990
+    },
+    {
+      "template": "results_standings",
+      "format": "feed",
+      "page": "portada",
+      "file": "feed/results_standings-portada.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 47431
+    },
+    {
+      "template": "results_standings",
+      "format": "feed",
+      "page": "resultados",
+      "file": "feed/results_standings-resultados.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 88285
+    },
+    {
+      "template": "results_standings",
+      "format": "feed",
+      "page": "posiciones",
+      "file": "feed/results_standings-posiciones.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 75990
+    },
+    {
+      "template": "bracket",
+      "format": "feed",
+      "page": "eliminatorias",
+      "file": "feed/bracket-eliminatorias.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 117662
+    },
+    {
+      "template": "champions",
+      "format": "feed",
+      "page": "campeones",
+      "file": "feed/champions-campeones.png",
+      "width": 1080,
+      "height": 1350,
+      "bytes": 60642
+    },
+    {
+      "template": "zones",
+      "format": "story",
+      "page": "portada",
+      "file": "story/zones-portada.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 49259
+    },
+    {
+      "template": "zones",
+      "format": "story",
+      "page": "zona-a",
+      "file": "story/zones-zona-a.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 87183
+    },
+    {
+      "template": "zones",
+      "format": "story",
+      "page": "zona-b",
+      "file": "story/zones-zona-b.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 86737
+    },
+    {
+      "template": "next_matchday",
+      "format": "story",
+      "page": "next_matchday",
+      "file": "story/next_matchday-next_matchday.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 81339
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "story",
+      "page": "portada",
+      "file": "story/weekly_fixture-portada.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 41972
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "story",
+      "page": "zona-a",
+      "file": "story/weekly_fixture-zona-a.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 81339
+    },
+    {
+      "template": "weekly_fixture",
+      "format": "story",
+      "page": "zona-b",
+      "file": "story/weekly_fixture-zona-b.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 82726
+    },
+    {
+      "template": "today",
+      "format": "story",
+      "page": "today",
+      "file": "story/today-today.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 107824
+    },
+    {
+      "template": "individual_result",
+      "format": "story",
+      "page": "resultado",
+      "file": "story/individual_result-resultado.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 64004
+    },
+    {
+      "template": "matchday_results",
+      "format": "story",
+      "page": "resultados",
+      "file": "story/matchday_results-resultados.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 99615
+    },
+    {
+      "template": "standings",
+      "format": "story",
+      "page": "posiciones",
+      "file": "story/standings-posiciones.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 86886
+    },
+    {
+      "template": "results_standings",
+      "format": "story",
+      "page": "portada",
+      "file": "story/results_standings-portada.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 54710
+    },
+    {
+      "template": "results_standings",
+      "format": "story",
+      "page": "resultados",
+      "file": "story/results_standings-resultados.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 99615
+    },
+    {
+      "template": "results_standings",
+      "format": "story",
+      "page": "posiciones",
+      "file": "story/results_standings-posiciones.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 86886
+    },
+    {
+      "template": "bracket",
+      "format": "story",
+      "page": "eliminatorias",
+      "file": "story/bracket-eliminatorias.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 137830
+    },
+    {
+      "template": "champions",
+      "format": "story",
+      "page": "campeones",
+      "file": "story/champions-campeones.png",
+      "width": 1080,
+      "height": 1920,
+      "bytes": 69477
+    }
+  ]
+}

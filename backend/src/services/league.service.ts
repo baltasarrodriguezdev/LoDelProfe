@@ -45,7 +45,7 @@ function rulesFrom(league: any): LeagueScoringRules {
     straightSetsWinPoints: Number(league.rules?.straightSetsWinPoints ?? 3),
     threeSetsWinPoints: Number(league.rules?.threeSetsWinPoints ?? 2),
     threeSetsLossPoints: Number(league.rules?.threeSetsLossPoints ?? 1),
-    straightSetsLossPoints: league.rules?.straightSetsLossPoints == null ? null : Number(league.rules.straightSetsLossPoints)
+    straightSetsLossPoints: Number(league.rules?.straightSetsLossPoints ?? 0)
   };
 }
 
@@ -56,7 +56,6 @@ function serializedMatch(match: any, scoring: LeagueScoringRules) {
     try {
       const summary = validateLeagueResult(match.sets);
       const points = pointsForResult(summary, scoring);
-      scoringPending = points.homePoints == null || points.awayPoints == null;
       result = { ...summary, ...points };
     } catch {
       // Los borradores incompletos no se exponen como resultados válidos.
@@ -108,7 +107,6 @@ export function standingsForLeague(league: any) {
 function pendingRules(league: any) {
   const rules = league.rules ?? {};
   const pending = [
-    [rules.straightSetsLossPoints == null, 'Puntaje de la pareja perdedora en un resultado 0–2.'],
     [!rules.gamesPositiveDefinition, 'Definición de “games positivos”.'],
     [!rules.multiPairTieRule, 'Desempate entre tres o más parejas.'],
     [!rules.walkoverRule, 'Walkover o ausencia.'],
@@ -190,7 +188,7 @@ export async function getLeaguePayload(leagueId?: number) {
     },
     rules: {
       scoring: { ...league.rules, ...scoring },
-      tieBreakCriteria: ['Puntos', 'Partido entre sí', 'Sets a favor', 'Games a favor', 'Games positivos', 'Sorteo'],
+      tieBreakCriteria: ['Puntos', 'Partido entre sí', 'Sets a favor', 'Games a favor', 'Games positivos', 'Número del sorteo'],
       pending: pendingRules(league)
     }
   };
@@ -405,6 +403,54 @@ export async function saveLeagueMatchResult(matchId: number, sets: LeagueSetInpu
       }
     });
     await writeAudit({ actorId, action: existing.official ? 'LEAGUE_RESULT_CORRECTED' : 'LEAGUE_RESULT_SAVED', entityType: 'LEAGUE_MATCH', entityId: matchId, details: { sets } }, tx);
+    if (existing.official && existing.nextMatchId && existing.nextSlot) {
+      await tx.leagueMatch.update({
+        where: { id: existing.nextMatchId },
+        data: { ...(existing.nextSlot === 'HOME' ? { homePairId: null } : { awayPairId: null }), status: 'PENDING' }
+      });
+    }
+  });
+  await reconcileLeagueBracket(existing.leagueId);
+  return getLeaguePayload(existing.leagueId);
+}
+
+export async function resetLeagueMatchResult(matchId: number, actorId: number, correctionConfirmed = false) {
+  const existing = await prisma.leagueMatch.findUnique({
+    where: { id: matchId },
+    include: { sets: true, nextMatch: { include: { sets: true } } }
+  });
+  if (!existing) throw new HttpError(404, 'Partido no encontrado.');
+  if (!existing.sets.length && !existing.official) return getLeaguePayload(existing.leagueId);
+  if (existing.official && !correctionConfirmed) {
+    throw new HttpError(409, 'Este resultado ya es oficial. Confirmá expresamente que querés quitarlo.', 'RESULT_CORRECTION_CONFIRMATION_REQUIRED');
+  }
+  if (existing.official && existing.nextMatch && (existing.nextMatch.official || existing.nextMatch.sets.length)) {
+    throw new HttpError(409, `No se puede quitar el resultado porque ${existing.nextMatch.code} ya tiene un resultado cargado.`);
+  }
+  if (existing.official && existing.stage === 'GROUP_STAGE') {
+    const startedKnockout = await prisma.leagueMatch.count({
+      where: { leagueId: existing.leagueId, stage: { not: 'GROUP_STAGE' }, OR: [{ official: true }, { sets: { some: {} } }] }
+    });
+    if (startedKnockout) throw new HttpError(409, 'No se puede quitar el resultado de zonas porque las eliminatorias ya tienen resultados cargados.');
+  }
+  await prisma.$transaction(async tx => {
+    await tx.leagueMatchSet.deleteMany({ where: { matchId } });
+    await tx.leagueMatch.update({
+      where: { id: matchId },
+      data: {
+        status: existing.scheduledDate && existing.scheduledTime ? 'SCHEDULED' : 'PENDING',
+        official: false,
+        officialAt: null,
+        updatedById: actorId
+      }
+    });
+    await writeAudit({
+      actorId,
+      action: 'LEAGUE_RESULT_RESET',
+      entityType: 'LEAGUE_MATCH',
+      entityId: matchId,
+      details: { previousSets: existing.sets, wasOfficial: existing.official }
+    }, tx);
     if (existing.official && existing.nextMatchId && existing.nextSlot) {
       await tx.leagueMatch.update({
         where: { id: existing.nextMatchId },

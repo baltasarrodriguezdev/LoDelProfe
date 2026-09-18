@@ -12,11 +12,20 @@ import {
   generateLeagueFixture,
   getLeaguePayload,
   listLeagues,
+  resetLeagueMatchResult,
   saveLeagueMatchResult,
   updateLeaguePair
 } from '../services/league.service.js';
 import { publishLeagueChange } from '../realtime/events.js';
 import { validateLeagueResult } from '../domain/league-rules.js';
+import {
+  getInstagramManifest,
+  INSTAGRAM_FORMATS,
+  INSTAGRAM_TEMPLATES,
+  renderInstagramPng,
+  renderInstagramZip,
+  type InstagramSelection
+} from '../services/instagram-content.service.js';
 
 const router = Router();
 router.use(authenticate, authorize(Role.ADMIN, Role.SUPERADMIN));
@@ -52,7 +61,7 @@ const rulesSchema = z.object({
   straightSetsWinPoints: z.number().int().min(0).max(20),
   threeSetsWinPoints: z.number().int().min(0).max(20),
   threeSetsLossPoints: z.number().int().min(0).max(20),
-  straightSetsLossPoints: z.number().int().min(0).max(20).nullable(),
+  straightSetsLossPoints: z.number().int().min(0).max(20),
   gamesPositiveDefinition: nullableText(),
   multiPairTieRule: nullableText(),
   walkoverRule: nullableText(),
@@ -62,6 +71,26 @@ const rulesSchema = z.object({
   sixAllTiebreakRule: nullableText()
 }).strict();
 const setSchema = z.object({ homeGames: z.number().int().min(0).max(7), awayGames: z.number().int().min(0).max(7) }).strict();
+const instagramSelectionSchema = z.object({
+  template: z.enum(INSTAGRAM_TEMPLATES),
+  format: z.enum(INSTAGRAM_FORMATS),
+  zoneId: z.coerce.number().int().positive().optional(),
+  matchday: z.coerce.number().int().positive().optional(),
+  matchId: z.coerce.number().int().positive().optional(),
+  scheduledDate: z.string().date().optional()
+}).strict();
+
+function instagramSelection(query: unknown): InstagramSelection {
+  const value = query as Record<string, unknown>;
+  return instagramSelectionSchema.parse({
+    template: value.template,
+    format: value.format,
+    zoneId: value.zoneId,
+    matchday: value.matchday,
+    matchId: value.matchId,
+    scheduledDate: value.scheduledDate
+  });
+}
 
 function dateOnly(value: string | null | undefined) {
   return value ? new Date(`${value}T00:00:00.000Z`) : value === null ? null : undefined;
@@ -82,6 +111,34 @@ async function ensureOnlyActive(leagueId: number, status?: LeagueSeasonStatus) {
 router.get('/', asyncHandler(async (_req, res) => res.json(await listLeagues())));
 router.get('/:leagueId', asyncHandler(async (req, res) => res.json(await getLeaguePayload(id(req.params.leagueId)))));
 
+router.get('/:leagueId/instagram/manifest', asyncHandler(async (req, res) => {
+  const payload = await getLeaguePayload(id(req.params.leagueId));
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.json(getInstagramManifest(payload, instagramSelection(req.query)));
+}));
+
+router.get('/:leagueId/instagram/render', asyncHandler(async (req, res) => {
+  const page = z.coerce.number().int().min(0).default(0).parse(req.query.page);
+  const download = req.query.download === '1';
+  const payload = await getLeaguePayload(id(req.params.leagueId));
+  const rendered = await renderInstagramPng(payload, instagramSelection(req.query), page);
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${rendered.page.fileName}"`);
+  res.setHeader('Content-Length', String(rendered.buffer.length));
+  res.send(rendered.buffer);
+}));
+
+router.get('/:leagueId/instagram/carousel.zip', asyncHandler(async (req, res) => {
+  const payload = await getLeaguePayload(id(req.params.leagueId));
+  const rendered = await renderInstagramZip(payload, instagramSelection(req.query));
+  res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${rendered.fileName}"`);
+  res.setHeader('Content-Length', String(rendered.buffer.length));
+  res.send(rendered.buffer);
+}));
+
 router.post('/', asyncHandler(async (req, res) => {
   const data = createLeagueSchema.parse(req.body);
   await ensureOnlyActive(0, data.status);
@@ -100,7 +157,7 @@ router.post('/', asyncHandler(async (req, res) => {
           { code: 'A', name: 'Zona A', regularDay: 'LUNES', displayOrder: 0 },
           { code: 'B', name: 'Zona B', regularDay: 'JUEVES', displayOrder: 1 }
         ] },
-        rules: { create: { straightSetsWinPoints: 3, threeSetsWinPoints: 2, threeSetsLossPoints: 1, straightSetsLossPoints: null } }
+        rules: { create: { straightSetsWinPoints: 3, threeSetsWinPoints: 2, threeSetsLossPoints: 1, straightSetsLossPoints: 0 } }
       }
     });
     await writeAudit({ actorId: req.auth!.userId, action: 'LEAGUE_CREATED', entityType: 'LEAGUE', entityId: created.id }, tx);
@@ -187,6 +244,17 @@ router.put('/:leagueId/matches/:matchId/result', asyncHandler(async (req, res) =
   const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
   if (!match) throw new HttpError(404, 'Partido no encontrado.');
   const payload = await saveLeagueMatchResult(matchId, data.sets, req.auth!.userId, data.correctionConfirmed);
+  await publishLeagueChange(leagueId, matchId);
+  res.json(payload);
+}));
+
+router.post('/:leagueId/matches/:matchId/result/reset', asyncHandler(async (req, res) => {
+  const leagueId = id(req.params.leagueId);
+  const matchId = id(req.params.matchId);
+  const data = z.object({ correctionConfirmed: z.boolean().default(false) }).strict().parse(req.body);
+  const match = await prisma.leagueMatch.findFirst({ where: { id: matchId, leagueId } });
+  if (!match) throw new HttpError(404, 'Partido no encontrado.');
+  const payload = await resetLeagueMatchResult(matchId, req.auth!.userId, data.correctionConfirmed);
   await publishLeagueChange(leagueId, matchId);
   res.json(payload);
 }));

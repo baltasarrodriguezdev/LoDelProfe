@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { debounceTime, finalize, merge } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { RealtimeEvent, RealtimeService } from '../../core/realtime';
@@ -303,6 +303,7 @@ type Booking = {
 export class AdminDashboardPage implements OnInit, OnDestroy {
   private api = inject(Api);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private agendaStore = inject(AdminAgendaStore);
   public auth = inject(Auth);
   private realtime = inject(RealtimeService);
@@ -365,6 +366,10 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   get pendingTotal() { return Math.max(0, this.estimatedTotal - this.paidTotal); }
 
   ngOnInit() {
+    const requestedDate = this.route.snapshot.queryParamMap.get('date');
+    if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) this.selectedDate = requestedDate;
+    const requestedBookingId = Number(this.route.snapshot.queryParamMap.get('booking'));
+    if (Number.isInteger(requestedBookingId) && requestedBookingId > 0) this.openBookingFromNotification(requestedBookingId);
     this.holdTimer = setInterval(() => this.tickPendingHolds(), 1000);
     this.loadCourt();
     merge(
@@ -516,6 +521,21 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
         if (requestId !== this.detailRequestId) return;
         this.showNotice(error.error?.message ?? 'No se pudo cargar el detalle.', true);
       }
+    });
+  }
+
+  private openBookingFromNotification(id: number) {
+    this.openDetail({
+      id,
+      clientName: 'Turno',
+      clientPhone: '',
+      startTime: '',
+      endTime: '',
+      durationMinutes: 0,
+      playersCount: 0,
+      priceTotal: 0,
+      status: 'PENDING',
+      paymentStatus: 'PENDING'
     });
   }
 

@@ -11,7 +11,7 @@ import { Auth } from '../../core/api';
   template: `
     <section class="auth-wrap branded-auth">
       <div class="auth-side">
-        <img class="auth-side-image" src="assets/logos/fotoIngresar.jpg" alt="Cancha de pádel Lo del Profe">
+        <img class="auth-side-image" src="assets/logos/fotoIngresar.jpg" width="736" height="1308" alt="Cancha de pádel Lo del Profe">
         <div class="auth-side-overlay" aria-hidden="true"></div>
         <div class="auth-side-copy">
           <span class="eyebrow">LO DEL PROFE</span>

@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter } from 'rxjs';
 import { Auth } from '../core/api';
+import { PushNotificationControlComponent } from './push-notification-control.component';
 
 type AdminNavItem = {
   label: string;
@@ -13,7 +14,7 @@ type AdminNavItem = {
 @Component({
   selector: 'app-admin-navigation',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, PushNotificationControlComponent],
   template: `
     <nav class="admin-navigation" aria-label="Navegación del panel administrador">
       <div class="admin-navigation-inner">
@@ -36,6 +37,8 @@ type AdminNavItem = {
             <a [routerLink]="item.route" [queryParams]="item.queryParams" [class.active]="isActive(item)"
               [attr.aria-current]="isActive(item) ? 'page' : null" (click)="close()">{{ item.label }}</a>
           }
+          <span class="admin-navigation-label">NOTIFICACIONES</span>
+          <app-push-notification-control />
           @if (auth.user()?.role === 'SUPERADMIN') {
             <span class="admin-navigation-label">CONFIGURACIÓN</span>
             @for (item of configurationItems; track item.label) {
@@ -51,6 +54,7 @@ type AdminNavItem = {
             <a [routerLink]="item.route" [queryParams]="item.queryParams" [class.active]="isActive(item)"
               [attr.aria-current]="isActive(item) ? 'page' : null">{{ item.label }}</a>
           }
+          <app-push-notification-control />
           @if (auth.user()?.role === 'SUPERADMIN') {
             <details #configurationTools class="admin-navigation-tools" [class.active]="configurationActive()">
               <summary>Configuración</summary>
@@ -87,6 +91,7 @@ export class AdminNavigationComponent {
     { label: 'Agregar turno', route: '/admin/turno' },
     { label: 'Bloquear horario', route: '/admin/turno', queryParams: { mode: 'block' } },
     { label: 'La Liga', route: '/admin/la-liga' },
+    { label: 'Contenido para Instagram', route: '/admin/contenido-instagram' },
     { label: 'Historias Instagram', route: '/admin/marketing/historias-instagram' }
   ];
 

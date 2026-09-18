@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as helperModule from '../../frontend/src/app/shared/whatsapp-booking.js';
-
-// El frontend se carga como CommonJS fuera del compilador de Angular.
-const { buildPhoneVerificationWhatsappMessage, buildPhoneVerificationWhatsappUrl } =
-  (helperModule as { default?: typeof helperModule }).default ?? helperModule;
+import {
+  buildPhoneVerificationWhatsappMessage,
+  buildPhoneVerificationWhatsappUrl
+} from '../../frontend/src/app/shared/whatsapp-booking.js';
 
 const request = {
   firstName: '  Ana ',

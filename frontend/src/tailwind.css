@@ -17,7 +17,7 @@
 }
 
 @font-face {
-  font-family: "Story Round";
+  font-family: "Null Free";
   src: url("./assets/fonts/Null_Free.otf") format("opentype");
   font-weight: 700;
   font-style: normal;
@@ -33,17 +33,31 @@
 }
 
 @theme {
-  --color-brand-green: #536f43;
-  --color-brand-dark: #223526;
-  --color-brand-cream: #f5f1e5;
-  --color-brand-paper: #fffdf5;
-  --color-brand-gold: #9a974f;
-  --color-brand-muted: #687363;
+  /* Paleta Lo del Profe: crema dominante, carbón estructural y oliva como acento. */
+  --color-primary: #5a6b3c;
+  --color-primary-dark: #44522d;
+  --color-bg: #f2efe8;
+  --color-surface: #ffffff;
+  --color-text: #1f1f1f;
+  --color-text-muted: #6f6d68;
+  --color-border: #d9d5cc;
+  --color-gray: #8c8a83;
+
+  /* Alias históricos para mantener todos los componentes sobre una sola paleta. */
+  --color-brand-green: var(--color-primary);
+  --color-brand-green-dark: var(--color-primary-dark);
+  --color-brand-dark: var(--color-text);
+  --color-brand-cream: var(--color-bg);
+  --color-brand-paper: var(--color-surface);
+  --color-brand-gold: var(--color-primary);
+  --color-brand-muted: var(--color-text-muted);
   --color-brand-danger: #b53c32;
-  --color-brand-text: #14281b;
-  --color-brand-border: rgba(31, 51, 38, .18);
-  --font-display: "Oswald Local", sans-serif;
-  --font-body: "Manrope Local", sans-serif;
+  --color-brand-text: var(--color-text);
+  --color-brand-border: var(--color-border);
+  --font-brand: "Null Free", sans-serif;
+  --font-functional: "Manrope Local", sans-serif;
+  --font-display: var(--font-brand);
+  --font-body: var(--font-functional);
 }
 
 :root {
@@ -53,6 +67,7 @@
   --page-gutter: 24px;
   --section-space: 48px;
   --control-height: 44px;
+  color-scheme: light;
 }
 
 html {
@@ -67,6 +82,35 @@ body {
   min-width: 0;
   min-height: 100%;
   overflow-x: visible;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+}
+
+h3,
+h4,
+h5,
+h6,
+button,
+input,
+select,
+textarea,
+label,
+table,
+time {
+  font-family: var(--font-body);
+}
+
+h3,
+button {
+  font-weight: 600;
 }
 
 body.mobile-menu-open {
@@ -193,10 +237,10 @@ app-admin-navigation {
   z-index: 25;
   width: 100%;
   border-top: 1px solid rgb(255 255 255 / 8%);
-  border-bottom: 1px solid rgb(154 151 79 / 38%);
-  background: #172f21;
+  border-bottom: 1px solid rgb(90 107 60 / 38%);
+  background: var(--color-text);
   color: var(--color-brand-paper);
-  box-shadow: 0 8px 18px rgb(20 40 27 / 8%);
+  box-shadow: 0 8px 18px rgb(31 31 31 / 10%);
 }
 
 .admin-navigation-inner {
@@ -223,7 +267,8 @@ app-admin-navigation {
   border-bottom: 3px solid transparent;
   padding: 0 11px;
   color: #d7e0d9;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: .82rem;
   cursor: pointer;
   white-space: nowrap;
@@ -245,7 +290,7 @@ app-admin-navigation {
 
 .admin-navigation-tools {
   position: relative;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .admin-navigation-tools > summary {
@@ -285,7 +330,8 @@ app-admin-navigation {
   border-radius: 6px;
   padding: 9px 12px;
   color: #d7e0d9;
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: .86rem;
 }
 
@@ -363,7 +409,8 @@ app-admin-navigation {
 }
 
 .agenda-time time {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 700;
   font-size: 1.75rem;
 }
 
@@ -441,7 +488,7 @@ app-admin-navigation {
   border-left: 4px solid var(--color-brand-gold);
   border-radius: 6px;
   padding: 14px 16px;
-  background: #fff8dd;
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
 }
 
 .attention-strip p {
@@ -476,7 +523,8 @@ app-admin-navigation {
 }
 
 .dashboard-agenda time {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
+  font-weight: 700;
   font-size: 1.65rem;
 }
 
@@ -854,7 +902,7 @@ app-admin-navigation {
   .admin-navigation-toggle small,
   .admin-navigation-label {
     color: var(--color-brand-gold);
-    font-family: var(--font-display);
+    font-family: var(--font-body);
     font-size: .65rem;
     font-weight: 700;
   }

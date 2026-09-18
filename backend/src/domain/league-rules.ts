@@ -14,7 +14,7 @@ export type LeagueScoringRules = {
   straightSetsWinPoints: number;
   threeSetsWinPoints: number;
   threeSetsLossPoints: number;
-  straightSetsLossPoints: number | null;
+  straightSetsLossPoints: number;
 };
 
 export type StandingsPair = {
@@ -35,8 +35,10 @@ export type StandingRow = {
   pairId: number;
   pair: string;
   seedNumber: number;
-  position: number | null;
+  position: number;
   played: number;
+  won: number;
+  lost: number;
   setsFor: number;
   setsAgainst: number;
   setDifference: number;
@@ -176,8 +178,10 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     pairId: pair.id,
     pair: pair.displayName,
     seedNumber: pair.seedNumber,
-    position: null,
+    position: 0,
     played: 0,
+    won: 0,
+    lost: 0,
     setsFor: 0,
     setsAgainst: 0,
     setDifference: 0,
@@ -201,6 +205,13 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     completed.push({ ...match, summary });
     home.played++;
     away.played++;
+    if (summary.winnerSide === 'HOME') {
+      home.won++;
+      away.lost++;
+    } else {
+      away.won++;
+      home.lost++;
+    }
     home.setsFor += summary.homeSets;
     home.setsAgainst += summary.awaySets;
     away.setsFor += summary.awaySets;
@@ -209,31 +220,22 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     home.gamesAgainst += summary.awayGames;
     away.gamesFor += summary.awayGames;
     away.gamesAgainst += summary.homeGames;
-    if (points.homePoints == null) home.pendingPointsMatches++;
-    else home.confirmedPoints += points.homePoints;
-    if (points.awayPoints == null) away.pendingPointsMatches++;
-    else away.confirmedPoints += points.awayPoints;
+    home.confirmedPoints += points.homePoints;
+    away.confirmedPoints += points.awayPoints;
   }
 
   for (const row of rows.values()) {
     row.setDifference = row.setsFor - row.setsAgainst;
     row.gameDifference = calculateGamesPositive(row.gamesFor, row.gamesAgainst);
-    row.points = row.pendingPointsMatches ? null : row.confirmedPoints;
+    row.points = row.confirmedPoints;
   }
 
-  const warnings: string[] = [];
   const ordered = [...rows.values()].sort((left, right) => {
     if (left.points == null && right.points == null) return left.seedNumber - right.seedNumber;
     if (left.points == null) return 1;
     if (right.points == null) return -1;
     return right.points - left.points || left.seedNumber - right.seedNumber;
   });
-
-  if (ordered.some(row => row.points == null)) {
-    warnings.push('Hay resultados 2–0 cuyo puntaje para la pareja perdedora sigue pendiente de definición. Las posiciones no pueden calcularse correctamente.');
-    for (const row of ordered) row.rankingPending = true;
-    return { rows: ordered, warnings, rankingComplete: false };
-  }
 
   let cursor = 0;
   while (cursor < ordered.length) {
@@ -242,27 +244,36 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     const tied = ordered.slice(cursor, groupEnd);
     if (tied.length === 1) {
       tied[0].position = cursor + 1;
-    } else if (tied.length === 2) {
-      const headToHead = completed.find(match =>
-        (match.homePairId === tied[0].pairId && match.awayPairId === tied[1].pairId)
-        || (match.homePairId === tied[1].pairId && match.awayPairId === tied[0].pairId));
-      if (headToHead) {
-        const winnerId = headToHead.summary.winnerSide === 'HOME' ? headToHead.homePairId : headToHead.awayPairId;
-        if (tied[1].pairId === winnerId) [ordered[cursor], ordered[cursor + 1]] = [ordered[cursor + 1], ordered[cursor]];
-        ordered[cursor].position = cursor + 1;
-        ordered[cursor + 1].position = cursor + 2;
-      } else {
-        tied.forEach(row => row.rankingPending = true);
-        warnings.push(`El desempate entre ${tied[0].pair} y ${tied[1].pair} espera el partido entre sí; no se salteó ese criterio.`);
-      }
     } else {
-      tied.forEach(row => row.rankingPending = true);
-      warnings.push(`Hay ${tied.length} parejas empatadas en ${tied[0].points} puntos y el reglamento no define cómo resolver empates múltiples.`);
+      let resolved = false;
+      if (tied.length === 2) {
+        const headToHead = completed.find(match =>
+          (match.homePairId === tied[0].pairId && match.awayPairId === tied[1].pairId)
+          || (match.homePairId === tied[1].pairId && match.awayPairId === tied[0].pairId));
+        if (headToHead) {
+          const winnerId = headToHead.summary.winnerSide === 'HOME' ? headToHead.homePairId : headToHead.awayPairId;
+          if (tied[1].pairId === winnerId) [ordered[cursor], ordered[cursor + 1]] = [ordered[cursor + 1], ordered[cursor]];
+          resolved = true;
+        }
+      }
+
+      if (!resolved) {
+        const tieBreakOrder = [...tied].sort((left, right) =>
+          right.setsFor - left.setsFor
+          || right.gamesFor - left.gamesFor
+          || right.gameDifference - left.gameDifference
+          || left.seedNumber - right.seedNumber
+          || left.pairId - right.pairId);
+        ordered.splice(cursor, tied.length, ...tieBreakOrder);
+      }
+
+      for (let index = cursor; index < groupEnd; index++) {
+        ordered[index].position = index + 1;
+        ordered[index].rankingPending = false;
+      }
     }
     cursor = groupEnd;
   }
 
-  const unresolved = ordered.some(row => row.rankingPending);
-  if (unresolved) warnings.push('El orden sigue pendiente: no se saltean criterios sin resolver ni se ejecuta un sorteo automáticamente.');
-  return { rows: ordered, warnings: [...new Set(warnings)], rankingComplete: !unresolved };
+  return { rows: ordered, warnings: [], rankingComplete: true };
 }

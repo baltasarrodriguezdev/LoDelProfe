@@ -4,21 +4,14 @@
     "frontend": {
       "root": "frontend",
       "framework": "angular",
-      "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
+      "installCommand": "npm ci --include=dev --include=optional",
       "buildCommand": "npm run build",
       "outputDirectory": "dist/frontend/browser"
     },
     "backend": {
       "root": "backend",
-      "framework": "express",
-      "entrypoint": "src/app.ts",
-      "functions": {
-        "src/app.ts": {
-          "includeFiles": "{node_modules/**,package.json}"
-        }
-      },
-      "installCommand": "npm ci --workspaces=false --include=dev --include=optional",
-      "buildCommand": "npm run prisma:deploy && npm run build && npm run verify:runtime -- --service-local && npm run prepare:vercel"
+      "runtime": "container",
+      "entrypoint": "Dockerfile.vercel"
     }
   },
   "rewrites": [
@@ -34,7 +27,7 @@
         { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.google.com https://maps.gstatic.com; font-src 'self' data:; connect-src 'self' wss://lodelprofe.com.ar wss://www.lodelprofe.com.ar wss://lodelprofe.com wss://www.lodelprofe.com wss://*.vercel.app; frame-src https://www.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" }
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.google.com https://maps.gstatic.com https://www.google-analytics.com https://*.google-analytics.com; font-src 'self' data:; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com wss://lodelprofe.com.ar wss://www.lodelprofe.com.ar wss://lodelprofe.com wss://www.lodelprofe.com wss://*.vercel.app; frame-src https://www.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" }
       ]
     }
   ]

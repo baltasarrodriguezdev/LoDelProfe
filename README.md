@@ -129,10 +129,6 @@ El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` env
 
 ### Vercel Services
 
-Cada servicio instala con `npm ci --workspaces=false --include=dev --include=optional`, usando su propio `package-lock.json`. El build verifica las dependencias locales mediante `npm run verify:runtime -- --service-local`. Vercel Services reubica `src/app.js` en la raíz de la función: tanto la raíz del repositorio como el backend declaran `type: module`, y `prepare:vercel` copia las dependencias del backend a `node_modules` en la raíz. La función incluye explícitamente ese directorio y el `package.json` de la raíz para que las importaciones sigan funcionando después del empaquetado.
-
-Para conexiones a `*.tidbcloud.com`, el runtime y las migraciones agregan `sslaccept=strict` y `connect_timeout=20` si esas opciones no están configuradas. `prisma:deploy` reintenta hasta tres veces únicamente ante `P1001`; otros errores de migración detienen el build inmediatamente.
-
 En la configuración del proyecto de Vercel, seleccioná **Services** como framework y cargá estas variables para Production:
 
 - `NODE_ENV=production`
@@ -149,10 +145,15 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 - `REALTIME_REDIS_URL`: URL TLS de Redis compartido (por ejemplo, la integración de Redis del marketplace de Vercel). Es necesaria para que los eventos crucen instancias.
 - `REALTIME_REDIS_CHANNEL=lo-del-profe:realtime:v1`: canal Pub/Sub; puede conservarse el valor predeterminado.
 - `REALTIME_HEARTBEAT_MS=30000`: intervalo de control de conexiones inactivas.
+- `WEB_PUSH_VAPID_PUBLIC_KEY`: clave pública VAPID para suscribir los dispositivos administradores.
+- `WEB_PUSH_VAPID_PRIVATE_KEY`: clave privada VAPID; debe guardarse únicamente como secreto de producción.
+- `WEB_PUSH_VAPID_SUBJECT=mailto:admin@lodelprofe.com`: contacto responsable del emisor. Las claves se generan una sola vez con `npx web-push generate-vapid-keys` y deben conservarse entre despliegues.
 
 `VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.
 
-El build del backend ejecuta `prisma migrate deploy` antes de compilar. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
+El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
+
+Las notificaciones Web Push se activan una vez por dispositivo desde la barra del panel administrador. Avisan nuevas reservas, cancelaciones y registros pendientes aunque la web esté cerrada. Requieren HTTPS, las tres variables `WEB_PUSH_VAPID_*` y la migración `push_subscriptions`; si falta la configuración, el botón lo informa sin afectar el resto del sistema.
 
 Vercel admite WebSocket en Functions mediante soporte actualmente en beta. Las conexiones quedan fijadas a una instancia y terminan al alcanzar la duración máxima de esa Function; el cliente se reconecta con backoff y resincroniza por REST. Por eso producción debe habilitar Fluid compute y configurar `REALTIME_REDIS_URL`: sin un broker compartido, una sola instancia funciona, pero dos instancias no pueden difundir eventos entre sí.
 

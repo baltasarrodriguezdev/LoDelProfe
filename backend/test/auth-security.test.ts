@@ -153,3 +153,22 @@ test('expone health tanto bajo /api como en desarrollo sin prefijo', async () =>
     assert.deepEqual(await response.json(), { status: 'ok' });
   }
 });
+
+test('expone courts, prices, auth/me y realtime después de la inicialización', async () => {
+  db.court.findMany = async () => [{ id: 1, name: 'Cancha 1', active: true }];
+  db.price.findMany = async () => [{ id: 1, durationMinutes: 60, price: 12000, active: true }];
+
+  const [courts, prices, me, realtime] = await Promise.all([
+    fetch(`${baseUrl}/api/courts`),
+    fetch(`${baseUrl}/api/prices`),
+    fetch(`${baseUrl}/api/auth/me`),
+    fetch(`${baseUrl}/api/realtime`)
+  ]);
+
+  assert.equal(courts.status, 200);
+  assert.deepEqual(await courts.json(), [{ id: 1, name: 'Cancha 1', active: true }]);
+  assert.equal(prices.status, 200);
+  assert.deepEqual(await prices.json(), [{ id: 1, durationMinutes: 60, price: 12000, active: true }]);
+  assert.equal(me.status, 401);
+  assert.equal(realtime.status, 426);
+});

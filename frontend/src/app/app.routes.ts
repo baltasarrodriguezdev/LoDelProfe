@@ -41,6 +41,7 @@ export const routes: Routes = [
   { path: 'admin/clientes', component: AdminClientsPage, canActivate: [superAdminGuard] },
   { path: 'admin/seguridad', component: AdminSecurityPage, canActivate: [superAdminGuard] },
   { path: 'admin/marketing/historias-instagram', component: InstagramStoriesPage, canActivate: [adminGuard] },
+  { path: 'admin/contenido-instagram', loadComponent: () => import('./features/league/instagram-content-page').then(module => module.InstagramContentPage), canActivate: [adminGuard] },
   { path: 'admin/la-liga', loadComponent: () => import('./features/league/admin-league-page').then(module => module.AdminLeaguePage), canActivate: [adminGuard] },
   { path: '**', redirectTo: '' }
 ];

@@ -44,8 +44,10 @@ export type StandingRow = {
   pairId: number;
   pair: string;
   seedNumber: number;
-  position: number | null;
+  position: number;
   played: number;
+  won: number;
+  lost: number;
   setsFor: number;
   setsAgainst: number;
   setDifference: number;
@@ -87,7 +89,7 @@ export type LeaguePayload = {
   bracket: Array<{ stage: string; matches: LeagueMatch[] }>;
   summary: { nextMatchday: { number: number; zone: { id: number; code: string; name: string }; date: string } | null; upcomingMatches: LeagueMatch[]; latestResults: LeagueMatch[] };
   rules: {
-    scoring: Record<string, unknown> & { straightSetsWinPoints: number; threeSetsWinPoints: number; threeSetsLossPoints: number; straightSetsLossPoints: number | null };
+    scoring: Record<string, unknown> & { straightSetsWinPoints: number; threeSetsWinPoints: number; threeSetsLossPoints: number; straightSetsLossPoints: number };
     tieBreakCriteria: string[];
     pending: string[];
   };
