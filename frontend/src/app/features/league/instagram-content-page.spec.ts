@@ -46,7 +46,7 @@ describe('InstagramContentPage', () => {
       providers: [
         provideZonelessChangeDetection(), provideRouter([]),
         { provide: Api, useValue: api },
-        { provide: RealtimeService, useValue: { listen: () => NEVER, resync$: NEVER } }
+        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } }
       ]
     }).compileComponents();
     fixture = TestBed.createComponent(InstagramContentPage);

@@ -158,13 +158,10 @@ export class AdminClientsPage implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.loadClients();
-    merge(
-      this.realtime.listen([
+    merge(this.realtime.listen([
         'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'BOOKING_CREATED',
         'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED'
-      ]),
-      this.realtime.resync$
-    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadClients());
+      ]).pipe(debounceTime(120)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadClients());
   }
   ngOnDestroy() { this.clientsAbort?.abort(); }
 

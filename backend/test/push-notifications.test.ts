@@ -1,3 +1,5 @@
+import webPush from 'web-push';
+import { publishBookingChange } from '../src/realtime/events.js';
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -113,4 +115,40 @@ test('construye avisos accionables sin exponer datos sensibles', () => {
   assert.equal(pendingUser.title, 'Nuevo usuario pendiente');
   assert.equal(pendingUser.url, '/admin/seguridad');
   assert.doesNotMatch(pendingUser.body, /teléfono|contraseña|código/i);
+});
+
+
+test('booking creation, cancellation and pending registration send Web Push without an admin connection', async t => {
+  const previous = { ...config.webPush };
+  Object.assign(config.webPush, { enabled: true, publicKey: 'test', privateKey: 'test', subject: 'mailto:test@example.com' });
+  t.mock.method(webPush, 'setVapidDetails', () => undefined);
+  const stub = (model: string, method: string, implementation: (...args: any[]) => any) => {
+    const previous = db[model][method];
+    db[model][method] = implementation;
+    t.after(() => { db[model][method] = previous; });
+  };
+  const sent: any[] = [];
+  t.mock.method(webPush, 'sendNotification', async (_device: unknown, payload: string) => { sent.push(JSON.parse(payload)); });
+  stub('pushSubscription', 'findMany', async (input: any) => {
+    assert.deepEqual(input.where.user.role.in, ['ADMIN', 'SUPERADMIN']);
+    return [{ id: 1, endpoint: 'https://push.example.test/offline-admin', p256dh: 'test', auth: 'test' }];
+  });
+  stub('pushSubscription', 'update', async () => ({}));
+  const booking = { id: 80, courtId: 1, userId: 3, clientName: 'Ana Perez',
+    startTime: new Date('2030-01-15T20:00:00Z'), endTime: new Date('2030-01-15T21:00:00Z'), status: 'CONFIRMED' };
+  stub('booking', 'findUnique', async () => booking);
+  stub('user', 'findFirst', async () => null);
+  stub('user', 'create', async ({ data }: any) => ({ id: 82, role: 'CLIENT', ...data }));
+  stub('user', 'findUnique', async () => ({ id: 82, firstName: 'Ana', lastName: 'Perez', role: 'CLIENT', phoneVerified: false }));
+  try {
+    await publishBookingChange('BOOKING_CREATED', booking);
+    await publishBookingChange('BOOKING_CANCELLED', { ...booking, status: 'CANCELLED' });
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ firstName: 'Ana', lastName: 'Perez', phone: '3576111122', password: 'test-password-123' })
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(sent.map(payload => payload.notification.title),
+      ['Nuevo turno reservado', 'Turno cancelado', 'Nuevo usuario pendiente']);
+  } finally { Object.assign(config.webPush, previous); }
 });

@@ -217,10 +217,8 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit() {
     this.loadAssets();
     this.loadCourt();
-    merge(
-      this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']),
-      this.realtime.resync$
-    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+    merge(this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'string') { this.loadAvailability(); return; }
       if (typeof change === 'object') {
         const event = change as RealtimeEvent;
         if (event.type === 'AVAILABILITY_CHANGED' && !this.realtime.affectsAvailability(event, this.date, this.courtId)) return;
@@ -273,7 +271,11 @@ export class InstagramStoriesPage implements OnInit, AfterViewInit, OnDestroy {
     this.drawSoon();
   }
 
+  private availabilityRequestKey = '';
   loadAvailability() {
+    const key = JSON.stringify([this.date, this.duration, this.courtId]);
+    if (this.availabilityAbort && key === this.availabilityRequestKey) return;
+    this.availabilityRequestKey = key;
     if (!this.courtId) return;
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();

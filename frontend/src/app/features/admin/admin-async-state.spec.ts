@@ -1,3 +1,5 @@
+import { RealtimeService } from '../../core/realtime';
+import { NEVER } from 'rxjs';
 import { registerLocaleData } from '@angular/common';
 import localeEsAr from '@angular/common/locales/es-AR';
 import { provideZonelessChangeDetection } from '@angular/core';
@@ -28,6 +30,7 @@ describe('estados administrativos zoneless', () => {
     await TestBed.configureTestingModule({
       imports: [AdminStatsPage],
       providers: [
+        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: api }
@@ -82,6 +85,7 @@ describe('estados administrativos zoneless', () => {
     await TestBed.configureTestingModule({
       imports: [InstagramStoriesPage],
       providers: [
+        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: { get: vi.fn((path: string) => path === '/courts' ? of([{ id: 1, active: true }]) : of({ slots: [] })) } }

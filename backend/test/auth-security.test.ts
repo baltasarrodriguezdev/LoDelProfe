@@ -170,5 +170,5 @@ test('expone courts, prices, auth/me y realtime después de la inicialización',
   assert.equal(prices.status, 200);
   assert.deepEqual(await prices.json(), [{ id: 1, durationMinutes: 60, price: 12000, active: true }]);
   assert.equal(me.status, 401);
-  assert.equal(realtime.status, 426);
+  assert.equal(realtime.status, 404);
 });

@@ -366,21 +366,20 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   get pendingTotal() { return Math.max(0, this.estimatedTotal - this.paidTotal); }
 
   ngOnInit() {
+    this.destroyRef.onDestroy(this.agendaStore.activate(true));
     const requestedDate = this.route.snapshot.queryParamMap.get('date');
     if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) this.selectedDate = requestedDate;
     const requestedBookingId = Number(this.route.snapshot.queryParamMap.get('booking'));
     if (Number.isInteger(requestedBookingId) && requestedBookingId > 0) this.openBookingFromNotification(requestedBookingId);
     this.holdTimer = setInterval(() => this.tickPendingHolds(), 1000);
     this.loadCourt();
-    merge(
-      this.realtime.listen([
+    merge(this.realtime.listen([
         'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
         'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
         'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
         'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED', 'CASH_MOVEMENT_CREATED'
-      ]),
-      this.realtime.resync$
-    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      ]).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'string') { this.ensureLoaded(true); return; }
       if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
         && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
       this.loadPendingReservations();
@@ -392,7 +391,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     this.api.get<any[]>('/courts', undefined, { noCache: true }).subscribe({
       next: courts => {
         this.courtId = Number(courts?.[0]?.id ?? 0);
-        if (this.courtId) this.ensureLoaded();
+        if (this.courtId) this.ensureLoaded(true);
         else this.showNotice('No hay una cancha activa configurada.', true);
       },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo cargar la cancha activa.', true)
@@ -442,8 +441,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   loadPendingReservations() {
+    if (this.pendingReservationsAbort) return;
     const requestId = ++this.pendingReservationsRequestId;
-    this.pendingReservationsAbort?.abort();
     const abortController = new AbortController();
     this.pendingReservationsAbort = abortController;
     this.pendingReservationsStatus.set('loading');
@@ -469,8 +468,8 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   }
 
   loadPendingUsers() {
+    if (this.pendingUsersAbort) return;
     const requestId = ++this.pendingUsersRequestId;
-    this.pendingUsersAbort?.abort();
     const abortController = new AbortController();
     this.pendingUsersAbort = abortController;
     this.pendingUsersStatus.set('loading');
@@ -784,6 +783,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
 
   private tickPendingHolds() {
     this.holdClock.set(Date.now());
+    if (document.visibilityState !== 'visible' || !navigator.onLine) return;
     const expired = this.pendingReservations.filter(booking => this.isHoldExpired(booking) && !this.refreshedExpiredHolds.has(booking.id));
     if (!expired.length) return;
     expired.forEach(booking => this.refreshedExpiredHolds.add(booking.id));

@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { debounceTime, firstValueFrom, merge } from 'rxjs';
+import { debounceTime, firstValueFrom } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
@@ -23,6 +23,7 @@ export class MyBookingsStore {
   private auth = inject(Auth);
   private realtime = inject(RealtimeService);
   private destroyRef = inject(DestroyRef);
+  private activeConsumers = 0;
   private bookingsRequestId = 0;
   private loaded = false;
   private loadedUserId: number | null = null;
@@ -36,14 +37,11 @@ export class MyBookingsStore {
   readonly loadingBookings = computed(() => this.bookingsStatus() === 'loading');
 
   constructor() {
-    merge(
-      this.realtime.listen([
+    this.realtime.listen([
         'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
         'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED'
-      ]),
-      this.realtime.resync$
-    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      if (this.auth.user() && (this.loaded || this.bookings().length > 0 || this.bookingsStatus() !== 'idle')) {
+      ]).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.activeConsumers && document.visibilityState === 'visible' && navigator.onLine && this.auth.user() && (this.loaded || this.bookings().length > 0 || this.bookingsStatus() !== 'idle')) {
         void this.loadBookings(true);
       }
     });
@@ -57,7 +55,17 @@ export class MyBookingsStore {
     this.bookings().filter(booking => !this.isUpcoming(booking))
   );
 
-  loadBookings(force = false) {
+  activate() {
+    this.activeConsumers++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--this.activeConsumers === 0) this.requestAbort?.abort();
+    };
+  }
+
+  loadBookings(force = false, section: 'all' | 'upcoming' | 'history' = 'all') {
     const userId = this.auth.user()?.id ?? null;
     const sessionRevision = this.auth.sessionRevision();
     if (this.loaded && this.loadedUserId === userId && this.loadedSessionRevision === sessionRevision && !force) return Promise.resolve();
@@ -65,13 +73,13 @@ export class MyBookingsStore {
       this.bookings.set([]);
       this.loaded = false;
     }
-    if (this.inFlight && !force) return this.inFlight;
+    if (this.inFlight) return this.inFlight;
 
     const requestId = ++this.bookingsRequestId;
     this.requestAbort?.abort();
     const abortController = new AbortController();
     this.requestAbort = abortController;
-    const urls = ['/bookings/my', '/bookings/my/history'];
+    const urls = section === 'upcoming' ? ['/bookings/my'] : section === 'history' ? ['/bookings/my/history'] : ['/bookings/my', '/bookings/my/history'];
 
     this.bookingsStatus.set('loading');
     this.bookingsError.set('');
@@ -82,6 +90,10 @@ export class MyBookingsStore {
           urls.map(url => firstValueFrom(this.api.get<unknown>(url, undefined, { noCache: true, abortSignal: abortController.signal })))
         );
         if (requestId !== this.bookingsRequestId) return;
+        if ((this.auth.user()?.id ?? null) !== userId || this.auth.sessionRevision() !== sessionRevision) {
+          this.invalidate();
+          return;
+        }
 
         const failedResponse = responses.find(response => response.status === 'rejected');
         if (failedResponse?.status === 'rejected') throw failedResponse.reason;
@@ -92,7 +104,9 @@ export class MyBookingsStore {
           }
           return [];
         });
-        const dedupedBookings = this.dedupeBookings(normalizedBookings);
+        const preserved = section === 'all' ? [] : this.bookings().filter(booking =>
+          section === 'upcoming' ? !this.isUpcoming(booking) : this.isUpcoming(booking));
+        const dedupedBookings = this.dedupeBookings([...preserved, ...normalizedBookings]);
 
         this.bookings.set(dedupedBookings);
         this.loaded = responses.some(response => response.status === 'fulfilled');

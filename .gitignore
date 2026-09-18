@@ -11,3 +11,5 @@ target/
 build/
 logs/
 CREDENCIALES_ADMIN.md
+
+.vercel/

@@ -1,3 +1,4 @@
+import { RealtimeService } from '../../core/realtime';
 import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -100,6 +101,7 @@ export class BookingsPage implements OnInit, OnDestroy {
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
   private bookingsStore = inject(MyBookingsStore);
+  private realtime = inject(RealtimeService);
   private adminAgendaStore = inject(AdminAgendaStore);
 
   readonly history = signal(this.router.url.includes('historial'));
@@ -125,7 +127,11 @@ export class BookingsPage implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    void this.loadBookings();
+    this.destroyRef.onDestroy(this.bookingsStore.activate());
+    this.realtime.poll$().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      void this.bookingsStore.loadBookings(true, this.history() ? 'history' : 'upcoming');
+    });
+    void this.bookingsStore.loadBookings(true);
     this.holdTimer = setInterval(() => this.tickHolds(), 1000);
     this.api.get<any>('/booking-policy', undefined, { noCache: true }).subscribe({
       next: value => this.cancellationCutoffMinutes = Number(value?.cancellationCutoffMinutes ?? 120)
@@ -231,6 +237,7 @@ export class BookingsPage implements OnInit, OnDestroy {
 
   private tickHolds() {
     this.now.set(Date.now());
+    if (document.visibilityState !== 'visible' || !navigator.onLine) return;
     const expired = this.bookingsStore.bookings().filter(booking => this.isExpiredHold(booking) && !this.refreshedExpiredHolds.has(booking.id));
     if (!expired.length) return;
     expired.forEach(booking => this.refreshedExpiredHolds.add(booking.id));

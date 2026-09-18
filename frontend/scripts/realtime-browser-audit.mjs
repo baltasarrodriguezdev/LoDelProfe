@@ -79,7 +79,7 @@ async function navigate(client, sessionId, path) {
   await delay(300);
 }
 
-async function waitFor(client, sessionId, expression, timeout = 7_000) {
+async function waitFor(client, sessionId, expression, timeout = 80_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await evaluate(client, sessionId, expression)) return true;

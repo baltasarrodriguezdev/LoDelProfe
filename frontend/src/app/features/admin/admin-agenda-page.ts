@@ -1,5 +1,7 @@
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RealtimeService } from '../../core/realtime';
 import { CommonModule } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { DestroyRef, Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
@@ -77,6 +79,8 @@ import { AdminAgendaStore, AdminBooking } from './admin-agenda-store';
   `
 })
 export class AdminAgendaPage implements OnInit {
+  private destroyRef = inject(DestroyRef);
+  private realtime = inject(RealtimeService);
   private api = inject(Api);
   private router = inject(Router);
   private agendaStore = inject(AdminAgendaStore);
@@ -97,7 +101,11 @@ export class AdminAgendaPage implements OnInit {
   today = new Date();
   get weekly() { return this.router.url.includes('semanal'); }
 
-  ngOnInit() { this.loadAgenda(); }
+  ngOnInit() {
+    this.destroyRef.onDestroy(this.agendaStore.activate());
+    this.loadAgenda(true);
+    this.realtime.poll$().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadAgenda(true));
+  }
 
   loadAgenda(force = false) {
     void this.agendaStore.ensureAgendaLoaded({ date: this.selectedDate, days: this.weekly ? 7 : 1 }, force);

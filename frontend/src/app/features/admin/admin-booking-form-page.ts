@@ -179,16 +179,14 @@ export class AdminBookingFormPage implements OnInit, OnDestroy {
         this.error = response.error?.message ?? 'No se pudieron cargar los datos del formulario.';
       }
     });
-    merge(
-      this.realtime.listen([
+    merge(this.realtime.listen([
         'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
         'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
         'CONFIGURATION_CHANGED', 'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED'
-      ]),
-      this.realtime.resync$
-    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      ]).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(change => {
       if (this.saving()) return;
-      if (typeof change !== 'object' || ['CONFIGURATION_CHANGED', 'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED'].includes((change as RealtimeEvent).type)) {
+      if (typeof change === 'string') { this.loadAvailability(); return; }
+      if (['CONFIGURATION_CHANGED', 'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED'].includes((change as RealtimeEvent).type)) {
         this.refreshReferenceData();
       } else if (this.bookingId && (change as RealtimeEvent).resource.bookingId === this.bookingId) {
         this.loadBooking(this.bookingId);
@@ -376,7 +374,11 @@ export class AdminBookingFormPage implements OnInit, OnDestroy {
     });
   }
 
+  private availabilityRequestKey = '';
   private loadAvailability() {
+    const key = JSON.stringify([this.form.date, this.form.durationMinutes, this.form.courtId, this.bookingId]);
+    if (this.availabilityAbort && key === this.availabilityRequestKey) return;
+    this.availabilityRequestKey = key;
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
     if (!this.form.date || !this.form.durationMinutes) {

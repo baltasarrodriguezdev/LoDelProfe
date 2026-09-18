@@ -246,10 +246,13 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   ngOnInit() {
     this.restorePendingBooking();
     this.loadPrices();
-    merge(
-      this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']),
-      this.realtime.resync$
-    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+    merge(this.realtime.listen(['AVAILABILITY_CHANGED', 'CONFIGURATION_CHANGED']).pipe(debounceTime(120)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      if (typeof change === 'string') {
+        if (this.auth.user() && !this.isPhoneVerified()) void this.auth.refreshSession(true);
+        // A nextChangeAt refresh may have just completed on this same tick.
+        if (Date.now() - this.lastAvailabilityCompleted >= 1000) void this.loadAvailability();
+        return;
+      }
       if (typeof change === 'object') {
         const event = change as RealtimeEvent;
         if (event.type === 'AVAILABILITY_CHANGED' && !this.realtime.affectsAvailability(event, this.date, this.courtId)) return;
@@ -472,7 +475,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         this.holdReleaseReason = 'expired';
         this.modalState = 'holdReleased';
         this.lastWhatsappUrl = '';
-        void this.myBookingsStore.loadBookings(true);
+        if (document.visibilityState === 'visible' && navigator.onLine) void this.myBookingsStore.loadBookings(true);
         this.adminAgendaStore.invalidate();
       }
     };
@@ -542,7 +545,12 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     });
   }
 
+  private lastAvailabilityCompleted = 0;
+  private availabilityRequestKey = '';
   private async loadAvailability() {
+    const key = JSON.stringify([this.date, this.duration, this.courtId]);
+    if (this.availabilityAbort && key === this.availabilityRequestKey) return;
+    this.availabilityRequestKey = key;
     const requestId = ++this.availabilityRequestId;
     this.availabilityAbort?.abort();
     if (!this.date || !this.duration) {
@@ -574,6 +582,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         slots: normalizedSlots
       };
       this.scheduleAvailabilityRefresh(this.result.nextChangeAt);
+      this.lastAvailabilityCompleted = Date.now();
       this.availabilityStatus.set('success');
       this.resumePendingConfirmation();
     } catch (error) {
@@ -596,7 +605,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     if (!Number.isFinite(delay) || delay <= 0) return;
     this.availabilityRefreshTimer = setTimeout(() => {
       this.availabilityRefreshTimer = null;
-      void this.loadAvailability();
+      if (document.visibilityState === 'visible' && navigator.onLine) void this.loadAvailability();
     }, Math.min(delay, 2_147_000_000));
   }
   private clearAvailabilityRefresh() {

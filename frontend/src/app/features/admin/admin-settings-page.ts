@@ -3,7 +3,7 @@ import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { debounceTime, finalize, forkJoin, merge } from 'rxjs';
+import { debounceTime, finalize, forkJoin } from 'rxjs';
 import { Api } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
@@ -147,10 +147,7 @@ export class AdminSettingsPage implements OnInit {
 
   ngOnInit() {
     this.load();
-    merge(
-      this.realtime.listen(['CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED', 'BOOKING_PAYMENT_CHANGED']),
-      this.realtime.resync$
-    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.realtime.listen(['CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED', 'BOOKING_PAYMENT_CHANGED']).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
   }
 
   load() {

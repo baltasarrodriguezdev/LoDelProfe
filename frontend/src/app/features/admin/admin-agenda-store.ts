@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { debounceTime, firstValueFrom, merge } from 'rxjs';
+import { debounceTime, firstValueFrom } from 'rxjs';
 import { Api, Auth } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
 import { AsyncStatus } from '../../shared/async-state';
@@ -36,6 +36,8 @@ export class AdminAgendaStore {
   private auth = inject(Auth);
   private realtime = inject(RealtimeService);
   private destroyRef = inject(DestroyRef);
+  private activeAgenda = 0;
+  private activeAvailability = 0;
   private bookingsRequestId = 0;
   private availabilityRequestId = 0;
   private loadedAgendaKey: AgendaKey | null = null;
@@ -62,29 +64,40 @@ export class AdminAgendaStore {
   });
 
   constructor() {
-    merge(
-      this.realtime.listen([
+    this.realtime.listen([
         'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
         'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED',
         'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED', 'RECURRING_BOOKING_CHANGED', 'CONFIGURATION_CHANGED'
-      ]),
-      this.realtime.resync$
-    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.reloadLoaded());
+      ]).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.reloadLoaded());
+  }
+
+  activate(includeAvailability = false) {
+    this.activeAgenda++;
+    if (includeAvailability) this.activeAvailability++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeAgenda--;
+      if (includeAvailability) this.activeAvailability--;
+      if (this.activeAgenda === 0) this.agendaAbort?.abort();
+      if (this.activeAvailability === 0) this.availabilityAbort?.abort();
+    };
   }
 
   private reloadLoaded() {
-    if (!this.auth.isAdmin()) return;
+    if (!this.auth.isAdmin() || document.visibilityState !== 'visible' || !navigator.onLine) return;
     const agendaKey = this.loadedAgendaKey && { ...this.loadedAgendaKey };
     const availabilityKey = this.loadedAvailabilityKey && { ...this.loadedAvailabilityKey };
-    if (agendaKey) void this.ensureAgendaLoaded(agendaKey, true);
-    if (availabilityKey) void this.ensureAvailabilityLoaded(availabilityKey, true);
+    if (this.activeAgenda && agendaKey) void this.ensureAgendaLoaded(agendaKey, true);
+    if (this.activeAvailability && availabilityKey) void this.ensureAvailabilityLoaded(availabilityKey, true);
   }
 
   ensureAgendaLoaded(key: AgendaKey, force = false) {
     this.resetForUserChange();
     if (!force && this.sameAgendaKey(this.loadedAgendaKey, key) && this.agendaStatus() === 'success') return Promise.resolve();
     const cacheKey = this.agendaCacheKey(key);
-    if (!force && this.agendaInFlight?.key === cacheKey) return this.agendaInFlight.promise;
+    if (this.agendaInFlight?.key === cacheKey) return this.agendaInFlight.promise;
     const promise = this.loadAgenda(key).finally(() => {
       if (this.agendaInFlight?.promise === promise) this.agendaInFlight = null;
     });
@@ -136,7 +149,7 @@ export class AdminAgendaStore {
     this.resetForUserChange();
     if (!force && this.sameAvailabilityKey(this.loadedAvailabilityKey, key) && this.availabilityStatus() === 'success') return Promise.resolve();
     const cacheKey = this.availabilityCacheKey(key);
-    if (!force && this.availabilityInFlight?.key === cacheKey) return this.availabilityInFlight.promise;
+    if (this.availabilityInFlight?.key === cacheKey) return this.availabilityInFlight.promise;
     const promise = this.loadAvailability(key).finally(() => {
       if (this.availabilityInFlight?.promise === promise) this.availabilityInFlight = null;
     });

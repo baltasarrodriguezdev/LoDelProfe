@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { debounceTime, merge } from 'rxjs';
+import { debounceTime } from 'rxjs';
 import { Api } from '../../core/api';
 import { RealtimeEvent, RealtimeService } from '../../core/realtime';
 import type { LeagueMatch, LeaguePayload } from './league.models';
@@ -225,9 +225,7 @@ export class InstagramContentPage implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.loadLeagues();
-    merge(this.realtime.listen(['LEAGUE_CHANGED']), this.realtime.resync$).pipe(
-      debounceTime(180), takeUntilDestroyed(this.destroyRef)
-    ).subscribe(change => {
+    this.realtime.listen(['LEAGUE_CHANGED']).pipe(debounceTime(180), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
       if (typeof change === 'object') {
         const event = change as RealtimeEvent;
         if (event.resource.leagueId && event.resource.leagueId !== this.selectedLeagueId) return;

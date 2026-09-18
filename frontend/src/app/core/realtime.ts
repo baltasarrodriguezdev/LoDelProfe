@@ -1,6 +1,7 @@
-import { DestroyRef, effect, inject, Injectable, signal } from '@angular/core';
-import { Observable, Subject, filter } from 'rxjs';
-import { Auth } from './api';
+import { inject, Injectable } from '@angular/core';
+import { Observable, filter, map } from 'rxjs';
+import { Api, Auth } from './api';
+import { startScreenPolling } from './screen-polling';
 
 export type RealtimeEventType =
   | 'AVAILABILITY_CHANGED'
@@ -41,201 +42,55 @@ export type RealtimeEvent = {
   resource: RealtimeResource;
 };
 
-export type RealtimeResyncReason = 'connected' | 'reconnected' | 'online' | 'visible' | 'fallback';
-export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'offline';
-
-const MAX_RECONNECT_ATTEMPTS = 5;
-
+// Retain the existing event vocabulary for local mutations; there is no network transport.
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
+  private readonly api = inject(Api);
   private readonly auth = inject(Auth);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly eventsSubject = new Subject<RealtimeEvent>();
-  private readonly resyncSubject = new Subject<RealtimeResyncReason>();
-  private readonly seen = new Map<string, number>();
-  private socket: WebSocket | null = null;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private fallbackTimer: ReturnType<typeof setInterval> | null = null;
-  private reconnectAttempt = 0;
-  private connectedOnce = false;
-  private started = false;
-  private stopped = false;
-  private reconnectExhausted = false;
-  private observedSessionRevision: number | undefined;
 
-  readonly status = signal<RealtimeStatus>('idle');
-  readonly events$ = this.eventsSubject.asObservable();
-  readonly resync$ = this.resyncSubject.asObservable();
-
-  constructor() {
-    effect(() => {
-      const revision = (this.auth as Auth & { sessionRevision?: () => number }).sessionRevision;
-      if (typeof revision !== 'function') return;
-      const currentRevision = revision();
-      if (this.observedSessionRevision === undefined) {
-        this.observedSessionRevision = currentRevision;
-        return;
-      }
-      if (currentRevision === this.observedSessionRevision) return;
-      this.observedSessionRevision = currentRevision;
-      if (this.started) queueMicrotask(() => this.restart());
-    });
-    this.destroyRef.onDestroy(() => this.stop());
-  }
-
-  start() {
-    if (this.started) return;
-    this.started = true;
-    this.stopped = false;
-    this.reconnectAttempt = 0;
-    this.reconnectExhausted = false;
-    window.addEventListener('online', this.onOnline);
-    document.addEventListener('visibilitychange', this.onVisibilityChange);
-    this.fallbackTimer = setInterval(() => {
-      if (document.visibilityState === 'visible' && navigator.onLine) this.resyncSubject.next('fallback');
-    }, 60_000);
-    this.connect();
-  }
-
-  stop() {
-    this.stopped = true;
-    this.started = false;
-    window.removeEventListener('online', this.onOnline);
-    document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    this.clearTimers();
-    this.socket?.close(1000, 'Aplicación cerrada');
-    this.socket = null;
-    this.status.set('idle');
+  poll$(ready: () => boolean = () => true): Observable<string> {
+    return new Observable(observer => startScreenPolling(async () => {
+      await this.api.whenIdle();
+      if (observer.closed || document.visibilityState !== 'visible' || !navigator.onLine || !ready()) return;
+      await this.auth.refreshIfStale();
+      if (observer.closed || document.visibilityState !== 'visible' || !navigator.onLine || !ready()) return;
+      observer.next('poll');
+      await this.api.whenIdle();
+    }, 60_000, ready));
   }
 
   listen(types: readonly RealtimeEventType[]): Observable<RealtimeEvent> {
     const accepted = new Set(types);
-    return this.events$.pipe(filter(event => accepted.has(event.type)));
+    return this.api.changes$.pipe(
+      map(path => this.localEvent(path)),
+      map(event => event?.type === 'BOOKING_UPDATED' && accepted.has('AVAILABILITY_CHANGED')
+        ? { ...event, type: 'AVAILABILITY_CHANGED' as const } : event),
+      filter((event): event is RealtimeEvent => !!event && accepted.has(event.type)
+        && document.visibilityState === 'visible' && navigator.onLine)
+    );
+  }
+
+  private localEvent(path: string): RealtimeEvent | null {
+    let type: RealtimeEventType;
+    let resource: RealtimeResource = {};
+    if (path.includes('/leagues')) type = 'LEAGUE_CHANGED';
+    else if (path.includes('/users')) { type = 'USER_UPDATED'; resource = { resource: 'USERS' }; }
+    else if (path.includes('password-reset')) { type = 'PASSWORD_RESET_CHANGED'; resource = { resource: 'PASSWORD_RESETS' }; }
+    else if (path.includes('recurring')) type = 'RECURRING_BOOKING_CHANGED';
+    else if (path.includes('/bookings') || path.includes('/reservations') || path.includes('/blocks')) type = 'BOOKING_UPDATED';
+    else if (path.includes('/cash')) type = 'CASH_MOVEMENT_CREATED';
+    else {
+      const name = path.includes('/courts') ? 'COURTS' : path.includes('/prices') ? 'PRICES'
+        : path.includes('/business-hours') ? 'BUSINESS_HOURS' : path.includes('/booking-policy') ? 'BOOKING_POLICY' : null;
+      if (!name) return null;
+      type = 'CONFIGURATION_CHANGED'; resource = { resource: name };
+    }
+    return { id: path, type, resource, occurredAt: new Date().toISOString() };
   }
 
   affectsAvailability(event: RealtimeEvent, date: string, courtId?: number | null) {
     const resource = event.resource;
-    const dateMatches = !resource.date || resource.date === date || resource.previousDate === date;
-    const courtMatches = courtId == null || !resource.courtId
-      || resource.courtId === courtId || resource.previousCourtId === courtId;
-    return dateMatches && courtMatches;
-  }
-
-  private connect() {
-    if (this.stopped || !this.started || this.socket || !navigator.onLine || this.reconnectExhausted) {
-      if (!navigator.onLine) this.status.set('offline');
-      if (this.reconnectExhausted) this.status.set('offline');
-      return;
-    }
-    this.status.set('connecting');
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/api/realtime`);
-    this.socket = socket;
-
-    socket.addEventListener('open', () => {
-      if (this.socket !== socket) return;
-      this.status.set('connected');
-      this.reconnectAttempt = 0;
-      this.reconnectExhausted = false;
-      const reason: RealtimeResyncReason = this.connectedOnce ? 'reconnected' : 'connected';
-      this.connectedOnce = true;
-      this.resyncSubject.next(reason);
-      this.heartbeatTimer = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'PING' }));
-      }, 25_000);
-    });
-    socket.addEventListener('message', message => this.handleMessage(message.data));
-    socket.addEventListener('close', () => {
-      if (this.socket !== socket) return;
-      this.socket = null;
-      this.clearHeartbeat();
-      if (!this.stopped) this.scheduleReconnect();
-    });
-    socket.addEventListener('error', () => socket.close());
-  }
-
-  private handleMessage(value: unknown) {
-    try {
-      const message = JSON.parse(String(value));
-      if (message?.type === 'REALTIME_CONNECTED' || message?.type === 'PONG') return;
-      if (!message?.id || !message?.type || !message?.resource || this.isDuplicate(message.id)) return;
-      this.eventsSubject.next(message as RealtimeEvent);
-    } catch {
-      // Un mensaje inválido se ignora; REST sigue siendo la fuente de verdad.
-    }
-  }
-
-  private isDuplicate(id: string) {
-    const now = Date.now();
-    for (const [seenId, timestamp] of this.seen) if (now - timestamp > 120_000) this.seen.delete(seenId);
-    if (this.seen.has(id)) return true;
-    this.seen.set(id, now);
-    return false;
-  }
-
-  private scheduleReconnect() {
-    if (!navigator.onLine) {
-      this.status.set('offline');
-      return;
-    }
-    if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      this.reconnectExhausted = true;
-      this.status.set('offline');
-      return;
-    }
-    this.status.set('connecting');
-    const base = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt++, 5));
-    const delay = Math.round(base * (0.8 + Math.random() * 0.4));
-    this.retryTimer = setTimeout(() => {
-      this.retryTimer = null;
-      this.connect();
-    }, delay);
-  }
-
-  private restart() {
-    if (!this.started || this.stopped) return;
-    this.reconnectAttempt = 0;
-    this.reconnectExhausted = false;
-    this.clearRetry();
-    const socket = this.socket;
-    this.socket = null;
-    this.clearHeartbeat();
-    socket?.close(1000, 'Sesión actualizada');
-    this.connect();
-  }
-
-  private readonly onOnline = () => {
-    this.resyncSubject.next('online');
-    this.reconnectAttempt = 0;
-    this.reconnectExhausted = false;
-    this.clearRetry();
-    this.connect();
-  };
-
-  private readonly onVisibilityChange = () => {
-    if (document.visibilityState !== 'visible') return;
-    this.resyncSubject.next('visible');
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      this.clearRetry();
-      this.connect();
-    }
-  };
-
-  private clearRetry() {
-    if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.retryTimer = null;
-  }
-
-  private clearHeartbeat() {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = null;
-  }
-
-  private clearTimers() {
-    this.clearRetry();
-    this.clearHeartbeat();
-    if (this.fallbackTimer) clearInterval(this.fallbackTimer);
-    this.fallbackTimer = null;
+    return (!resource.date || resource.date === date || resource.previousDate === date)
+      && (courtId == null || !resource.courtId || resource.courtId === courtId || resource.previousCourtId === courtId);
   }
 }
