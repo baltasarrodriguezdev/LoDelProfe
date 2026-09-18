@@ -1,112 +1,77 @@
-import { provideZonelessChangeDetection, signal } from '@angular/core';
+import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Auth } from './api';
+import { Api, Auth } from './api';
 import { RealtimeService } from './realtime';
+import { startScreenPolling } from './screen-polling';
 
-class MockWebSocket extends EventTarget {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-  readyState = MockWebSocket.CONNECTING;
-  sent: string[] = [];
-
-  constructor(readonly url: string) {
-    super();
-    MockWebSocket.instances.push(this);
-  }
-
-  open() {
-    this.readyState = MockWebSocket.OPEN;
-    this.dispatchEvent(new Event('open'));
-  }
-
-  message(value: unknown) {
-    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(value) }));
-  }
-
-  send(value: string) { this.sent.push(value); }
-
-  close() {
-    if (this.readyState === MockWebSocket.CLOSED) return;
-    this.readyState = MockWebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent('close'));
-  }
-}
-
-describe('RealtimeService', () => {
+describe('screen-owned polling', () => {
+  const stops: Array<() => void> = [];
   beforeEach(() => {
     vi.useFakeTimers();
-    MockWebSocket.instances = [];
-    vi.stubGlobal('WebSocket', MockWebSocket);
-    TestBed.configureTestingModule({
-      providers: [
-        provideZonelessChangeDetection(),
-        { provide: Auth, useValue: { sessionRevision: signal(0) } }
-      ]
-    });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
   });
-
   afterEach(() => {
-    TestBed.resetTestingModule();
-    vi.unstubAllGlobals();
-    vi.useRealTimers();
+    stops.splice(0).forEach(stop => stop());
+    TestBed.resetTestingModule(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
   });
-
-  it('mantiene una sola conexión y deduplica avisos repetidos', () => {
-    const service = TestBed.inject(RealtimeService);
-    const received: string[] = [];
-    service.events$.subscribe(event => received.push(event.id));
-
-    service.start();
-    service.start();
-    expect(MockWebSocket.instances).toHaveLength(1);
-    const socket = MockWebSocket.instances[0];
-    expect(socket.url).toContain('/api/realtime');
-    socket.open();
-    const event = { id: 'same-id', type: 'AVAILABILITY_CHANGED', occurredAt: new Date().toISOString(), resource: { courtId: 1 } };
-    socket.message(event);
-    socket.message(event);
-
-    expect(received).toEqual(['same-id']);
-    expect(service.status()).toBe('connected');
-    service.stop();
+  it('does not open sockets or schedule global refreshes just by creating the service', async () => {
+    const socket = vi.fn(); vi.stubGlobal('WebSocket', socket);
+    const auth = { refreshIfStale: vi.fn(() => Promise.resolve()) };
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection(),
+      { provide: Api, useValue: { changes$: new Subject(), whenIdle: () => Promise.resolve() } },
+      { provide: Auth, useValue: auth }
+    ] });
+    TestBed.inject(RealtimeService);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(socket).not.toHaveBeenCalled(); expect(auth.refreshIfStale).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
-
-  it('reconecta con backoff y solicita resincronización', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.5);
-    const service = TestBed.inject(RealtimeService);
-    const reasons: string[] = [];
-    service.resync$.subscribe(reason => reasons.push(reason));
-    service.start();
-    MockWebSocket.instances[0].open();
-    expect(reasons).toContain('connected');
-
-    MockWebSocket.instances[0].close();
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(MockWebSocket.instances).toHaveLength(2);
-    MockWebSocket.instances[1].open();
-    expect(reasons).toContain('reconnected');
-    service.stop();
+  it('refreshes after 60 seconds and removes timers/listeners on destruction', async () => {
+    const refresh = vi.fn(); const stop = startScreenPolling(refresh); stops.push(stop);
+    await vi.advanceTimersByTimeAsync(59_999); expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1); expect(refresh).toHaveBeenCalledTimes(1);
+    stop(); window.dispatchEvent(new Event('online')); document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(600_000); expect(refresh).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
-
-  it('corta los reintentos automáticos después de cinco fallos consecutivos', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.5);
-    const service = TestBed.inject(RealtimeService);
-    service.start();
-
-    for (let attempt = 0; attempt < 5; attempt++) {
-      MockWebSocket.instances[attempt].close();
-      await vi.advanceTimersByTimeAsync(1_000 * 2 ** attempt);
-    }
-    expect(MockWebSocket.instances).toHaveLength(6);
-
-    MockWebSocket.instances[5].close();
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
-    expect(MockWebSocket.instances).toHaveLength(6);
-    expect(service.status()).toBe('offline');
-    service.stop();
+  it('pauses in background and resumes once despite simultaneous visibility/online events', async () => {
+    const refresh = vi.fn(); stops.push(startScreenPolling(refresh));
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange')); expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(300_000); expect(refresh).not.toHaveBeenCalled();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(0); expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000); expect(refresh).toHaveBeenCalledTimes(2);
+  });
+  it('does not overlap work and waits 60 seconds after completion', async () => {
+    let finish!: () => void;
+    const refresh = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    stops.push(startScreenPolling(refresh));
+    await vi.advanceTimersByTimeAsync(60_000); await vi.advanceTimersByTimeAsync(300_000);
+    window.dispatchEvent(new Event('online')); expect(refresh).toHaveBeenCalledTimes(1);
+    finish(); await vi.advanceTimersByTimeAsync(0); await vi.advanceTimersByTimeAsync(59_999);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(refresh).toHaveBeenCalledTimes(2);
+  });
+  it('pauses when offline', async () => {
+    const refresh = vi.fn(); stops.push(startScreenPolling(refresh));
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); window.dispatchEvent(new Event('offline'));
+    await vi.advanceTimersByTimeAsync(180_000); expect(refresh).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('unsubscribing during pending requests prevents a late screen refresh', async () => {
+    let finish!: () => void; const waiting = new Promise<void>(resolve => { finish = resolve; });
+    const auth = { refreshIfStale: vi.fn(() => Promise.resolve()) };
+    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection(),
+      { provide: Api, useValue: { changes$: new Subject(), whenIdle: () => waiting } }, { provide: Auth, useValue: auth }
+    ] });
+    const refresh = vi.fn(); const subscription = TestBed.inject(RealtimeService).poll$().subscribe(refresh);
+    await vi.advanceTimersByTimeAsync(60_000); subscription.unsubscribe(); finish();
+    await vi.advanceTimersByTimeAsync(0); expect(refresh).not.toHaveBeenCalled();
+    expect(auth.refreshIfStale).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
   });
 });

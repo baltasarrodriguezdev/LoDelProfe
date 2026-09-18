@@ -239,7 +239,7 @@ export class AdminLeaguePage implements OnInit {
 
   ngOnInit() {
     this.loadLeagues();
-    merge(this.realtime.listen(['LEAGUE_CHANGED']), this.realtime.resync$).pipe(debounceTime(180), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+    merge(this.realtime.listen(['LEAGUE_CHANGED']).pipe(debounceTime(180)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.selectedLeagueId()) this.loadLeague(this.selectedLeagueId()!, true);
     });
   }

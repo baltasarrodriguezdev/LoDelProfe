@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import Redis from 'ioredis';
 import { DateTime } from 'luxon';
 import { config } from '../config.js';
 
@@ -62,70 +61,6 @@ type BookingChange = {
 };
 
 const emitter = new EventEmitter();
-const seenEvents = new Map<string, number>();
-let publisher: Redis | null = null;
-let subscriber: Redis | null = null;
-let subscriberStarted = false;
-
-function rememberEvent(id: string) {
-  const now = Date.now();
-  for (const [seenId, seenAt] of seenEvents) {
-    if (now - seenAt > 60_000) seenEvents.delete(seenId);
-  }
-  if (seenEvents.has(id)) return false;
-  seenEvents.set(id, now);
-  return true;
-}
-
-function dispatchLocal(event: RoutedRealtimeEvent) {
-  if (!rememberEvent(event.id)) return;
-  emitter.emit('event', event);
-}
-
-function redisClient() {
-  return new Redis(config.realtime.redisUrl, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    enableReadyCheck: true
-  });
-}
-
-async function ensurePublisher() {
-  if (!config.realtime.redisUrl) return null;
-  publisher ??= redisClient();
-  if (publisher.status === 'wait') await publisher.connect();
-  return publisher;
-}
-
-export async function startRealtimeBroker() {
-  if (!config.realtime.redisUrl || subscriberStarted) return;
-  subscriberStarted = true;
-  subscriber = redisClient();
-  subscriber.on('message', (_channel, value) => {
-    try {
-      dispatchLocal(JSON.parse(value) as RoutedRealtimeEvent);
-    } catch (error) {
-      console.error('[realtime] evento Redis inválido', error);
-    }
-  });
-  subscriber.on('error', error => console.error('[realtime] Redis subscriber', error.message));
-  try {
-    if (subscriber.status === 'wait') await subscriber.connect();
-    await subscriber.subscribe(config.realtime.redisChannel);
-  } catch (error) {
-    subscriberStarted = false;
-    console.error('[realtime] no se pudo iniciar Redis Pub/Sub; la instancia conserva difusión local', error);
-  }
-}
-
-export async function stopRealtimeBroker() {
-  const clients = [publisher, subscriber].filter((client): client is Redis => Boolean(client));
-  publisher = null;
-  subscriber = null;
-  subscriberStarted = false;
-  await Promise.allSettled(clients.map(client => client.quit()));
-}
-
 export function subscribeRealtimeEvents(listener: Listener) {
   emitter.on('event', listener);
   return () => emitter.off('event', listener);
@@ -137,13 +72,7 @@ export async function publishRealtimeEvent(input: EventInput) {
     id: randomUUID(),
     occurredAt: new Date().toISOString()
   };
-  dispatchLocal(event);
-  try {
-    const client = await ensurePublisher();
-    if (client) await client.publish(config.realtime.redisChannel, JSON.stringify(event));
-  } catch (error) {
-    console.error('[realtime] no se pudo publicar en Redis; el cambio ya fue confirmado en la base', error);
-  }
+  emitter.emit('event', event);
   return event;
 }
 
