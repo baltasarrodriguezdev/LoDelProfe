@@ -274,7 +274,9 @@ export class LeaguePage implements OnInit {
 
   ngOnInit() {
     this.load();
-    merge(this.realtime.listen(['LEAGUE_CHANGED']).pipe(debounceTime(180)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load(true));
+    merge(this.realtime.listen(['LEAGUE_CHANGED']), this.realtime.resync$).pipe(
+      debounceTime(180), takeUntilDestroyed(this.destroyRef)
+    ).subscribe(() => this.load(true));
   }
 
   load(background = false) {
@@ -282,7 +284,6 @@ export class LeaguePage implements OnInit {
     if (!background || !this.data()) this.status.set('loading');
     this.error.set('');
     this.api.get<LeaguePayload>('/league/active', undefined, { noCache: true }).pipe(
-      takeUntilDestroyed(this.destroyRef),
       finalize(() => { if (requestId === this.requestId && this.status() === 'loading') this.status.set('error'); })
     ).subscribe({
       next: data => { if (requestId === this.requestId) { this.data.set(data); this.status.set('success'); } },

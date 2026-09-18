@@ -41,6 +41,7 @@ app.use(csrfProtection);
 
 const routes = express.Router();
 routes.get('/health', (_request, response) => response.json({ status: 'ok' }));
+routes.get('/realtime', (_request, response) => response.status(426).set('Upgrade', 'websocket').json({ message: 'Este endpoint requiere una conexión WebSocket.' }));
 routes.use('/auth', auth);
 routes.use(pub);
 routes.use('/league', lazyRouter('league-public', () => import('./routes/league-public.routes.js')));

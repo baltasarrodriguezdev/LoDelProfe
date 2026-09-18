@@ -116,12 +116,15 @@ export class AdminStatsPage implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadDashboard();
     this.loadCourt();
-    merge(this.realtime.listen([
+    merge(
+      this.realtime.listen([
         'AVAILABILITY_CHANGED', 'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED',
         'BOOKING_CANCELLED', 'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED',
         'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED', 'CONFIGURATION_CHANGED',
         'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED'
-      ]).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(change => {
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
       this.loadDashboard();
       if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
         && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
@@ -141,11 +144,7 @@ export class AdminStatsPage implements OnInit, OnDestroy {
   ngOnDestroy() { this.dashboardAbort?.abort(); this.availabilityAbort?.abort(); this.agendaAbort?.abort(); }
   get error() { return this.dashboardError || this.availabilityError || this.agendaError; }
   setPeriod(period: string) { this.period = period; const today = new Date(); const start = new Date(today); if (period === '7') start.setDate(start.getDate() - 6); if (period === '30') start.setDate(start.getDate() - 29); this.from = this.dateInput(start); this.to = this.dateInput(today); this.loadDashboard(); }
-  private dashboardRequestKey = '';
   loadDashboard() {
-    const key = JSON.stringify([this.from, this.to]);
-    if (this.dashboardAbort && key === this.dashboardRequestKey) return;
-    this.dashboardRequestKey = key;
     const requestId = ++this.dashboardRequestId;
     this.dashboardAbort?.abort();
     const abortController = new AbortController();
@@ -160,11 +159,7 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     });
   }
   readonly loading = computed(() => [this.dashboardStatus(), this.availabilityStatus(), this.agendaStatus()].includes('loading'));
-  private availabilityRequestKey = '';
   loadAvailability() {
-    const key = JSON.stringify([this.availabilityDate, this.availabilityDuration, this.courtId]);
-    if (this.availabilityAbort && key === this.availabilityRequestKey) return;
-    this.availabilityRequestKey = key;
     if (!this.courtId) return;
     if (this.requestedAgendaDate !== this.availabilityDate || ['idle', 'error'].includes(this.agendaStatus())) this.loadTodayAgenda();
     const requestId = ++this.availabilityRequestId;
@@ -187,7 +182,6 @@ export class AdminStatsPage implements OnInit, OnDestroy {
     });
   }
   loadTodayAgenda() {
-    if (this.agendaAbort && this.requestedAgendaDate === this.availabilityDate) return;
     const requestId = ++this.agendaRequestId;
     this.agendaAbort?.abort();
     const abortController = new AbortController();

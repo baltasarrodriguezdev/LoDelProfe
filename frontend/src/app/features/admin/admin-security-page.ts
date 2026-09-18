@@ -67,12 +67,15 @@ export class AdminSecurityPage implements OnInit, OnDestroy {
   readonly usersLoading = signal(false); readonly usersLoadError = signal('');
   ngOnInit() {
     this.loadUsers(); this.loadResets(); this.loadAuditLogs();
-    merge(this.realtime.listen([
+    merge(
+      this.realtime.listen([
         'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
         'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
         'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
         'CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED'
-      ]).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      ]),
+      this.realtime.resync$
+    ).pipe(debounceTime(150), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.loadUsers(); this.loadResets(); this.loadAuditLogs();
     });
   }
@@ -81,7 +84,7 @@ export class AdminSecurityPage implements OnInit, OnDestroy {
     if (this.usersLoading()) return;
     this.usersLoading.set(true); this.usersLoadError.set('');
     this.api.get<PendingUser[]>('/admin/users/pending-verification', undefined, { noCache: true }).pipe(
-      takeUntilDestroyed(this.destroyRef), finalize(() => this.usersLoading.set(false))
+      finalize(() => this.usersLoading.set(false))
     ).subscribe({
       next: value => this.users = Array.isArray(value) ? value : [],
       error: response => {
@@ -90,8 +93,8 @@ export class AdminSecurityPage implements OnInit, OnDestroy {
       }
     });
   }
-  loadResets() { this.api.get<ResetRequest[]>('/admin/password-reset-requests', undefined, { noCache: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: value => this.resets = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudieron cargar las recuperaciones.', true) }); }
-  loadAuditLogs() { this.api.get<AuditLog[]>('/admin/audit-logs', { limit: 50 }, { noCache: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: value => this.auditLogs = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudo cargar la actividad administrativa.', true) }); }
+  loadResets() { this.api.get<ResetRequest[]>('/admin/password-reset-requests', undefined, { noCache: true }).subscribe({ next: value => this.resets = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudieron cargar las recuperaciones.', true) }); }
+  loadAuditLogs() { this.api.get<AuditLog[]>('/admin/audit-logs', { limit: 50 }, { noCache: true }).subscribe({ next: value => this.auditLogs = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudo cargar la actividad administrativa.', true) }); }
   auditLabel(action: string) {
     return ({
       USER_VERIFIED: 'Usuario verificado',

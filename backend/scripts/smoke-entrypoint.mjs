@@ -53,8 +53,8 @@ try {
   const initializedMs = await waitForOutput('initialization:complete');
 
   const [me, realtime] = await earlyRouteResponses;
-  if (me.status !== 401 || realtime.status !== 404) {
-    throw new Error(`Rutas durante cold start: /api/auth/me=${me.status} (esperado 401), /api/realtime=${realtime.status} (esperado 404).`);
+  if (me.status !== 401 || realtime.status !== 426) {
+    throw new Error(`Rutas durante cold start: /api/auth/me=${me.status} (esperado 401), /api/realtime=${realtime.status} (esperado 426).`);
   }
 
   console.log(`Cold start verificado: listen=${listeningMs.toFixed(1)}ms, inicialización=${initializedMs.toFixed(1)}ms, /api/health=${response.status}.`);

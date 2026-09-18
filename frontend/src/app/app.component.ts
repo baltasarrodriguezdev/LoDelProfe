@@ -1,11 +1,12 @@
 import { Component, DestroyRef, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
-import { filter } from 'rxjs';
+import { debounceTime, filter, merge } from 'rxjs';
 import { Auth } from './core/api';
 import { AdminNavigationComponent } from './shared/admin-navigation.component';
 import { APP_TAILWIND_CLASSES, APP_TAILWIND_FEATURE_CLASSES, APP_TAILWIND_PUBLIC_CLASSES } from './shared/tailwind-classes';
 import { VENUE } from './shared/venue';
+import { RealtimeService } from './core/realtime';
 
 @Component({
   selector: 'app-root',
@@ -80,11 +81,19 @@ export class AppComponent {
   auth = inject(Auth);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
+  private realtime = inject(RealtimeService);
   venue = VENUE;
   mobileMenuOpen = false;
 
   constructor() {
     this.auth.refreshSession();
+    this.realtime.start();
+    merge(
+      this.realtime.listen(['USER_UPDATED', 'USER_VERIFICATION_CHANGED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.auth.user()) void this.auth.refreshSession(true);
+    });
     this.router.events.pipe(
       filter(event => event instanceof NavigationEnd),
       takeUntilDestroyed(this.destroyRef)

@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import { app } from './app.js';
 import { config } from './config.js';
 import { prisma } from './prisma/client.js';
+import { stopRealtimeBroker } from './realtime/events.js';
+import { attachRealtimeServer } from './realtime/server.js';
 
 const processStartedAt = performance.now();
 const port = Number(process.env.PORT || 80);
@@ -15,6 +17,8 @@ function startupLog(stage: string, details = '') {
 startupLog('modules:ready', `node=${process.version} configured-port=${config.port}`);
 const server = createServer(app);
 startupLog('http:create-server');
+attachRealtimeServer(server);
+startupLog('realtime:attached');
 startupLog('initialization:complete');
 
 server.listen(port, host, () => {
@@ -26,6 +30,7 @@ startupLog('http:listen-called');
 async function stop(signal: string) {
   startupLog('shutdown:start', signal);
   server.close();
+  await stopRealtimeBroker();
   await prisma.$disconnect();
   startupLog('shutdown:complete');
   process.exit();

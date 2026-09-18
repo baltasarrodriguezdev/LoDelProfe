@@ -1,5 +1,3 @@
-import { RealtimeService } from '../../core/realtime';
-import { NEVER } from 'rxjs';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -21,7 +19,6 @@ describe('AdminClientsPage zoneless', () => {
     await TestBed.configureTestingModule({
       imports: [AdminClientsPage],
       providers: [
-        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: api }
@@ -69,7 +66,6 @@ describe('AdminClientsPage zoneless', () => {
     await TestBed.configureTestingModule({
       imports: [AdminClientsPage],
       providers: [
-        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: api }
@@ -111,7 +107,6 @@ describe('AdminClientsPage zoneless', () => {
     await TestBed.configureTestingModule({
       imports: [AdminClientsPage],
       providers: [
-        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: api }

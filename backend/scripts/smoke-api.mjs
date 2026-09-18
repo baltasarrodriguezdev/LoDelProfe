@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import appModule from '../dist/src/app.js';
 import { prisma } from '../dist/src/prisma/client.js';
+import { stopRealtimeBroker } from '../dist/src/realtime/events.js';
 
 const app = appModule.default ?? appModule;
 const httpServer = createServer(app);
@@ -8,7 +9,7 @@ const httpServer = createServer(app);
 const expectedStatuses = new Map([
   ['/api/auth/me', 401],
   ['/api/league/active', 200],
-  ['/api/realtime', 404]
+  ['/api/realtime', 426]
 ]);
 
 await new Promise((resolve, reject) => {
@@ -30,5 +31,6 @@ try {
   }
 } finally {
   await new Promise(resolve => httpServer.close(resolve));
+  await stopRealtimeBroker();
   await prisma.$disconnect();
 }

@@ -2,8 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { debounceTime, merge } from 'rxjs';
-import { Auth } from '../../core/api';
+import { debounceTime, finalize, merge } from 'rxjs';
+import { Api, Auth } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
 import { VENUE } from '../../shared/venue';
 import { buildAccountVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
@@ -36,6 +36,7 @@ import { buildAccountVerificationWhatsappUrl } from '../../shared/whatsapp-booki
 })
 export class PhoneVerificationPage {
   readonly auth = inject(Auth);
+  private api = inject(Api);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private realtime = inject(RealtimeService);
@@ -44,7 +45,10 @@ export class PhoneVerificationPage {
   error = '';
 
   constructor() {
-    merge(this.realtime.listen(['USER_VERIFICATION_CHANGED', 'USER_UPDATED']).pipe(debounceTime(120)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.checkStatus(true));
+    merge(
+      this.realtime.listen(['USER_VERIFICATION_CHANGED', 'USER_UPDATED']),
+      this.realtime.resync$
+    ).pipe(debounceTime(120), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.checkStatus(true));
   }
 
   get whatsappUrl() {
@@ -57,13 +61,13 @@ export class PhoneVerificationPage {
   checkStatus(silent = false) {
     if (this.checking()) return;
     this.checking.set(true); this.error = '';
-    void this.auth.refreshSession(true).then(() => {
-      if (this.destroyRef.destroyed) return;
-      const user = this.auth.user();
-      if (user?.phoneVerified) this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') || '/reservar');
-      else if (!silent) this.error = this.auth.sessionStatus() === 'error'
-        ? 'No pudimos revisar el estado. Intentá nuevamente.'
-        : 'La cuenta todavía figura pendiente. Si ya enviaste el mensaje, aguardá la revisión de la cancha.';
-    }).finally(() => this.checking.set(false));
+    this.api.get<any>('/auth/me', undefined, { noCache: true }).pipe(finalize(() => this.checking.set(false))).subscribe({
+      next: user => {
+        if (user.phoneVerified !== this.auth.user()?.phoneVerified || user.status !== this.auth.user()?.status) this.auth.save({ user });
+        if (user.phoneVerified) this.router.navigateByUrl(this.route.snapshot.queryParamMap.get('returnUrl') || '/reservar');
+        else if (!silent) this.error = 'La cuenta todavía figura pendiente. Si ya enviaste el mensaje, aguardá la revisión de la cancha.';
+      },
+      error: () => { if (!silent) this.error = 'No pudimos revisar el estado. Intentá nuevamente.'; }
+    });
   }
 }

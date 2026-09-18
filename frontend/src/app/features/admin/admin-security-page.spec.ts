@@ -1,5 +1,3 @@
-import { RealtimeService } from '../../core/realtime';
-import { NEVER } from 'rxjs';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -25,7 +23,6 @@ describe('AdminSecurityPage', () => {
     await TestBed.configureTestingModule({
       imports: [AdminSecurityPage],
       providers: [
-        { provide: RealtimeService, useValue: { listen: () => NEVER, poll$: () => NEVER } },
         provideZonelessChangeDetection(),
         provideRouter([]),
         { provide: Api, useValue: api }
