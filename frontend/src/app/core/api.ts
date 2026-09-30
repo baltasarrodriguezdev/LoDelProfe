@@ -3,8 +3,9 @@ import { HttpClient, HttpErrorResponse, HttpHeaders, HttpInterceptorFn } from '@
 import { Router, RouterStateSnapshot } from '@angular/router';
 import { firstValueFrom, fromEvent, Observable, takeUntil, tap, timeout } from 'rxjs';
 import { AsyncStatus } from '../shared/async-state';
+import { environment } from '../../environments/environment';
 
-export const API = '/api';
+export const API = environment.apiBaseUrl;
 const CSRF_COOKIE = 'padel_csrf';
 const REQUEST_TIMEOUT_MS = 20000;
 type ApiOptions = { noCache?: boolean; timeoutMs?: number; abortSignal?: AbortSignal };

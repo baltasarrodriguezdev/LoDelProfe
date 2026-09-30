@@ -1,6 +1,7 @@
 import { DestroyRef, effect, inject, Injectable, signal } from '@angular/core';
 import { Observable, Subject, filter } from 'rxjs';
 import { Auth } from './api';
+import { environment } from '../../environments/environment';
 
 export type RealtimeEventType =
   | 'AVAILABILITY_CHANGED'
@@ -45,6 +46,13 @@ export type RealtimeResyncReason = 'connected' | 'reconnected' | 'online' | 'vis
 export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'offline';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+function resolveWebsocketUrl(configuredUrl: string) {
+  if (/^wss?:\/\//i.test(configuredUrl)) return configuredUrl;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const path = configuredUrl.startsWith('/') ? configuredUrl : `/${configuredUrl}`;
+  return `${protocol}//${location.host}${path}`;
+}
 
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
@@ -129,8 +137,7 @@ export class RealtimeService {
       return;
     }
     this.status.set('connecting');
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/api/realtime`);
+    const socket = new WebSocket(resolveWebsocketUrl(environment.websocketUrl));
     this.socket = socket;
 
     socket.addEventListener('open', () => {
