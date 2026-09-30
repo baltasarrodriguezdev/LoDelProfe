@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable, filter, map } from 'rxjs';
 import { Api, Auth } from './api';
 import { startScreenPolling } from './screen-polling';
+import { environment } from '../../environments/environment';
 
 export type RealtimeEventType =
   | 'AVAILABILITY_CHANGED'
@@ -42,11 +43,19 @@ export type RealtimeEvent = {
   resource: RealtimeResource;
 };
 
+function resolveWebsocketUrl(configuredUrl: string) {
+  if (/^wss?:\/\//i.test(configuredUrl)) return configuredUrl;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const path = configuredUrl.startsWith('/') ? configuredUrl : `/${configuredUrl}`;
+  return `${protocol}//${location.host}${path}`;
+}
+
 // Retain the existing event vocabulary for local mutations; there is no network transport.
 @Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private readonly api = inject(Api);
   private readonly auth = inject(Auth);
+  readonly websocketUrl = resolveWebsocketUrl(environment.websocketUrl);
 
   poll$(ready: () => boolean = () => true): Observable<string> {
     return new Observable(observer => startScreenPolling(async () => {
