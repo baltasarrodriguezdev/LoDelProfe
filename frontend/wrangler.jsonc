@@ -1,5 +1,5 @@
 {
-  "name": "lodelprofe",
+  "name": "lodelprofe-web",
   "compatibility_date": "2026-09-30",
   "assets": {
     "directory": "./dist/frontend/browser",
