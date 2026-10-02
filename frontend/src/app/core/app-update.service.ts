@@ -7,7 +7,7 @@ const UPDATE_INTERVAL_MS = 45 * 60 * 1000;
 const FOCUS_CHECK_THROTTLE_MS = 60 * 1000;
 const RELOAD_GUARD_KEY = 'lodelprofe:pwa-reload';
 const RELOAD_GUARD_WINDOW_MS = 5 * 60 * 1000;
-const UPDATE_RELEASE = 'pwa-update-1';
+const UPDATE_RELEASE = 'pwa-update-2';
 
 type ReloadGuard = { reason: string; at: number };
 
