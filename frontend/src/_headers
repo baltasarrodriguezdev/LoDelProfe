@@ -5,3 +5,24 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.google.com https://maps.gstatic.com https://www.google-analytics.com https://*.google-analytics.com; font-src 'self' data:; connect-src 'self' https://api.lodelprofe.com wss://api.lodelprofe.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com; frame-src https://www.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+/
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/ngsw.json
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/ngsw-worker.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/safety-worker.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/worker-basic.min.js
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/assets/manifest.webmanifest
+  Cache-Control: no-cache, max-age=0, must-revalidate
