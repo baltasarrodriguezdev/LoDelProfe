@@ -6,7 +6,7 @@ export type LeagueResultSummary = {
   awaySets: number;
   homeGames: number;
   awayGames: number;
-  winnerSide: 'HOME' | 'AWAY';
+  winnerSide: 'HOME' | 'AWAY' | null;
   wentToThreeSets: boolean;
 };
 
@@ -123,6 +123,17 @@ export function validateLeagueResult(sets: readonly LeagueSetInput[]): LeagueRes
   if (sets.length < 2 || sets.length > 3) {
     throw new HttpError(400, 'Un resultado definitivo debe contener dos o tres sets completos.');
   }
+  const noPointsDraw = sets.length === 2 && sets.every(set => set.homeGames === 0 && set.awayGames === 0);
+  if (noPointsDraw) {
+    return {
+      homeSets: 0,
+      awaySets: 0,
+      homeGames: 0,
+      awayGames: 0,
+      winnerSide: null,
+      wentToThreeSets: false
+    };
+  }
   sets.forEach(assertValidSet);
   let homeSets = 0;
   let awaySets = 0;
@@ -154,6 +165,7 @@ export function validateLeagueResult(sets: readonly LeagueSetInput[]): LeagueRes
 }
 
 export function pointsForResult(summary: LeagueResultSummary, rules: LeagueScoringRules) {
+  if (summary.winnerSide === null) return { homePoints: 0, awayPoints: 0 };
   const winnerPoints = summary.wentToThreeSets ? rules.threeSetsWinPoints : rules.straightSetsWinPoints;
   const loserPoints = summary.wentToThreeSets ? rules.threeSetsLossPoints : rules.straightSetsLossPoints;
   return summary.winnerSide === 'HOME'
@@ -167,6 +179,7 @@ export function advanceKnockoutWinner(
 ) {
   if (!source.homePairId || !source.awayPairId || !source.nextSlot) throw new HttpError(409, 'El cruce no está listo para avanzar.');
   const summary = validateLeagueResult(source.sets);
+  if (summary.winnerSide === null) throw new HttpError(409, 'Un resultado sin ganador no puede avanzar en una eliminatoria.');
   const winnerId = summary.winnerSide === 'HOME' ? source.homePairId : source.awayPairId;
   return source.nextSlot === 'HOME'
     ? { ...target, homePairId: winnerId }
@@ -208,7 +221,7 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     if (summary.winnerSide === 'HOME') {
       home.won++;
       away.lost++;
-    } else {
+    } else if (summary.winnerSide === 'AWAY') {
       away.won++;
       home.lost++;
     }
@@ -245,27 +258,34 @@ export function calculateStandings(pairs: readonly StandingsPair[], matches: rea
     if (tied.length === 1) {
       tied[0].position = cursor + 1;
     } else {
-      let resolved = false;
-      if (tied.length === 2) {
-        const headToHead = completed.find(match =>
-          (match.homePairId === tied[0].pairId && match.awayPairId === tied[1].pairId)
-          || (match.homePairId === tied[1].pairId && match.awayPairId === tied[0].pairId));
-        if (headToHead) {
-          const winnerId = headToHead.summary.winnerSide === 'HOME' ? headToHead.homePairId : headToHead.awayPairId;
-          if (tied[1].pairId === winnerId) [ordered[cursor], ordered[cursor + 1]] = [ordered[cursor + 1], ordered[cursor]];
-          resolved = true;
+      const tiedIds = new Set(tied.map(row => row.pairId));
+      const directMatches = completed.filter(match =>
+        match.summary.winnerSide
+        && match.homePairId != null
+        && match.awayPairId != null
+        && tiedIds.has(match.homePairId)
+        && tiedIds.has(match.awayPairId));
+      const directPairings = new Set(directMatches.map(match =>
+        [match.homePairId!, match.awayPairId!].sort((left, right) => left - right).join('-')));
+      const expectedPairings = tied.length * (tied.length - 1) / 2;
+      const directWins = new Map(tied.map(row => [row.pairId, 0]));
+
+      if (directPairings.size === expectedPairings) {
+        for (const match of directMatches) {
+          const winnerId = match.summary.winnerSide === 'HOME' ? match.homePairId! : match.awayPairId!;
+          directWins.set(winnerId, (directWins.get(winnerId) ?? 0) + 1);
         }
       }
 
-      if (!resolved) {
-        const tieBreakOrder = [...tied].sort((left, right) =>
-          right.setsFor - left.setsFor
-          || right.gamesFor - left.gamesFor
-          || right.gameDifference - left.gameDifference
-          || left.seedNumber - right.seedNumber
-          || left.pairId - right.pairId);
-        ordered.splice(cursor, tied.length, ...tieBreakOrder);
-      }
+      const useDirectMatches = directPairings.size === expectedPairings;
+      const tieBreakOrder = [...tied].sort((left, right) =>
+        (useDirectMatches ? (directWins.get(right.pairId) ?? 0) - (directWins.get(left.pairId) ?? 0) : 0)
+        || right.setsFor - left.setsFor
+        || right.gamesFor - left.gamesFor
+        || right.gameDifference - left.gameDifference
+        || left.seedNumber - right.seedNumber
+        || left.pairId - right.pairId);
+      ordered.splice(cursor, tied.length, ...tieBreakOrder);
 
       for (let index = cursor; index < groupEnd; index++) {
         ordered[index].position = index + 1;

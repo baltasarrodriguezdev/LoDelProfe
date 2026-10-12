@@ -51,7 +51,7 @@ type Match = {
   homePlaceholder: string | null;
   awayPlaceholder: string | null;
   sets: Array<{ setNumber: number; homeGames: number; awayGames: number }>;
-  result: { winnerSide: 'HOME' | 'AWAY' } | null;
+  result: { winnerSide: 'HOME' | 'AWAY' | null } | null;
 };
 type Standing = {
   pairId: number;
@@ -584,7 +584,7 @@ function resultsPage(payload: InstagramLeaguePayload, format: InstagramFormat, a
 
 function resultPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, match: Match) {
   const zone = payload.zones.find(item => item.id === match.zone?.id) ?? null;
-  const winner = match.result?.winnerSide === 'HOME' ? 'home' : 'away';
+  const winner = match.result?.winnerSide === 'HOME' ? 'home' : match.result?.winnerSide === 'AWAY' ? 'away' : null;
   const home = matchPair(match, 'home');
   const away = matchPair(match, 'away');
   const pairSize = format === 'story' ? 57 : 46;
@@ -653,7 +653,7 @@ function bracketPage(payload: InstagramLeaguePayload, format: InstagramFormat, a
 }
 
 function championsPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets, final: Match) {
-  const winner = final.result?.winnerSide === 'HOME' ? matchPair(final, 'home') : matchPair(final, 'away');
+  const winner = final.result?.winnerSide === 'HOME' ? matchPair(final, 'home') : final.result?.winnerSide === 'AWAY' ? matchPair(final, 'away') : 'Sin ganador oficial';
   return brandFrame(format, assets, { eyebrow: 'Liga Suma 12' }, div({ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: format === 'story' ? 48 : 30 },
     txt('CAMPEONES', { fontFamily: 'Null Free', fontSize: format === 'story' ? 122 : 103, lineHeight: .9, color: COLORS.lime, textAlign: 'center', justifyContent: 'center' }),
     div({ width: format === 'story' ? 760 : 700, height: format === 'story' ? 500 : 320, border: `2px solid ${COLORS.line}`, borderRadius: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1c3220' },
@@ -702,7 +702,7 @@ function descriptionFor(payload: InstagramLeaguePayload, selection: InstagramSel
   }
   if (selection.template === 'standings') return [`Así está la tabla de posiciones${zone ? ` de la ${zone.name}` : ''}.`, ending].join('\n');
   if (selection.template === 'individual_result') return [`Resultado final · ${zone?.name ?? stageLabel(matches[0]?.stage ?? '')}`, matches[0] ? `${matchPair(matches[0], 'home')} ${setScore(matches[0])} ${matchPair(matches[0], 'away')}` : null, ending].filter(Boolean).join('\n');
-  if (selection.template === 'champions') return [`Campeones de la Liga Suma 12.`, matches[0] ? `${matches[0].result?.winnerSide === 'HOME' ? matchPair(matches[0], 'home') : matchPair(matches[0], 'away')} se quedó con el título.` : null, ending].filter(Boolean).join('\n');
+  if (selection.template === 'champions') return [`Campeones de la Liga Suma 12.`, matches[0]?.result?.winnerSide ? `${matches[0].result.winnerSide === 'HOME' ? matchPair(matches[0], 'home') : matchPair(matches[0], 'away')} se quedó con el título.` : null, ending].filter(Boolean).join('\n');
   if (selection.template === 'bracket') return ['Así continúan los cruces eliminatorios de la Liga Suma 12.', ending].join('\n');
   return ['Así quedaron las zonas de la Liga Suma 12.', ending].join('\n');
 }

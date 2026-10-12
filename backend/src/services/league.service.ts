@@ -301,6 +301,7 @@ export async function generateLeagueFixture(leagueId: number, actorId: number, d
 
 function winnerPairId(match: any) {
   const summary = validateLeagueResult(match.sets);
+  if (summary.winnerSide === null) throw new HttpError(409, 'Un partido sin ganador no puede definir un cruce eliminatorio.');
   return summary.winnerSide === 'HOME' ? match.homePairId : match.awayPairId;
 }
 

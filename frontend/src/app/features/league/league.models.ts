@@ -34,7 +34,7 @@ export type LeagueMatch = {
   homePlaceholder: string | null;
   awayPlaceholder: string | null;
   sets: LeagueSet[];
-  result: { homeSets: number; awaySets: number; homeGames: number; awayGames: number; winnerSide: 'HOME' | 'AWAY'; wentToThreeSets: boolean; homePoints: number | null; awayPoints: number | null } | null;
+  result: { homeSets: number; awaySets: number; homeGames: number; awayGames: number; winnerSide: 'HOME' | 'AWAY' | null; wentToThreeSets: boolean; homePoints: number | null; awayPoints: number | null } | null;
   scoringPending: boolean;
   rescheduleNote: string | null;
   updatedAt: string;

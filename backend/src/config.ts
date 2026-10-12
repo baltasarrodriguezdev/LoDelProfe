@@ -5,6 +5,11 @@ const jwtSecret = process.env.JWT_SECRET ?? 'dev-only-secret-change-me';
 if (production && !process.env.JWT_SECRET) throw new Error('JWT_SECRET es obligatorio en producción');
 if (production && !process.env.FRONTEND_URL) throw new Error('FRONTEND_URL es obligatorio en producción');
 
+const configuredCookieDomain = process.env.COOKIE_DOMAIN?.trim();
+if (configuredCookieDomain && (/[:/]/.test(configuredCookieDomain) || configuredCookieDomain.startsWith('.'))) {
+  throw new Error('COOKIE_DOMAIN debe ser un dominio sin protocolo, ruta ni punto inicial');
+}
+
 const frontendUrls = [
   ...(process.env.FRONTEND_URL ?? 'http://localhost:4200').split(','),
   ...(process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : []),
@@ -29,6 +34,7 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   authCookieName: process.env.AUTH_COOKIE_NAME ?? 'padel_session',
   csrfCookieName: process.env.CSRF_COOKIE_NAME ?? 'padel_csrf',
+  csrfCookieDomain: production ? configuredCookieDomain : undefined,
   authCookieMaxAgeMs: Number(process.env.AUTH_COOKIE_MAX_AGE_MS ?? 604800000),
   frontendUrls,
   publicAppUrl: (process.env.PUBLIC_APP_URL ?? frontendUrls[0]).replace(/\/$/, ''),

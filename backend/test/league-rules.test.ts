@@ -32,6 +32,25 @@ test('una derrota 0–2 otorga 0 puntos a la pareja perdedora', () => {
   assert.equal(table.rows.find(row => row.pairId === 2)?.points, 0);
 });
 
+test('un 0–0 cuenta como jugado y no otorga puntos, victorias ni derrotas', () => {
+  const sets = [{ homeGames: 0, awayGames: 0 }, { homeGames: 0, awayGames: 0 }];
+  const summary = validateLeagueResult(sets);
+  assert.equal(summary.winnerSide, null);
+  assert.deepEqual(pointsForResult(summary, confirmedRules), { homePoints: 0, awayPoints: 0 });
+
+  const table = calculateStandings(
+    [{ id: 1, displayName: 'A - B', seedNumber: 1 }, { id: 2, displayName: 'C - D', seedNumber: 2 }],
+    [{ homePairId: 1, awayPairId: 2, official: true, status: 'FINISHED', sets }],
+    confirmedRules
+  );
+  for (const row of table.rows) {
+    assert.deepEqual(
+      { played: row.played, won: row.won, lost: row.lost, setsFor: row.setsFor, setsAgainst: row.setsAgainst, gamesFor: row.gamesFor, gamesAgainst: row.gamesAgainst, points: row.points },
+      { played: 1, won: 0, lost: 0, setsFor: 0, setsAgainst: 0, gamesFor: 0, gamesAgainst: 0, points: 0 }
+    );
+  }
+});
+
 test('una derrota 1–2 otorga 1 punto a la pareja perdedora', () => {
   const summary = validateLeagueResult([
     { homeGames: 6, awayGames: 3 },
@@ -91,6 +110,31 @@ test('ordena por puntos y luego por el partido entre sí sin saltar criterios', 
   assert.equal(table.rows[0].pairId, 1);
   assert.equal(table.rows[1].pairId, 2);
   assert.deepEqual(table.rows.slice(0, 2).map(row => row.points), [3, 3]);
+});
+
+test('resuelve un empate triple con la mini tabla de partidos entre sí', () => {
+  const pairs = [1, 2, 3, 4].map(id => ({ id, displayName: `Pareja ${id}`, seedNumber: id }));
+  const result = (homePairId: number, awayPairId: number, sets: Array<{ homeGames: number; awayGames: number }>) => ({
+    homePairId, awayPairId, official: true, status: 'FINISHED', sets
+  });
+  const straight = (winner: number, loser: number) => result(winner, loser, [
+    { homeGames: 6, awayGames: 4 }, { homeGames: 6, awayGames: 4 }
+  ]);
+  const threeSets = (winner: number, loser: number) => result(winner, loser, [
+    { homeGames: 6, awayGames: 4 }, { homeGames: 4, awayGames: 6 }, { homeGames: 6, awayGames: 4 }
+  ]);
+
+  const table = calculateStandings(pairs, [
+    straight(1, 2), straight(1, 3), threeSets(2, 3),
+    straight(1, 4), straight(1, 4),
+    straight(2, 4), straight(2, 4), straight(2, 4), threeSets(4, 2),
+    straight(3, 4), straight(3, 4), straight(3, 4), threeSets(3, 4)
+  ], confirmedRules);
+
+  assert.deepEqual(
+    table.rows.filter(row => row.points === 12).map(row => row.pairId),
+    [1, 2, 3]
+  );
 });
 
 test('si todavía no jugaron entre sí asigna posiciones usando el sorteo original como último criterio', () => {

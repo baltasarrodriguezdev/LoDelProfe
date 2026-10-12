@@ -27,7 +27,22 @@ const registrationSchema = z.object({
 
 const router = Router();
 const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
-const csrfCookieOptions = { httpOnly: false, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
+const csrfCookieOptions = {
+  httpOnly: false,
+  secure: config.production,
+  sameSite: 'lax' as const,
+  path: '/',
+  maxAge: config.authCookieMaxAgeMs,
+  ...(config.csrfCookieDomain ? { domain: config.csrfCookieDomain } : {})
+};
+const clearCookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/' };
+const clearCsrfCookieOptions = {
+  httpOnly: false,
+  secure: config.production,
+  sameSite: 'lax' as const,
+  path: '/',
+  ...(config.csrfCookieDomain ? { domain: config.csrfCookieDomain } : {})
+};
 const authRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -81,13 +96,13 @@ router.post('/password-reset', recoveryAttemptRateLimit, asyncHandler(async (req
     password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
   }).parse(req.body);
   const result = await passwordReset.resetPassword(data.token, data.password);
-  res.clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
-    .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
+  res.clearCookie(config.authCookieName, clearCookieOptions)
+    .clearCookie(config.csrfCookieName, clearCsrfCookieOptions)
     .json(result);
 }));
 router.post('/logout', (_req, res) => res
-  .clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
-  .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
+  .clearCookie(config.authCookieName, clearCookieOptions)
+  .clearCookie(config.csrfCookieName, clearCsrfCookieOptions)
   .status(204).end());
 router.get('/me', authenticate, asyncHandler(async (req, res) => res.json(await auth.me(req.auth!.userId))));
 
