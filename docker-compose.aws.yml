@@ -1,0 +1,92 @@
+name: lodelprofe-aws
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-la_cancha_del_profe}
+      MYSQL_USER: ${MYSQL_USER:-padel}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Defini MYSQL_PASSWORD en deploy/aws/aws.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Defini MYSQL_ROOT_PASSWORD en deploy/aws/aws.env}
+      TZ: America/Argentina/Buenos_Aires
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./deploy/aws/mysql/low-memory.cnf:/etc/mysql/conf.d/low-memory.cnf:ro
+    networks:
+      - private_db
+    mem_limit: 416m
+    memswap_limit: 640m
+    mem_swappiness: 10
+    pids_limit: 150
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD="$$MYSQL_PASSWORD" mysqladmin ping -h 127.0.0.1 -u"$$MYSQL_USER" --silent
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    profiles: ["app"]
+    # Permite operar solo MySQL antes de configurar la aplicacion.
+    # El fallback es deliberadamente inutilizable si se habilita el profile app.
+    image: ${BACKEND_IMAGE:-lodelprofe-backend:not-configured}
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    command: ["node", "dist/src/server.js"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=160
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-padel_session}
+      AUTH_COOKIE_MAX_AGE_MS: ${AUTH_COOKIE_MAX_AGE_MS:-604800000}
+      FRONTEND_URL: https://www.lodelprofe.com
+      PUBLIC_APP_URL: https://www.lodelprofe.com
+      COOKIE_DOMAIN: lodelprofe.com
+      APP_TIMEZONE: America/Argentina/Buenos_Aires
+      PASSWORD_RESET_TTL_MINUTES: ${PASSWORD_RESET_TTL_MINUTES:-15}
+      BUSINESS_WHATSAPP_PHONE: ${BUSINESS_WHATSAPP_PHONE:-}
+      WEB_PUSH_VAPID_PUBLIC_KEY: ${WEB_PUSH_VAPID_PUBLIC_KEY:-}
+      WEB_PUSH_VAPID_PRIVATE_KEY: ${WEB_PUSH_VAPID_PRIVATE_KEY:-}
+      WEB_PUSH_VAPID_SUBJECT: ${WEB_PUSH_VAPID_SUBJECT:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - private_db
+      - app_net
+    mem_limit: 288m
+    memswap_limit: 448m
+    mem_swappiness: 20
+    pids_limit: 100
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mysql_data:
+    name: lodelprofe_aws_mysql_data
+
+networks:
+  private_db:
+    internal: true
+  app_net:

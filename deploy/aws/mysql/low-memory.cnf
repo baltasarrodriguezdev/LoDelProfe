@@ -1,0 +1,29 @@
+[mysqld]
+# Perfil inicial para EC2 t3.micro: 908 MiB utilizables y 2 GiB de swap.
+# La base actual es pequena; priorizamos estabilidad y dejamos memoria al SO.
+innodb_dedicated_server=OFF
+innodb_buffer_pool_size=128M
+innodb_log_buffer_size=8M
+innodb_flush_method=O_DIRECT
+innodb_flush_log_at_trx_commit=1
+
+max_connections=25
+thread_cache_size=8
+table_open_cache=256
+table_open_cache_instances=1
+table_definition_cache=256
+host_cache_size=0
+
+tmp_table_size=16M
+max_heap_table_size=16M
+sort_buffer_size=256K
+join_buffer_size=256K
+read_buffer_size=128K
+read_rnd_buffer_size=256K
+
+performance_schema=OFF
+skip_name_resolve=ON
+
+# Retencion acotada para evitar crecimiento indefinido del almacenamiento.
+binlog_expire_logs_seconds=259200
+max_binlog_size=64M

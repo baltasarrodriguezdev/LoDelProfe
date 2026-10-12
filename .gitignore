@@ -6,6 +6,10 @@ dist/
 backend/prisma/dev.db
 .env.local
 .env.production
+.env.aws
+deploy/aws/aws.env
+deploy/aws/backups/
+*-recovery.env*
 .DS_Store
 target/
 build/
