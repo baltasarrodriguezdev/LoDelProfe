@@ -69,6 +69,8 @@ export const APP_TAILWIND_CLASSES = `
   [&_.footer-map-link]:inline-flex [&_.footer-map-link]:items-center [&_.footer-map-link]:gap-2 [&_.footer-map-link]:rounded-lg [&_.footer-map-link]:border [&_.footer-map-link]:border-brand-gold/50 [&_.footer-map-link]:px-3 [&_.footer-map-link]:py-2 [&_.footer-map-link]:text-sm
   [&_.footer-bottom]:mx-auto [&_.footer-bottom]:mt-9 [&_.footer-bottom]:flex [&_.footer-bottom]:w-full [&_.footer-bottom]:max-w-[1200px] [&_.footer-bottom]:justify-between [&_.footer-bottom]:gap-7 [&_.footer-bottom]:border-t [&_.footer-bottom]:border-white/10 [&_.footer-bottom]:pt-5
   [&_.footer-bottom_span]:text-[.68rem] [&_.footer-bottom_span]:text-[#9eaea2]
+  [&_.footer-privacy-link]:text-[.68rem] [&_.footer-privacy-link]:text-[#b7c1b9] [&_.footer-privacy-link]:underline [&_.footer-privacy-link]:decoration-white/25 [&_.footer-privacy-link]:underline-offset-4
+  [&_.footer-privacy-link:hover]:text-brand-cream [&_.footer-privacy-link:hover]:decoration-brand-gold
 
   [&_app-confirm-dialog]:fixed [&_app-confirm-dialog]:inset-0 [&_app-confirm-dialog]:z-[1000] [&_app-confirm-dialog]:block
   [&_.confirm-dialog-backdrop]:fixed [&_.confirm-dialog-backdrop]:inset-0 [&_.confirm-dialog-backdrop]:grid [&_.confirm-dialog-backdrop]:place-items-center [&_.confirm-dialog-backdrop]:bg-[rgba(6,23,18,.78)] [&_.confirm-dialog-backdrop]:p-4 [&_.confirm-dialog-backdrop]:backdrop-blur-[6px]

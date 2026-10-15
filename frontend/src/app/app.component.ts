@@ -68,6 +68,7 @@ import { VENUE } from './shared/venue';
         </div>
         <div class="footer-bottom">
           <span>© 2026 Lo del Profe. Todos los derechos reservados.</span>
+          <a class="footer-privacy-link" routerLink="/politica-de-privacidad">Privacidad</a>
           <span>Reservas simples. Partidos grandes.</span>
         </div>
       </footer>

@@ -24,7 +24,8 @@ const publicRoutes = [
   { path: '/registro', name: 'registro' },
   { path: '/recuperar-contrasena', name: 'recuperar-contrasena' },
   { path: '/reservar', name: 'reservar' },
-  { path: '/la-liga', name: 'la-liga' }
+  { path: '/la-liga', name: 'la-liga' },
+  { path: '/politica-de-privacidad', name: 'politica-de-privacidad' }
 ];
 
 const authenticatedRoutes = [
@@ -253,6 +254,16 @@ for (const viewport of viewports) {
 
 test.describe('interacciones responsive críticas', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test('la política abre por URL directa y permanece disponible al recargar', async ({ page }) => {
+    await page.goto('/politica-de-privacidad', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Política de Privacidad', level: 1 })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Privacidad', exact: true })).toBeVisible();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/politica-de-privacidad$/);
+    await expect(page.getByRole('heading', { name: 'Política de Privacidad', level: 1 })).toBeVisible();
+    await assertNoGlobalOverflow(page);
+  });
 
   test('menús, modal de reserva y validaciones se abren y cierran', async ({ page }) => {
     await openRoute(page, '/');
