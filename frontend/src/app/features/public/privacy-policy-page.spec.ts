@@ -23,6 +23,10 @@ describe('PrivacyPolicyPage', () => {
     expect(content).toContain('Liga Suma 12');
     expect(content).toContain('WhatsApp');
     expect(content).toContain('15 de octubre de 2026');
+    expect(fixture.nativeElement.querySelectorAll('.privacy-content > section')).toHaveLength(5);
+    expect(content).toContain('Protección de datos y tus derechos');
+    expect(content).toContain('automatización de mensajes');
+    expect(content).toContain('especialmente cuando participan menores de edad');
     expect(fixture.nativeElement.querySelector('a[href^="mailto:"]')).not.toBeNull();
     expect(TestBed.inject(Title).getTitle()).toBe('Política de Privacidad · Lo del Profe');
 

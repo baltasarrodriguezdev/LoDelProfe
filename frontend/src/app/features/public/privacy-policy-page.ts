@@ -39,212 +39,145 @@ import { RouterLink } from '@angular/router';
         <nav class="privacy-index" aria-label="Contenido de la política">
           <span>EN ESTA PÁGINA</span>
           <ol>
-            <li><a href="/politica-de-privacidad#responsable">Responsable y alcance</a></li>
-            <li><a href="/politica-de-privacidad#datos">Datos que tratamos</a></li>
-            <li><a href="/politica-de-privacidad#finalidades">Para qué los usamos</a></li>
-            <li><a href="/politica-de-privacidad#proveedores">Proveedores y terceros</a></li>
-            <li><a href="/politica-de-privacidad#conservacion">Conservación y seguridad</a></li>
-            <li><a href="/politica-de-privacidad#derechos">Tus derechos</a></li>
+            <li><a href="/politica-de-privacidad#datos">Datos recopilados</a></li>
+            <li><a href="/politica-de-privacidad#finalidad">Finalidad</a></li>
+            <li><a href="/politica-de-privacidad#whatsapp-fotografias">WhatsApp y fotografías</a></li>
+            <li><a href="/politica-de-privacidad#proteccion-derechos">Protección y derechos</a></li>
+            <li><a href="/politica-de-privacidad#contacto">Contacto</a></li>
           </ol>
         </nav>
 
         <div class="privacy-content">
           <p class="privacy-intro">
-            Esta política se aplica al sitio y a la aplicación web de <strong>Lo del Profe</strong>.
-            Explica qué información se utiliza y con qué finalidad. No abarca las prácticas propias
-            de servicios externos, como WhatsApp o Google, que tienen sus propias políticas.
-          </p>
-
-          <section id="responsable">
-            <span class="section-number" aria-hidden="true">01</span>
-            <h2>Responsable y alcance</h2>
-            <p>
-              El responsable del tratamiento es <strong>Adrián Rodríguez Teruel</strong>, titular de
-              la actividad identificada comercialmente como <strong>Lo del Profe</strong>, en Villa
-              Concepción del Tío, Córdoba, Argentina.
+            Esta política explica de forma simple cómo <strong>Lo del Profe</strong> usa la información
+            necesaria para gestionar cuentas, reservas, Liga Suma 12 y consultas de sus clientes. El
+            responsable es <strong>Adrián Rodríguez Teruel</strong>, en Villa Concepción del Tío,
+            Córdoba, Argentina.
             </p>
-            <p>
-              Para consultas o solicitudes relacionadas con datos personales podés escribir a
-              <a href="mailto:lodelprofe.padel@gmail.com">lodelprofe.padel&#64;gmail.com</a>.
-            </p>
-          </section>
 
           <section id="datos">
-            <span class="section-number" aria-hidden="true">02</span>
-            <h2>Datos que tratamos</h2>
+            <span class="section-number" aria-hidden="true">01</span>
+            <h2>Datos recopilados</h2>
 
-            <h3>Cuentas y seguridad</h3>
+            <h3>Cuenta y reservas</h3>
             <p>
-              Al registrarte se solicitan nombre, apellido, número de teléfono y contraseña. La
-              contraseña se conserva transformada mediante un hash seguro, no como texto legible.
-              También se registran el estado de la cuenta, la verificación del teléfono, fechas de
-              alta y actualización y, cuando corresponde, solicitudes de recuperación de acceso.
-            </p>
-
-            <h3>Reservas</h3>
-            <p>
-              Para administrar turnos se tratan el nombre y teléfono de la persona que reserva,
-              cancha, fecha, horario, duración, cantidad de jugadores, precio, estado de la reserva,
-              origen del pedido, observaciones, cancelaciones y datos operativos de pago como estado,
-              importe y medio informado. La aplicación no solicita datos de tarjeta ni credenciales
-              bancarias.
+              Al registrarte pedimos nombre, apellido, teléfono y contraseña. También guardamos la
+              verificación y el estado de la cuenta. Para gestionar un turno usamos el nombre y el
+              teléfono de quien reserva, fecha, horario, duración, cantidad de jugadores, precio,
+              estado, observaciones y cancelaciones. Cuando corresponde, se registra el estado, importe
+              y medio de pago informado. La aplicación no pide datos de tarjeta ni claves bancarias.
             </p>
 
             <h3>Liga Suma 12</h3>
             <p>
-              Para organizar y comunicar la competencia se utilizan nombres de jugadores y parejas,
-              zonas, fixture, horarios, resultados, posiciones y cruces. Los nombres deportivos,
-              resultados y posiciones de una temporada publicada son visibles en la página pública de
-              la liga y pueden integrarse en piezas de comunicación de la competencia.
+              Para organizar la liga se usan nombres de jugadores y parejas, zonas, partidos, horarios,
+              resultados, posiciones y cruces. Los nombres, resultados y posiciones de una temporada
+              publicada son visibles en la página pública de Liga Suma 12 y pueden aparecer en piezas
+              informativas de la competencia.
             </p>
+
+            <h3>Uso del sitio</h3>
+            <p>
+              Usamos cookies necesarias para mantener la sesión y proteger la cuenta, y almacenamiento
+              del navegador para recordar al usuario conectado o continuar una reserva. Los registros
+              técnicos pueden incluir dirección IP, fecha, hora y datos del navegador. Además, Google
+              Analytics mide el uso general del sitio y Google Maps muestra la ubicación de la cancha.
+            </p>
+          </section>
+
+          <section id="finalidad">
+            <span class="section-number" aria-hidden="true">02</span>
+            <h2>Para qué usamos los datos</h2>
+            <ul>
+              <li>Crear, verificar y proteger cuentas.</li>
+              <li>Consultar horarios y gestionar reservas o cancelaciones.</li>
+              <li>Contactar a clientes por temas relacionados con su cuenta o turno.</li>
+              <li>Organizar y comunicar Liga Suma 12.</li>
+              <li>Responder consultas y solicitudes de recuperación de acceso.</li>
+              <li>Mantener la seguridad y conocer el funcionamiento general del sitio.</li>
+            </ul>
+            <p>
+              Lo del Profe no vende ni alquila los datos personales de sus clientes.
+            </p>
+          </section>
+
+          <section id="whatsapp-fotografias">
+            <span class="section-number" aria-hidden="true">03</span>
+            <h2>WhatsApp y fotografías</h2>
 
             <h3>WhatsApp</h3>
             <p>
-              La aplicación puede abrir WhatsApp con un mensaje ya preparado para verificar una
-              cuenta, confirmar una solicitud, gestionar una reserva o brindar asistencia. Al iniciar
-              esa conversación, Lo del Profe recibe el número, el contenido del mensaje y la información
-              de perfil que la persona tenga disponible en WhatsApp. El envío se realiza por decisión
-              del usuario desde WhatsApp; la aplicación no lee otras conversaciones ni la agenda del
-              dispositivo.
+              La aplicación puede abrir WhatsApp con un mensaje preparado para verificar una cuenta,
+              gestionar una reserva o responder una consulta. Si decidís enviarlo, Lo del Profe recibe
+              tu número, el mensaje y la información de perfil que tengas visible en WhatsApp. La
+              aplicación no accede a tu agenda ni a otras conversaciones.
+            </p>
+            <p>
+              WhatsApp es un servicio de Meta y trata la información de acuerdo con su
+              <a href="https://www.whatsapp.com/legal/privacy-policy" target="_blank" rel="noopener noreferrer">propia política de privacidad</a>.
+            </p>
+            <p>
+              Si en el futuro habilitamos mediante WhatsApp Business la automatización de mensajes o
+              el procesamiento de fotografías, informaremos cómo se usarán esos datos antes de utilizar
+              esas funciones.
             </p>
 
-            <h3>Fotografías e imágenes</h3>
+            <h3>Fotografías</h3>
             <p>
-              El flujo público actual no permite que clientes suban fotografías. El sitio muestra
-              imágenes institucionales de la cancha y las herramientas administrativas permiten
-              preparar piezas para redes sociales; las imágenes cargadas en esa herramienta se guardan
-              localmente en el navegador del administrador. Si una publicación incorporara la imagen
-              identificable de una persona, deberá contar con la autorización o fundamento aplicable.
-              Podés solicitar su revisión o retiro por el correo indicado en esta política.
-            </p>
-
-            <h3>Datos técnicos y del dispositivo</h3>
-            <p>
-              Se utilizan cookies estrictamente necesarias para mantener la sesión y proteger
-              solicitudes, además de almacenamiento local o temporal del navegador para recordar el
-              usuario conectado, continuar una reserva y gestionar actualizaciones de la aplicación.
-              Los registros técnicos y de seguridad pueden incluir dirección IP, fecha, hora y agente
-              de usuario. Las notificaciones web, cuando están habilitadas para personal administrador,
-              requieren guardar la suscripción del navegador.
-            </p>
-
-            <h3>Medición y mapas</h3>
-            <p>
-              El sitio utiliza Google Analytics para obtener métricas de navegación y un mapa de Google
-              Maps para mostrar la ubicación de la cancha. Estos servicios pueden recibir identificadores
-              en línea, información del dispositivo, dirección IP y datos de interacción de acuerdo con
-              su propia configuración y política de privacidad.
+              El sitio público no permite que los clientes suban fotos. Muestra imágenes institucionales
+              de la cancha y las herramientas administrativas permiten preparar imágenes para redes
+              sociales, que se guardan localmente en el navegador del administrador. Las imágenes en las
+              que una persona pueda ser identificada requieren la autorización correspondiente antes de
+              publicarse, especialmente cuando participan menores de edad. Podés pedir que las revisemos
+              o retiremos escribiéndonos por correo.
             </p>
           </section>
 
-          <section id="finalidades">
-            <span class="section-number" aria-hidden="true">03</span>
-            <h2>Para qué usamos los datos</h2>
-            <ul>
-              <li>Crear, verificar y proteger cuentas de usuario.</li>
-              <li>Consultar disponibilidad, registrar, confirmar, modificar o cancelar reservas.</li>
-              <li>Contactar a clientes por cuestiones directamente vinculadas con su cuenta o turno.</li>
-              <li>Organizar y publicar la información deportiva de Liga Suma 12.</li>
-              <li>Atender consultas, solicitudes de recuperación y reclamos.</li>
-              <li>Mantener la seguridad, prevenir abusos y registrar acciones administrativas.</li>
-              <li>Conocer el funcionamiento general del sitio y facilitar cómo llegar a la cancha.</li>
-            </ul>
-            <p>
-              El tratamiento se realiza, según corresponda, para gestionar la relación y las solicitudes
-              del usuario, cumplir obligaciones aplicables, proteger el funcionamiento del servicio o
-              sobre la base del consentimiento. Lo del Profe no vende ni alquila datos personales.
-            </p>
-          </section>
-
-          <section id="proveedores">
+          <section id="proteccion-derechos">
             <span class="section-number" aria-hidden="true">04</span>
-            <h2>Proveedores tecnológicos y terceros</h2>
+            <h2>Protección de datos y tus derechos</h2>
+
+            <h3>Cómo cuidamos la información</h3>
             <p>
-              Para operar el servicio pueden intervenir proveedores de alojamiento web, base de datos,
-              comunicaciones en tiempo real, seguridad y notificaciones. Sólo deben recibir la
-              información necesaria para prestar su servicio y tratarla siguiendo las instrucciones del
-              responsable y las condiciones contractuales aplicables.
+              Las contraseñas se guardan mediante un hash seguro, no como texto legible. La aplicación
+              usa sesiones protegidas, controles de acceso por roles y registros de determinadas acciones
+              administrativas. Para operar el servicio también se usan proveedores de alojamiento, base
+              de datos, notificaciones, Google y WhatsApp, que pueden recibir la información necesaria
+              para prestar sus funciones.
             </p>
-            <p>Además, al usar determinadas funciones intervienen:</p>
-            <ul>
-              <li>
-                <strong>Meta / WhatsApp</strong>, cuando una persona decide iniciar o continuar una
-                conversación por ese canal. Consultá la
-                <a href="https://www.whatsapp.com/legal/privacy-policy" target="_blank" rel="noopener noreferrer">política de privacidad de WhatsApp</a>.
-              </li>
-              <li>
-                <strong>Google</strong>, por Google Analytics y el mapa embebido. Consultá la
-                <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">política de privacidad de Google</a>.
-              </li>
-              <li>
-                <strong>Proveedores del navegador o sistema operativo</strong>, si el personal
-                administrador activa notificaciones web.
-              </li>
-            </ul>
             <p>
-              Algunos proveedores pueden procesar información fuera de Argentina. El país de destino y
-              las condiciones concretas dependen del proveedor y de la infraestructura configurada en
-              cada momento.
+              El sistema no tiene hoy un plazo automático general para borrar datos. La información queda
+              asociada a las cuentas, reservas y registros mientras sea necesaria para la gestión, la
+              seguridad, la atención de reclamos o las obligaciones aplicables.
+            </p>
+
+            <h3>Tus derechos</h3>
+            <p>
+              Podés pedirnos que te informemos qué datos tuyos tenemos, que los corrijamos, actualicemos
+              o eliminemos cuando corresponda. Para proteger tu información podemos pedirte que confirmes
+              tu identidad. Escribinos indicando tu nombre, el teléfono asociado y qué necesitás.
             </p>
           </section>
 
-          <section id="conservacion">
+          <section id="contacto">
             <span class="section-number" aria-hidden="true">05</span>
-            <h2>Conservación y seguridad</h2>
+            <h2>Contacto</h2>
             <p>
-              La aplicación no tiene configurado actualmente un plazo automático general de eliminación.
-              Los datos permanecen asociados a las cuentas, reservas, registros operativos o temporadas
-              mientras esos registros existan y puedan ser necesarios para la gestión, la seguridad, la
-              resolución de reclamos o el cumplimiento de obligaciones aplicables. Una solicitud de
-              supresión será evaluada considerando esas necesidades y los deberes legales de conservación.
+              <strong>Responsable:</strong> Adrián Rodríguez Teruel<br>
+              <strong>Nombre comercial:</strong> Lo del Profe<br>
+              <strong>Ubicación:</strong> Villa Concepción del Tío, Córdoba, Argentina<br>
+              <strong>Correo:</strong> <a href="mailto:lodelprofe.padel@gmail.com">lodelprofe.padel&#64;gmail.com</a>
             </p>
-            <p>
-              Se aplican medidas técnicas de acceso y seguridad acordes con el servicio, entre ellas
-              contraseñas almacenadas mediante hash, sesiones protegidas, controles por roles y registros
-              de determinadas acciones administrativas. Ningún sistema ofrece seguridad absoluta; ante
-              un incidente se adoptarán las medidas razonables que correspondan.
-            </p>
-          </section>
+            <p>Última actualización: <time datetime="2026-10-15">15 de octubre de 2026</time>.</p>
 
-          <section id="derechos">
-            <span class="section-number" aria-hidden="true">06</span>
-            <h2>Tus derechos y cómo eliminar tus datos</h2>
-            <p>
-              Podés solicitar información y acceso a tus datos, o pedir su actualización, rectificación,
-              confidencialidad o supresión cuando corresponda conforme a la Ley 25.326. Para hacerlo,
-              escribí a <a href="mailto:lodelprofe.padel@gmail.com?subject=Solicitud%20sobre%20mis%20datos%20personales">lodelprofe.padel&#64;gmail.com</a>,
-              indicando tu nombre, teléfono asociado y el alcance de la solicitud. Se podrá pedir una
-              verificación razonable de identidad antes de responder.
-            </p>
-            <p>
-              El derecho de acceso puede ejercerse gratuitamente con una frecuencia no inferior a seis
-              meses, salvo interés legítimo. La Ley 25.326 prevé diez días corridos para responder pedidos
-              de acceso y cinco días hábiles para rectificación, actualización o supresión.
-            </p>
-            <p>
-              La Agencia de Acceso a la Información Pública (AAIP) es el órgano de control de la Ley
-              25.326 y recibe denuncias y reclamos. Podés consultar la
-              <a href="https://www.argentina.gob.ar/aaip/datospersonales/derechos" target="_blank" rel="noopener noreferrer">información oficial sobre tus derechos</a>.
-            </p>
-          </section>
-
-          <section id="cambios">
-            <span class="section-number" aria-hidden="true">07</span>
-            <h2>Cambios a esta política</h2>
-            <p>
-              Esta política podrá actualizarse si cambian las funciones del servicio, los proveedores o
-              las obligaciones aplicables. La fecha de la versión vigente se muestra al comienzo de la
-              página.
-            </p>
-          </section>
-
-          <div class="privacy-contact">
-            <div>
-              <span>CONTACTO DE PRIVACIDAD</span>
-              <strong>¿Querés consultar o eliminar tus datos?</strong>
+            <div class="privacy-contact">
+              <div>
+                <span>CONTACTO DE PRIVACIDAD</span>
+                <strong>¿Querés consultar o eliminar tus datos?</strong>
+              </div>
+              <a href="mailto:lodelprofe.padel@gmail.com?subject=Solicitud%20sobre%20mis%20datos%20personales">Escribir por correo</a>
             </div>
-            <a href="mailto:lodelprofe.padel@gmail.com?subject=Solicitud%20sobre%20mis%20datos%20personales">Escribir por correo</a>
-          </div>
+          </section>
 
           <a class="privacy-back" routerLink="/">← Volver al inicio</a>
         </div>
