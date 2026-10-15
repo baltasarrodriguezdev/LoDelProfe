@@ -25,6 +25,7 @@ export const routes: Routes = [
   { path: 'restablecer-contrasena', component: PasswordRecoveryPage },
   { path: 'reservar', component: AvailabilityPage },
   { path: 'la-liga', loadComponent: () => import('./features/league/league-page').then(module => module.LeaguePage) },
+  { path: 'politica-de-privacidad', loadComponent: () => import('./features/public/privacy-policy-page').then(module => module.PrivacyPolicyPage) },
   { path: 'confirmar-reserva', component: AvailabilityPage, canActivate: [authGuard] },
   { path: 'mis-turnos', component: BookingsPage, canActivate: [authGuard] },
   { path: 'historial', component: BookingsPage, canActivate: [authGuard] },
