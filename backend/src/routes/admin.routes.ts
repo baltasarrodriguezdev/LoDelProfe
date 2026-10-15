@@ -512,7 +512,7 @@ r.get('/bookings/:id', asyncHandler(async (req, res) => {
     include: reservationInclude()
   });
   if (!booking) throw new HttpError(404, 'Turno no encontrado');
-  const creator = await prisma.user.findUnique({
+  const creator = booking.createdBy == null ? null : await prisma.user.findUnique({
     where: { id: booking.createdBy },
     select: { id: true, firstName: true, lastName: true, role: true }
   });

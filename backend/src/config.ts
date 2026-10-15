@@ -2,8 +2,10 @@ import 'dotenv/config';
 
 const production = process.env.NODE_ENV === 'production';
 const jwtSecret = process.env.JWT_SECRET ?? 'dev-only-secret-change-me';
+const botApiKey = process.env.BOT_API_KEY?.trim() ?? '';
 if (production && !process.env.JWT_SECRET) throw new Error('JWT_SECRET es obligatorio en producción');
 if (production && !process.env.FRONTEND_URL) throw new Error('FRONTEND_URL es obligatorio en producción');
+if (production && !botApiKey) throw new Error('BOT_API_KEY es obligatorio en producción');
 
 const frontendUrls = [
   ...(process.env.FRONTEND_URL ?? 'http://localhost:4200').split(','),
@@ -26,6 +28,7 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   production,
   jwtSecret,
+  botApiKey,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   authCookieName: process.env.AUTH_COOKIE_NAME ?? 'padel_session',
   csrfCookieName: process.env.CSRF_COOKIE_NAME ?? 'padel_csrf',

@@ -25,9 +25,11 @@ function transactionClient(existing: { startTime: Date; endTime: Date }[] = []) 
     businessHour: { findUnique: async () => ({ active: true, openTime: '15:00', closeTime: '00:00' }) },
     booking: {
       findMany: async () => existing,
+      findFirst: async (args: any) => db.booking.findFirst(args),
       create: async ({ data }: any) => { const row = { id: created.length + 1, ...data }; created.push(row); return row; },
-      update: async ({ where, data }: any) => ({ id: where.id, ...data })
+      update: async (args: any) => db.booking.update(args)
     },
+    venueSetting: { findUnique: async (args: any) => db.venueSetting.findUnique(args) },
     user: { update: async ({ where, data }: any) => ({ id: where.id, ...data }) },
     cashMovement: { findFirst: async () => null, create: async ({ data }: any) => data }
   };
@@ -51,12 +53,14 @@ beforeEach(() => {
   queriedWhere = null;
   transactionOptions = null;
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.court.findFirst = async ({ where }: any) => where?.id && where.id !== 1 ? null : ({ id: 1, active: true });
   db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
   db.booking.findFirst = async () => null;
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, priceTotal: 20000 });
   db.booking.update = async ({ where, data }: any) => ({ id: where.id, ...data });
   db.booking.updateMany = async () => ({ count: 0 });
+  db.venueSetting.findUnique = async () => ({ id: 1, cancellationCutoffMinutes: 120 });
   db.auditLog.create = async ({ data }: any) => ({ id: 1n, ...data });
 });
 
@@ -237,6 +241,12 @@ test('disponibilidad bloquea pendientes y no consulta canceladas como ocupadas',
   assert.equal(response.status, 200);
   const body = await response.json() as any;
   assert.ok(body.slots.some((slot: any) => slot.available));
+});
+
+test('disponibilidad rechaza una cancha inexistente o inactiva', async () => {
+  const response = await fetch(`${baseUrl}/availability?date=${futureDate}&duration=60&courtId=999`);
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { message: 'Cancha no encontrada', code: 'COURT_NOT_FOUND' });
 });
 
 test('rechaza horarios pasados aunque el cliente intente enviarlos manualmente', async () => {

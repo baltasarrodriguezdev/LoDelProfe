@@ -38,6 +38,7 @@ app.use((request, _response, next) => {
   next();
 });
 app.use(csrfProtection);
+app.use('/api/bot', lazyRouter('bot', () => import('./routes/bot.routes.js')));
 
 const routes = express.Router();
 routes.get('/health', (_request, response) => response.json({ status: 'ok' }));

@@ -34,7 +34,7 @@ export const businessIntervals = (
   if (breakStart < schedule.open) breakStart = breakStart.plus({ days: 1 });
   if (breakEnd <= breakStart) breakEnd = breakEnd.plus({ days: 1 });
   if (breakStart <= schedule.open || breakEnd >= schedule.close) {
-    throw new HttpError(400, 'El descanso debe quedar dentro del horario de apertura');
+    throw new HttpError(400, 'El descanso debe quedar dentro del horario de apertura', 'INVALID_BUSINESS_HOURS');
   }
   return [
     { open: schedule.open, close: breakStart },

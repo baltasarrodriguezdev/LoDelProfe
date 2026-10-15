@@ -350,7 +350,8 @@ model Booking {
   holdExpiresAt DateTime?
   cancelledAt DateTime?
   cancellationReason String? @db.Text
-  createdBy Int
+  createdBy Int?
+  botRequest BotBookingRequest?
   cashMovements CashMovement[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -358,6 +359,23 @@ model Booking {
   @@index([userId,startTime])
   @@index([status,holdExpiresAt])
   @@map("bookings")
+}
+
+model BotBookingRequest {
+  id Int @id @default(autoincrement())
+  keyHash String @unique @db.Char(64)
+  requestHash String @db.Char(64)
+  bookingId Int? @unique
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@map("bot_booking_requests")
+}
+
+model BotPhoneLock {
+  phoneHash String @id @db.Char(64)
+  createdAt DateTime @default(now())
+  @@map("bot_phone_locks")
 }
 
 model VenueSetting {

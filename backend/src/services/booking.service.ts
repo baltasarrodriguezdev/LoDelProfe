@@ -14,6 +14,21 @@ export type BookingInput = {
   holdExpiresAt?: Date | null;
 };
 
+export type BookingCancellationResult = {
+  previous: Awaited<ReturnType<typeof prisma.booking.findFirst>>;
+  updated: Awaited<ReturnType<typeof prisma.booking.update>>;
+};
+
+export const defaultPlayersCount = 4;
+
+export function customerBookingStatus(user: { phoneVerified: boolean } | null, guestPhoneVerified = false): BookingStatus {
+  return user ? (user.phoneVerified ? 'CONFIRMED' : 'PENDING') : (guestPhoneVerified ? 'CONFIRMED' : 'PENDING');
+}
+
+export function holdForBookingStatus(status: BookingStatus, from = new Date()) {
+  return status === 'PENDING' ? pendingBookingExpiresAt(from) : null;
+}
+
 export const occupiedBookingStatuses: BookingStatus[] = ['PENDING', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
 const nonExpiringOccupiedStatuses: BookingStatus[] = ['CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
 export const expiredPendingCancellationReason = 'Solicitud vencida sin confirmación por WhatsApp';
@@ -108,27 +123,32 @@ async function lockedBookingsInSchedule(tx: Prisma.TransactionClient, input: Boo
 async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignoreId?: number) {
   const start = localDateTime(input.date, input.startTime);
   const end = start.plus({ minutes: input.durationMinutes });
-  const [court, price, hours] = await Promise.all([
-    tx.court.findFirst({ where: { active: true }, orderBy: { id: 'asc' } }),
+  const client = tx as Prisma.TransactionClient & { $queryRaw?: Prisma.TransactionClient['$queryRaw'] };
+  const court = client.$queryRaw
+    ? (await client.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+        SELECT id FROM courts WHERE id = ${input.courtId} AND active = true FOR UPDATE
+      `))[0]
+    : await tx.court.findFirst({ where: { id: input.courtId, active: true } });
+  const [price, hours] = await Promise.all([
     tx.price.findFirst({ where: { durationMinutes: input.durationMinutes, active: true } }),
     tx.businessHour.findUnique({ where: { dayOfWeek: dayOfWeek(input.date) } })
   ]);
-  if (!court || court.id !== input.courtId) throw new HttpError(404, 'Cancha no encontrada');
-  if (!price) throw new HttpError(400, 'Duración sin precio activo');
-  if (!hours?.active) throw new HttpError(400, 'La cancha está cerrada ese día');
+  if (!court) throw new HttpError(404, 'Cancha no encontrada', 'COURT_NOT_FOUND');
+  if (!price) throw new HttpError(400, 'Duración sin precio activo', 'DURATION_NOT_AVAILABLE');
+  if (!hours?.active) throw new HttpError(400, 'La cancha está cerrada ese día', 'COURT_CLOSED');
 
-  if (start <= DateTime.now().setZone(config.timezone)) throw new HttpError(400, 'No se puede reservar un horario pasado');
+  if (start <= DateTime.now().setZone(config.timezone)) throw new HttpError(400, 'No se puede reservar un horario pasado', 'PAST_START_TIME');
   const schedules = businessIntervals(input.date, hours.openTime, hours.closeTime, hours.breakStartTime, hours.breakEndTime);
   const schedule = schedules.find(item => start >= item.open && end <= item.close);
-  if (!schedule) throw new HttpError(400, 'El turno queda fuera del horario de apertura');
+  if (!schedule) throw new HttpError(400, 'El turno queda fuera del horario de apertura', 'OUTSIDE_BUSINESS_HOURS');
   const minutesFromOpening = start.diff(schedule.open, 'minutes').minutes;
   if (!Number.isInteger(minutesFromOpening) || minutesFromOpening % config.booking.slotStepMinutes !== 0) {
-    throw new HttpError(400, `La hora de inicio debe respetar intervalos de ${config.booking.slotStepMinutes} minutos`);
+    throw new HttpError(400, `La hora de inicio debe respetar intervalos de ${config.booking.slotStepMinutes} minutos`, 'INVALID_START_TIME');
   }
 
   const bookings = await lockedBookingsInSchedule(tx, input, schedule, ignoreId);
   if (hasBookingOverlap({ start: start.toJSDate(), end: end.toJSDate() }, bookings.map(b => ({ start: b.startTime, end: b.endTime })))) {
-    throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.');
+    throw new HttpError(409, 'Ese horario ya no está disponible. Elegí otro turno.', 'SLOT_UNAVAILABLE');
   }
   if (config.booking.avoidDeadGaps && leavesDeadGap(start, end, schedule.open, schedule.close, bookings)
     && !(config.booking.allowAdminOverride && input.adminOverride)) {
@@ -140,7 +160,7 @@ async function validate(tx: Prisma.TransactionClient, input: BookingInput, ignor
 export async function createBookingInTransaction(
   tx: Prisma.TransactionClient,
   input: BookingInput,
-  createdBy: number,
+  createdBy: number | null,
   recurringId?: number
 ) {
   const { start, end, price } = await validate(tx, input);
@@ -149,7 +169,7 @@ export async function createBookingInTransaction(
       courtId: input.courtId, userId: input.userId, recurringId,
       clientName: input.clientName, clientPhone: input.clientPhone.replace(/\D/g, ''),
       startTime: start.toJSDate(), endTime: end.toJSDate(), durationMinutes: input.durationMinutes,
-      playersCount: input.playersCount ?? 4, priceTotal: input.priceTotal ?? price.price, notes: input.notes,
+      playersCount: input.playersCount ?? defaultPlayersCount, priceTotal: input.priceTotal ?? price.price, notes: input.notes,
       status: input.status ?? 'CONFIRMED', origin: input.origin ?? 'WEB', createdBy,
       holdExpiresAt: input.status === 'PENDING' ? input.holdExpiresAt ?? pendingBookingExpiresAt() : null
     },
@@ -157,7 +177,7 @@ export async function createBookingInTransaction(
   });
 }
 
-export async function createBooking(input: BookingInput, createdBy: number, recurringId?: number) {
+export async function createBooking(input: BookingInput, createdBy: number | null, recurringId?: number) {
   return prisma.$transaction(
     tx => createBookingInTransaction(tx, input, createdBy, recurringId),
     bookingTransactionOptions
@@ -166,10 +186,12 @@ export async function createBooking(input: BookingInput, createdBy: number, recu
 
 export async function availability(date: string, durationMinutes: number, courtId: number, ignoreBookingId?: number) {
   const requestedDay = dayOfWeek(date);
-  const [hours, price] = await Promise.all([
+  const [court, hours, price] = await Promise.all([
+    prisma.court.findFirst({ where: { id: courtId, active: true } }),
     prisma.businessHour.findUnique({ where: { dayOfWeek: requestedDay } }),
     prisma.price.findFirst({ where: { durationMinutes, active: true } })
   ]);
+  if (!court) throw new HttpError(404, 'Cancha no encontrada', 'COURT_NOT_FOUND');
   const baseLog = { date, durationMinutes, courtId, timezone: config.timezone, dayOfWeek: requestedDay, hours, hasPrice: Boolean(price) };
   if (!hours) {
     console.warn('[Availability] missing business hours', baseLog);
@@ -231,6 +253,41 @@ export async function availability(date: string, durationMinutes: number, courtI
     .map(booking => booking.holdExpiresAt!)
     .sort((left, right) => left.getTime() - right.getTime())[0]?.toISOString() ?? null;
   return { date, durationMinutes, price: Number(price.price), config: config.booking, nextChangeAt, slots };
+}
+
+export async function cancelCustomerBooking(where: Prisma.BookingWhereInput): Promise<BookingCancellationResult> {
+  return prisma.$transaction(async tx => {
+    let booking = await tx.booking.findFirst({ where });
+    if (!booking) throw new HttpError(404, 'La reserva no fue encontrada.', 'BOOKING_NOT_FOUND');
+
+    const client = tx as Prisma.TransactionClient & { $queryRaw?: Prisma.TransactionClient['$queryRaw'] };
+    if (client.$queryRaw) {
+      await client.$queryRaw(Prisma.sql`SELECT id FROM bookings WHERE id = ${booking.id} FOR UPDATE`);
+      booking = await tx.booking.findFirst({ where });
+      if (!booking) throw new HttpError(404, 'La reserva no fue encontrada.', 'BOOKING_NOT_FOUND');
+    }
+
+    if (!['PENDING', 'CONFIRMED'].includes(booking.status) || booking.startTime <= new Date()) {
+      throw new HttpError(409, 'La reserva ya no se puede cancelar.', 'CANCELLATION_NOT_ALLOWED');
+    }
+    if (booking.status === 'CONFIRMED') {
+      const settings = await tx.venueSetting.findUnique({ where: { id: 1 } });
+      const cutoffMinutes = settings?.cancellationCutoffMinutes ?? 120;
+      if (booking.startTime.getTime() - Date.now() < cutoffMinutes * 60_000) {
+        throw new HttpError(
+          409,
+          `La cancelación online cierra ${cutoffMinutes} minutos antes del turno. Comunicate con la cancha.`,
+          'CANCELLATION_CUTOFF'
+        );
+      }
+    }
+
+    const updated = await tx.booking.update({
+      where: { id: booking.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date() }
+    });
+    return { previous: booking, updated };
+  }, bookingTransactionOptions);
 }
 const durationLabel = (minutes: number) => {
   const hours = Math.floor(minutes / 60), rest = minutes % 60;

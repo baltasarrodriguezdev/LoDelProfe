@@ -67,7 +67,7 @@ export function rateLimit(options: { windowMs: number; max: number; key?: (req: 
 
     current.count++;
     if (current.count > options.max) {
-      return next(new HttpError(429, 'Demasiados intentos. Probá nuevamente en unos minutos.'));
+      return next(new HttpError(429, 'Demasiados intentos. Probá nuevamente en unos minutos.', 'RATE_LIMITED'));
     }
 
     next();
