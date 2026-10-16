@@ -5,6 +5,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { Api, Auth } from '../../core/api';
+import { VENUE } from '../../shared/venue';
+import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
 import { AdminAgendaStore } from '../admin/admin-agenda-store';
 import { ClientBooking, MyBookingsStore } from './my-bookings-store';
 
@@ -34,7 +36,7 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
               <p>{{ booking.playersCount }} jugadores</p>
               @if (isActiveHold(booking)) {
                 <div class="client-hold-status" role="timer" aria-live="polite">
-                  <span>Retención histórica pendiente</span>
+                  <span>Esperando validación por WhatsApp</span>
                   <strong>{{ holdRemainingLabel(booking) }}</strong>
                   <small>El horario se libera a las {{ holdEndsAtLabel(booking) }}</small>
                 </div>
@@ -43,6 +45,9 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
             <strong>{{ booking.priceTotal | currency:'ARS':'symbol':'1.0-0' }}</strong>
             @if (!history()) {
               <div class="booking-card-actions">
+                @if (isActiveHold(booking)) {
+                  <a class="btn primary" [href]="verificationWhatsappUrl(booking)" target="_blank" rel="noopener noreferrer">Abrir WhatsApp</a>
+                }
                 <button type="button" class="btn danger" [disabled]="!canCancel(booking)" [title]="canCancel(booking) ? 'Cancelar turno' : 'Fuera del plazo de cancelación online'" (click)="openCancelModal(booking)">{{ booking.status === 'PENDING' ? 'Cancelar solicitud' : 'Cancelar' }}</button>
               </div>
             }
@@ -174,6 +179,23 @@ export class BookingsPage implements OnInit, OnDestroy {
     return new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(new Date(booking.holdExpiresAt!));
   }
 
+  verificationWhatsappUrl(booking: ClientBooking) {
+    const user = this.auth.user();
+    const start = new Date(booking.startTime);
+    const end = booking.endTime ? new Date(booking.endTime) : new Date(start.getTime() + booking.durationMinutes * 60_000);
+    return buildPhoneVerificationWhatsappUrl(VENUE.whatsapp, {
+      firstName: user?.firstName ?? '',
+      lastName: user?.lastName ?? '',
+      formattedDate: new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }).format(start),
+      startTime: new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(start),
+      endTime: new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(end),
+      durationLabel: `${booking.durationMinutes} min`,
+      playersCount: booking.playersCount,
+      formattedPrice: new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(booking.priceTotal),
+      registeredPhone: user?.phone ?? '',
+      verificationCode: user?.verificationCode ?? undefined
+    });
+  }
   openCancelModal(booking: ClientBooking) {
     if (!this.canCancel(booking)) return;
     this.selectedBooking.set(booking);

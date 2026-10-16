@@ -49,7 +49,7 @@ import { VENUE } from './shared/venue';
           <nav class="footer-nav" aria-label="Navegación del pie de página">
             <span class="footer-eyebrow">Navegación</span>
             <div class="footer-links">
-              @if (hasFullAccess()) {
+              @if (auth.user()) {
                 <a class="footer-link" routerLink="/reservar">Reservar</a>
                 <a class="footer-link" routerLink="/mis-turnos">Mis turnos</a>
               } @else {
@@ -97,8 +97,7 @@ export class AppComponent {
     const items = [
       { label: 'Reservar', route: '/reservar' },
       { label: 'La Liga', route: '/la-liga' },
-      ...(this.hasFullAccess() ? [{ label: 'Mis turnos', route: '/mis-turnos' }] : []),
-      ...(this.hasFullAccess() ? [{ label: 'Mi cuenta', route: '/mi-cuenta' }] : []),
+      ...(this.auth.user() ? [{ label: 'Mis turnos', route: '/mis-turnos' }] : []),
       { label: 'Cómo llegar', route: '/', fragment: 'como-llegar' },
       ...(this.auth.isAdmin() ? [{ label: 'Admin', route: '/admin' }] : []),
       ...(!this.auth.user() ? [
@@ -130,7 +129,6 @@ export class AppComponent {
     if (item.label === 'Reservar') return path === '/reservar';
     if (item.label === 'La Liga') return path === '/la-liga';
     if (item.label === 'Mis turnos') return path === '/mis-turnos';
-    if (item.label === 'Mi cuenta') return path === '/mi-cuenta';
     if (item.label === 'Admin') return path === '/admin' || path.startsWith('/admin/');
     if (item.label === 'Cómo llegar') return path === '/como-llegar' || (path === '/' && fragment === 'como-llegar');
     return path === item.route;
@@ -139,10 +137,6 @@ export class AppComponent {
   logout() {
     this.closeMobileMenu();
     this.auth.logout();
-  }
-
-  hasFullAccess() {
-    return this.auth.user()?.emailVerified === true;
   }
 
   isAuthPage() {
