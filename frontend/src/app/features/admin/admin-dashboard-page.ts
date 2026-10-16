@@ -29,7 +29,7 @@ type Booking = {
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
-  user?: { firstName: string; lastName: string; phone: string; phoneVerified: boolean } | null;
+  user?: { firstName: string; lastName: string; phone: string; emailVerifiedAt?: string | null } | null;
 };
 
 @Component({
@@ -80,7 +80,7 @@ type Booking = {
       @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
       <section class="operations-agenda">
-        <div class="section-heading"><div><span class="eyebrow">WHATSAPP</span><h2>Turnos pendientes de confirmación</h2></div></div>
+        <div class="section-heading"><div><span class="eyebrow">HISTÓRICO</span><h2>Retenciones anteriores pendientes</h2></div></div>
         <div class="operations-bookings">
           @if (pendingReservationsStatus() === 'loading') {
             <div class='empty'>Cargando turnos pendientes...</div>
@@ -94,41 +94,17 @@ type Booking = {
                 <div class="operations-booking-labels">
                   <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
                   <span class="hold-pill" [class.urgent]="holdRemainingSeconds(booking) <= 120">Vence en {{ holdRemainingLabel(booking) }}</span>
-                  @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
+                  @if (booking.user && !booking.user.emailVerifiedAt) { <span class="origin-pill">Retención histórica</span> }
                 </div>
                 <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
                 <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }} · se libera {{ booking.holdExpiresAt | date:'HH:mm' }}</p>
               </div>
               <div class="operations-booking-actions">
                 <button type="button" class="small-action" [disabled]="isHoldExpired(booking) || bookingMutationId() !== null" (click)="confirmPending(booking)">Confirmar</button>
-                @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action pay-action" routerLink="/admin/seguridad">Validar cliente</a> }
                 <button type="button" class="small-action danger-action" (click)="cancelPendingReservation(booking)">Cancelar</button>
               </div>
             </article>
           } @empty { <div class="empty">No hay turnos pendientes de confirmación.</div> }
-          }
-        </div>
-      </section>
-
-      <section class="operations-agenda">
-        <div class="section-heading"><div><span class="eyebrow">VALIDACIONES</span><h2>Usuarios pendientes de verificar</h2></div></div>
-        <div class="operations-bookings">
-          @if (pendingUsersStatus() === 'loading') {
-            <div class='empty'>Cargando usuarios pendientes...</div>
-          } @else if (pendingUsersStatus() === 'error') {
-            <div class='empty'>No se pudieron cargar los usuarios pendientes.</div>
-          } @else {
-          @for (user of pendingUsers; track user.id) {
-            <article class="operations-booking">
-              <div class="operations-booking-main"><h3>{{ user.firstName }} {{ user.lastName }}</h3><p>{{ user.phone }} · {{ user.createdAt | date:'dd/MM/yyyy HH:mm' }} · {{ user._count?.bookings ?? 0 }} reservas pendientes</p></div>
-              <div class="operations-booking-actions">
-                @if (auth.user()?.role === 'SUPERADMIN') {
-                  <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
-                  <button type="button" class="small-action danger-action" (click)="cancelPendingUser(user)">Cancelar</button>
-                }
-              </div>
-            </article>
-          } @empty { <div class="empty">No hay usuarios pendientes.</div> }
           }
         </div>
       </section>
@@ -173,7 +149,6 @@ type Booking = {
                   }
                   @if (booking.status === 'PENDING') {
                     <button type="button" class="small-action" (click)="confirmPending(booking)">Confirmar</button>
-                    @if (auth.user()?.role === 'SUPERADMIN') { <a class="small-action" routerLink="/admin/seguridad">Validar cliente</a> }
                   }
                   @if (booking.status !== 'CANCELLED' && booking.status !== 'BLOCKED') {
                     <a class="small-action" routerLink="/admin/turno" [queryParams]="{ id: booking.id }">Editar</a>
@@ -315,16 +290,13 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   bookings = this.agendaStore.bookings;
   pendingReservations: Booking[] = [];
   availability = this.agendaStore.availability;
-  pendingUsers: any[] = [];
   readonly agendaStatus = this.agendaStore.agendaStatus;
   readonly agendaError = this.agendaStore.agendaError;
   readonly availabilityStatus = this.agendaStore.availabilityStatus;
   readonly availabilityError = this.agendaStore.availabilityError;
   readonly pendingReservationsStatus = signal<AsyncStatus>('idle');
-  readonly pendingUsersStatus = signal<AsyncStatus>('idle');
   readonly holdClock = signal(Date.now());
   readonly bookingMutationId = signal<number | null>(null);
-  readonly pendingUserMutationId = signal<number | null>(null);
   readonly paymentMutationId = signal<number | null>(null);
   depositTarget: Booking | null = null;
   depositAmount: number | null = null;
@@ -334,15 +306,13 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   noticeError = false;
   selectedBooking: Booking | null = null;
   readonly detailLoading = signal(false);
-  confirmDialog: { type: 'pendingUser' | 'deleteCancelled'; target: any; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
+  confirmDialog: { type: 'deleteCancelled'; target: any; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
   readonly confirmLoading = signal(false);
   confirmError = '';
   private bookingsRequestId = 0;
   private detailRequestId = 0;
   private pendingReservationsRequestId = 0;
-  private pendingUsersRequestId = 0;
   private pendingReservationsAbort: AbortController | null = null;
-  private pendingUsersAbort: AbortController | null = null;
   private detailAbort: AbortController | null = null;
   private holdTimer: ReturnType<typeof setInterval> | null = null;
   private refreshedExpiredHolds = new Set<number>();
@@ -383,7 +353,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
       if (typeof change === 'object' && (change as RealtimeEvent).type === 'CONFIGURATION_CHANGED'
         && (change as RealtimeEvent).resource.resource === 'COURTS') this.loadCourt();
       this.loadPendingReservations();
-      this.loadPendingUsers();
     });
   }
 
@@ -402,7 +371,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     if (this.holdTimer) clearInterval(this.holdTimer);
     this.holdTimer = null;
     this.pendingReservationsAbort?.abort();
-    this.pendingUsersAbort?.abort();
     this.detailAbort?.abort();
   }
 
@@ -430,7 +398,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   ensureLoaded(force = false) {
     this.loadBookings(force);
     this.loadPendingReservations();
-    this.loadPendingUsers();
     this.loadAvailability(force);
   }
 
@@ -463,33 +430,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
         if (requestId !== this.pendingReservationsRequestId) return;
         this.pendingReservationsStatus.set('error');
         this.showNotice(error.error?.message ?? 'No se pudieron cargar turnos pendientes.', true);
-      }
-    });
-  }
-
-  loadPendingUsers() {
-    if (this.pendingUsersAbort) return;
-    const requestId = ++this.pendingUsersRequestId;
-    const abortController = new AbortController();
-    this.pendingUsersAbort = abortController;
-    this.pendingUsersStatus.set('loading');
-    this.api.get<unknown>('/admin/users/pending-verification', undefined, { noCache: true, abortSignal: abortController.signal }).pipe(
-      finalize(() => {
-        if (requestId === this.pendingUsersRequestId && this.pendingUsersStatus() === 'loading') {
-          this.pendingUsersStatus.set('error');
-        }
-        if (requestId === this.pendingUsersRequestId) this.pendingUsersAbort = null;
-      })
-    ).subscribe({
-      next: response => {
-        if (requestId !== this.pendingUsersRequestId) return;
-        this.pendingUsers = this.normalizeList<any>(response, 'users');
-        this.pendingUsersStatus.set('success');
-      },
-      error: error => {
-        if (requestId !== this.pendingUsersRequestId) return;
-        this.pendingUsersStatus.set('error');
-        this.showNotice(error.error?.message ?? 'No se pudieron cargar usuarios pendientes.', true);
       }
     });
   }
@@ -565,26 +505,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     });
   }
 
-  verifyUser(user: any) {
-    if (!user?.id || this.pendingUserMutationId() !== null) return;
-    this.pendingUserMutationId.set(user.id);
-    this.api.patch<any>('/admin/users/' + user.id + '/verify', {}).pipe(
-      finalize(() => this.pendingUserMutationId.set(null))
-    ).subscribe({
-      next: () => { this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id); this.showNotice('Usuario verificado.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
-    });
-  }
-  cancelPendingUser(user: any) {
-    this.confirmDialog = {
-      type: 'pendingUser', target: user,
-      title: 'Cancelar usuario pendiente',
-      message: `¿Querés cancelar el registro pendiente de ${user.firstName} ${user.lastName}?`,
-      secondaryMessage: 'El número quedará disponible para que otra persona pueda registrarse.',
-      confirmText: 'Sí, cancelar', loadingText: 'Cancelando...'
-    };
-    this.confirmError = '';
-  }
   confirmPending(booking: Booking) {
     if (!booking.id || this.bookingMutationId() !== null) return;
     this.bookingMutationId.set(booking.id);
@@ -593,16 +513,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
     ).subscribe({
       next: () => { booking.status = 'CONFIRMED'; this.agendaStore.updateBookingStatus(booking.id, 'CONFIRMED'); this.showNotice('Turno confirmado.'); this.reloadOperationalViews(); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar el turno.', true)
-    });
-  }
-  confirmAndVerify(booking: Booking) {
-    if (!booking.id || this.bookingMutationId() !== null) return;
-    this.bookingMutationId.set(booking.id);
-    this.api.patch<any>('/admin/reservations/' + booking.id + '/confirm-and-verify-user', {}).pipe(
-      finalize(() => this.bookingMutationId.set(null))
-    ).subscribe({
-      next: () => { booking.status = 'CONFIRMED'; this.agendaStore.updateBookingStatus(booking.id, 'CONFIRMED'); this.showNotice('Cliente y turno confirmados.'); this.reloadOperationalViews(); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo confirmar y verificar.', true)
     });
   }
   cancelPendingReservation(booking: Booking) {
@@ -635,26 +545,7 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
 
   confirmDialogConfirmed() {
     if (!this.confirmDialog || this.confirmLoading()) return;
-    if (this.confirmDialog.type === 'pendingUser') this.confirmCancelPendingUser(this.confirmDialog.target);
-    else this.confirmDeleteCancelled(this.confirmDialog.target);
-  }
-
-  private confirmCancelPendingUser(user: any) {
-    this.confirmLoading.set(true);
-    this.confirmError = '';
-    this.api.delete<any>('/admin/users/' + user.id + '/pending-verification').pipe(
-      finalize(() => this.confirmLoading.set(false))
-    ).subscribe({
-      next: () => {
-        this.pendingUsers = this.pendingUsers.filter((item: any) => item.id !== user.id);
-        this.confirmDialog = null;
-        this.showNotice('Usuario pendiente cancelado. El n\u00famero ya est\u00e1 disponible.');
-        this.reloadOperationalViews();
-      },
-      error: () => {
-        this.confirmError = 'No pudimos cancelar el usuario pendiente. Intent\u00e1 nuevamente.';
-      }
-    });
+    this.confirmDeleteCancelled(this.confirmDialog.target);
   }
 
   private confirmDeleteCancelled(booking: Booking) {
@@ -777,7 +668,6 @@ export class AdminDashboardPage implements OnInit, OnDestroy {
   private reloadOperationalViews() {
     this.loadBookings(true);
     this.loadPendingReservations();
-    this.loadPendingUsers();
     this.loadAvailability(true);
   }
 

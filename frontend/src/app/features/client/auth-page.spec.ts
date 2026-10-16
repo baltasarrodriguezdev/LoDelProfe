@@ -13,7 +13,7 @@ describe('AuthPage zoneless', () => {
       login: vi.fn(() => response.asObservable()),
       register: vi.fn(() => response.asObservable())
     };
-    const router = { url: '/ingresar', navigateByUrl: vi.fn() };
+    const router = { url: '/ingresar', navigateByUrl: vi.fn(), navigate: vi.fn() };
 
     await TestBed.configureTestingModule({
       imports: [AuthPage],
@@ -29,7 +29,7 @@ describe('AuthPage zoneless', () => {
     }).compileComponents();
 
     const fixture: ComponentFixture<AuthPage> = TestBed.createComponent(AuthPage);
-    fixture.componentInstance.form = { phone: '3515551234', password: 'incorrecta' };
+    fixture.componentInstance.form = { email: 'ana@example.com', password: 'incorrecta' };
     fixture.detectChanges();
 
     fixture.componentInstance.submit();
@@ -38,13 +38,13 @@ describe('AuthPage zoneless', () => {
     expect(submitButton.disabled).toBe(true);
     expect(submitButton.textContent).toContain('Procesando...');
 
-    response.error({ status: 401, error: { message: 'Teléfono o contraseña incorrectos' } });
+    response.error({ status: 401, error: { message: 'Email o contraseña incorrectos' } });
     await fixture.whenStable();
 
     submitButton = fixture.nativeElement.querySelector('button[type="submit"]') as HTMLButtonElement;
     expect(fixture.componentInstance.loading()).toBe(false);
     expect(submitButton.disabled).toBe(false);
     expect(submitButton.textContent).toContain('Ingresar');
-    expect(fixture.nativeElement.textContent).toContain('Teléfono o contraseña incorrectos');
+    expect(fixture.nativeElement.textContent).toContain('Email o contraseña incorrectos');
   });
 });
