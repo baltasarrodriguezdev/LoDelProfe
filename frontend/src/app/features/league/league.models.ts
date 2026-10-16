@@ -1,4 +1,4 @@
-export type LeagueTab = 'summary' | 'zones' | 'matches' | 'standings' | 'bracket' | 'rules';
+export type LeagueTab = 'summary' | 'zones' | 'matches' | 'standings' | 'bracket';
 
 export type LeaguePair = {
   id: number;
@@ -89,20 +89,7 @@ export type LeaguePayload = {
   bracket: Array<{ stage: string; matches: LeagueMatch[] }>;
   summary: { nextMatchday: { number: number; zone: { id: number; code: string; name: string }; date: string } | null; upcomingMatches: LeagueMatch[]; latestResults: LeagueMatch[] };
   rules: {
-    scoring: {
-      straightSetsWinPoints: number;
-      threeSetsWinPoints: number;
-      threeSetsLossPoints: number;
-      straightSetsLossPoints: number;
-      gamesPositiveDefinition?: string | null;
-      multiPairTieRule?: string | null;
-      walkoverRule?: string | null;
-      retirementRule?: string | null;
-      incompleteMatchRule?: string | null;
-      reschedulingRule?: string | null;
-      sixAllTiebreakRule?: string | null;
-      [key: string]: unknown;
-    };
+    scoring: Record<string, unknown> & { straightSetsWinPoints: number; threeSetsWinPoints: number; threeSetsLossPoints: number; straightSetsLossPoints: number };
     tieBreakCriteria: string[];
     pending: string[];
   };
