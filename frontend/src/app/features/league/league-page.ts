@@ -64,7 +64,6 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
               <button type="button" (click)="openTab('standings')"><span>01</span><strong>Posiciones</strong><small>Zona A y Zona B</small></button>
               <button type="button" (click)="openTab('matches')"><span>02</span><strong>Fixture completo</strong><small>Siete fechas</small></button>
               <button type="button" (click)="openTab('bracket')"><span>03</span><strong>Cruces</strong><small>Camino a la final</small></button>
-              <button type="button" (click)="openTab('rules')"><span>04</span><strong>Reglamento</strong><small>Formato y puntuación</small></button>
             </div>
           </section>
         }
@@ -164,24 +163,6 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
           </section>
         }
 
-        @if (activeTab() === 'rules') {
-          <section>
-            <header class="league-page-title"><span class="eyebrow">LIGA SUMA 12</span><h2>Reglamento</h2><p>Formato de competencia, puntuación y criterios vigentes para esta temporada.</p></header>
-            <div class="league-rules-grid">
-              <article><span>01</span><h3>Formato</h3><ul><li>16 parejas divididas en dos zonas de 8.</li><li>Siete fechas: todos contra todos dentro de cada zona.</li><li>Todas las parejas avanzan a los cruces eliminatorios.</li><li>Partidos al mejor de {{ leagueData.league.bestOfSets }} sets{{ leagueData.league.fullThirdSet ? ', con tercer set completo' : '' }}.</li></ul></article>
-              <article><span>02</span><h3>Puntuación</h3><ul><li>Victoria 2–0: <strong>{{ leagueData.rules.scoring.straightSetsWinPoints }} puntos</strong>.</li><li>Victoria 2–1: <strong>{{ leagueData.rules.scoring.threeSetsWinPoints }} puntos</strong>.</li><li>Derrota 1–2: <strong>{{ leagueData.rules.scoring.threeSetsLossPoints }} punto</strong>.</li><li>Derrota 0–2: <strong>{{ leagueData.rules.scoring.straightSetsLossPoints }} puntos</strong>.</li></ul></article>
-              <article><span>03</span><h3>Desempates</h3><ol>@for (criterion of leagueData.rules.tieBreakCriteria; track criterion) { <li>{{ criterion }}</li> }</ol>@if (leagueData.rules.scoring.gamesPositiveDefinition) { <p><strong>Games positivos:</strong> {{ leagueData.rules.scoring.gamesPositiveDefinition }}</p> }</article>
-              <article><span>04</span><h3>Organización</h3><ul>@if (leagueData.league.scheduleNote) { <li>{{ leagueData.league.scheduleNote }}</li> }@if (leagueData.league.ballAvailabilityNote) { <li>{{ leagueData.league.ballAvailabilityNote }}</li> }@if (leagueData.league.registrationFee !== null) { <li>Inscripción: <strong>{{ formatMoney(leagueData.league.registrationFee) }}</strong>.</li> }@if (leagueData.league.firstPrize) { <li>Primer premio: {{ leagueData.league.firstPrize }}.</li> }@if (leagueData.league.secondPrize) { <li>Segundo premio: {{ leagueData.league.secondPrize }}.</li> }</ul></article>
-              @if (configuredRules(leagueData).length) {
-                <article class="league-wide"><span>05</span><h3>Situaciones especiales</h3><dl>@for (rule of configuredRules(leagueData); track rule.label) { <div><dt>{{ rule.label }}</dt><dd>{{ rule.value }}</dd></div> }</dl></article>
-              }
-              @if (leagueData.rules.pending.length) {
-                <article class="league-pending-rules"><h3>Definiciones pendientes</h3><p>La organización todavía debe confirmar estos puntos. No se aplicará una regla que no haya sido publicada.</p><ul>@for (rule of leagueData.rules.pending; track rule) { <li>{{ rule }}</li> }</ul></article>
-              }
-            </div>
-          </section>
-        }
-
       }
     </main>
 
@@ -202,16 +183,13 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
     @media(max-width:680px){.league-hero-inner,.league-content{width:calc(100% - 32px)}.league-hero-inner{padding:45px 0 38px}.league-hero h1{font-size:3.8rem}.league-live{width:100%}.league-tabs>div{padding:0 16px}.league-tabs button{padding:0 13px}.league-content{padding-top:32px}.league-kicker-grid,.league-quick-links,.league-filters{grid-template-columns:1fr}.league-two-columns{gap:32px;margin-top:36px}.league-page-title h2{font-size:3.1rem}.league-zone-card>header{padding:20px}.league-zone-card ol{padding-right:17px;padding-left:17px}.league-score-row{grid-template-columns:minmax(0,1fr) auto 24px;gap:8px}.league-section-title{align-items:start;flex-direction:column}.league-standings-card>header{align-items:start;flex-direction:column;gap:8px}}
   `,
   `
-    .league-quick-links{grid-template-columns:repeat(4,1fr)}
-    .league-rules-grid dl{display:grid;gap:13px;margin:0}.league-rules-grid dl div{display:grid;gap:3px}.league-rules-grid dt{font-weight:800}.league-rules-grid dd{margin:0;color:var(--color-brand-muted);font-size:.86rem}
     .league-ranking-criteria{display:grid;gap:18px;margin:-8px 0 28px;border:1px solid var(--color-brand-border);border-left:5px solid var(--color-brand-gold);border-radius:12px;padding:20px 22px;background:var(--color-brand-paper);box-shadow:0 10px 28px rgba(34,53,38,.045)}
     .league-ranking-criteria>div{display:grid;gap:3px}.league-ranking-criteria>div strong{font-size:1.05rem}
     .league-ranking-criteria ol{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}
     .league-ranking-criteria li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;min-height:48px;border-radius:8px;padding:8px 10px;background:#f2efe4;font-size:.72rem}
     .league-ranking-criteria li b{font-family:var(--font-display);font-size:1.05rem;color:var(--color-brand-gold)}
     .league-ranking-criteria small{color:var(--color-brand-muted);font-size:.68rem}
-    @media(max-width:900px){.league-quick-links{grid-template-columns:repeat(2,1fr)}.league-ranking-criteria ol{grid-template-columns:repeat(3,1fr)}}
-    @media(max-width:680px){.league-quick-links{grid-template-columns:1fr}.league-rules-grid{grid-template-columns:1fr}.league-rules-grid .league-wide{grid-column:auto}}
+    @media(max-width:900px){.league-ranking-criteria ol{grid-template-columns:repeat(3,1fr)}}
     @media(max-width:560px){.league-ranking-criteria{padding:17px}.league-ranking-criteria ol{grid-template-columns:repeat(2,1fr)}}
   `,
   `
@@ -291,7 +269,7 @@ export class LeaguePage implements OnInit {
   readonly matchdays = [1, 2, 3, 4, 5, 6, 7];
   readonly tabs: Array<{ id: LeagueTab; label: string }> = [
     { id: 'summary', label: 'Resumen' }, { id: 'zones', label: 'Zonas' }, { id: 'matches', label: 'Partidos' },
-    { id: 'standings', label: 'Posiciones' }, { id: 'bracket', label: 'Cruces' }, { id: 'rules', label: 'Reglamento' }
+    { id: 'standings', label: 'Posiciones' }, { id: 'bracket', label: 'Cruces' }
   ];
 
   ngOnInit() {
@@ -332,19 +310,7 @@ export class LeaguePage implements OnInit {
   valueOf(event: Event) { return (event.target as HTMLSelectElement).value; }
   stageLabel(stage: string) { return ({ GROUP_STAGE: 'Fase de zonas', ROUND_OF_16: 'Octavos de final', QUARTERFINAL: 'Cuartos de final', SEMIFINAL: 'Semifinales', FINAL: 'Final' } as Record<string, string>)[stage] ?? stage; }
   statusLabel(status: string) { return ({ SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Finalizado', RESCHEDULED: 'Reprogramado', SUSPENDED: 'Suspendido', PENDING: 'Pendiente' } as Record<string, string>)[status] ?? status; }
-  configuredRules(data: LeaguePayload) {
-    const scoring = data.rules.scoring;
-    return [
-      { label: 'Walkover o ausencia', value: scoring.walkoverRule },
-      { label: 'Abandono por lesión', value: scoring.retirementRule },
-      { label: 'Partido inconcluso', value: scoring.incompleteMatchRule },
-      { label: 'Reprogramaciones', value: scoring.reschedulingRule },
-      { label: 'Tie-break en 6–6', value: scoring.sixAllTiebreakRule },
-      { label: 'Empate entre tres o más parejas', value: scoring.multiPairTieRule }
-    ].filter((rule): rule is { label: string; value: string } => typeof rule.value === 'string' && rule.value.trim().length > 0);
-  }
   signed(value: number) { return value > 0 ? `+${value}` : String(value); }
-  formatMoney(value: number) { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value); }
   formatDate(value: string) {
     const date = new Date(`${value}T12:00:00-03:00`);
     return new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'America/Argentina/Cordoba' }).format(date).replace('.', '');

@@ -54,19 +54,6 @@ describe('LeaguePage', () => {
 
   afterEach(() => { fixture.destroy(); vi.unstubAllGlobals(); });
 
-  it('publica el reglamento configurado sin completar reglas pendientes', async () => {
-    fixture.componentInstance.openTab('rules');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Reglamento');
-    expect(text).toContain('Victoria 2–0: 3 puntos');
-    expect(text).toContain('Games a favor − games en contra');
-    expect(text).toContain('Definiciones pendientes');
-    expect(text).toContain('Walkover o ausencia.');
-  });
-
   it('muestra los cruces eliminatorios definidos por posición de zona', async () => {
     fixture.componentInstance.openTab('bracket');
     fixture.detectChanges();
