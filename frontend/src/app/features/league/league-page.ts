@@ -154,7 +154,7 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
                 @for (round of leagueData.bracket; track round.stage) {
                   <section class="bracket-round"><header><small>{{ round.matches.length }} {{ round.matches.length === 1 ? 'PARTIDO' : 'PARTIDOS' }}</small><h3>{{ stageLabel(round.stage) }}</h3></header><div>
                     @for (match of round.matches; track match.id) {
-                      <article class="bracket-match"><span>{{ match.code }} · {{ match.scheduledDate ? formatDate(match.scheduledDate) : 'Fecha a confirmar' }} · {{ match.scheduledTime || 'Hora a confirmar' }}</span><div [class.winner]="match.result?.winnerSide === 'HOME'"><strong>{{ match.homePair?.displayName || match.homePlaceholder }}</strong><b>{{ match.result?.homeSets ?? '—' }}</b></div><div [class.winner]="match.result?.winnerSide === 'AWAY'"><strong>{{ match.awayPair?.displayName || match.awayPlaceholder }}</strong><b>{{ match.result?.awaySets ?? '—' }}</b></div></article>
+                      <article class="bracket-match"><span>{{ match.code }} · {{ matchScheduleLabel(match) }}</span><div [class.winner]="match.result?.winnerSide === 'HOME'" [class.withdrawn]="isWithdrawnPair(match.homePair?.displayName)"><strong>{{ bracketPairLabel(match, 'HOME') }}</strong><b>{{ match.result?.homeSets ?? '—' }}</b></div><div [class.winner]="match.result?.winnerSide === 'AWAY'" [class.withdrawn]="isWithdrawnPair(match.awayPair?.displayName)"><strong>{{ bracketPairLabel(match, 'AWAY') }}</strong><b>{{ match.result?.awaySets ?? '—' }}</b></div></article>
                     }
                   </div></section>
                 }
@@ -168,9 +168,9 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
 
     <ng-template #matchCard let-match>
       <article class="league-match-card">
-        <header><div><span>{{ match.zone?.name || stageLabel(match.stage) }}{{ match.matchday ? ' · Fecha ' + match.matchday : ' · ' + match.code }}</span><time>{{ match.scheduledDate ? formatDate(match.scheduledDate) : 'Fecha a confirmar' }} · {{ match.scheduledTime || 'Hora a confirmar' }}</time></div><b [attr.data-status]="match.status">{{ statusLabel(match.status) }}</b></header>
-        <div class="league-score-row" [class.winner]="match.result?.winnerSide === 'HOME'"><strong>{{ match.homePair?.displayName || match.homePlaceholder || 'Pareja a confirmar' }}</strong><span class="set-scores">@for (set of match.sets; track set.setNumber) { <i>{{ set.homeGames }}</i> }</span><em>{{ match.result?.homeSets ?? '—' }}</em></div>
-        <div class="league-score-row" [class.winner]="match.result?.winnerSide === 'AWAY'"><strong>{{ match.awayPair?.displayName || match.awayPlaceholder || 'Pareja a confirmar' }}</strong><span class="set-scores">@for (set of match.sets; track set.setNumber) { <i>{{ set.awayGames }}</i> }</span><em>{{ match.result?.awaySets ?? '—' }}</em></div>
+        <header><div><span>{{ match.zone?.name || stageLabel(match.stage) }}{{ match.matchday ? ' · Fecha ' + match.matchday : ' · ' + match.code }}</span><time>{{ matchScheduleLabel(match) }}</time></div><b [attr.data-status]="match.status">{{ statusLabel(match.status) }}</b></header>
+        <div class="league-score-row" [class.winner]="match.result?.winnerSide === 'HOME'" [class.withdrawn]="isWithdrawnPair(match.homePair?.displayName)"><strong>{{ bracketPairLabel(match, 'HOME') }}</strong><span class="set-scores">@for (set of match.sets; track set.setNumber) { <i>{{ set.homeGames }}</i> }</span><em>{{ match.result?.homeSets ?? '—' }}</em></div>
+        <div class="league-score-row" [class.winner]="match.result?.winnerSide === 'AWAY'" [class.withdrawn]="isWithdrawnPair(match.awayPair?.displayName)"><strong>{{ bracketPairLabel(match, 'AWAY') }}</strong><span class="set-scores">@for (set of match.sets; track set.setNumber) { <i>{{ set.awayGames }}</i> }</span><em>{{ match.result?.awaySets ?? '—' }}</em></div>
         @if (match.sets.length && !match.official) { <footer>Resultado cargado · pendiente de confirmación oficial</footer> }
         @if (match.scoringPending) { <footer class="pending-score">Puntaje de la derrota 0–2 pendiente de definición</footer> }
         @if (match.rescheduleNote) { <footer>{{ match.rescheduleNote }}</footer> }
@@ -203,6 +203,7 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
     .league-table-tools{display:none}
     .league-table-hint{display:none;margin:0;border-bottom:1px solid var(--color-brand-border);padding:9px 18px;background:#fff6d9;color:#6f551a;font-size:.7rem;font-weight:750}
     .league-table-scroll{overscroll-behavior-inline:contain;scrollbar-gutter:stable;scrollbar-width:thin;touch-action:pan-x pan-y}
+    .bracket-match div.withdrawn strong,.league-score-row.withdrawn strong{text-decoration:line-through;text-decoration-thickness:2px;opacity:.58}
     .league-table-scroll table{min-width:1020px;font-variant-numeric:tabular-nums}
     .league-table-scroll th:nth-child(2){width:240px;max-width:240px;box-shadow:7px 0 10px -10px rgba(20,40,27,.8);white-space:normal;overflow-wrap:anywhere}
     .league-table-scroll th:last-child,.league-table-scroll td:last-child{position:sticky;right:0;z-index:2;min-width:68px;background:var(--color-brand-paper);box-shadow:-7px 0 10px -10px rgba(20,40,27,.8)}
@@ -311,6 +312,22 @@ export class LeaguePage implements OnInit {
   stageLabel(stage: string) { return ({ GROUP_STAGE: 'Fase de zonas', ROUND_OF_16: 'Octavos de final', QUARTERFINAL: 'Cuartos de final', SEMIFINAL: 'Semifinales', FINAL: 'Final' } as Record<string, string>)[stage] ?? stage; }
   statusLabel(status: string) { return ({ SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Finalizado', RESCHEDULED: 'Reprogramado', SUSPENDED: 'Suspendido', PENDING: 'Pendiente' } as Record<string, string>)[status] ?? status; }
   signed(value: number) { return value > 0 ? `+${value}` : String(value); }
+  isWithdrawnPair(name?: string | null) {
+    return name === 'Auger - Martinez' || name === 'Prunesti - Britos';
+  }
+  bracketPairLabel(match: LeagueMatch, side: 'HOME' | 'AWAY') {
+    const pair = side === 'HOME' ? match.homePair : match.awayPair;
+    if (pair?.displayName) return pair.displayName;
+    if (match.code === 'C2' && side === 'AWAY') return 'Vaca - Arrieta';
+    if (match.code === 'C3' && side === 'HOME') return 'Rodriguez Teruel - Ponce';
+    return (side === 'HOME' ? match.homePlaceholder : match.awayPlaceholder) || 'Pareja a confirmar';
+  }
+  matchScheduleLabel(match: LeagueMatch) {
+    if (['ROUND_OF_16', 'QUARTERFINAL'].includes(match.stage)) return 'Desde el 18/10 hasta el 31/10';
+    if (match.stage === 'SEMIFINAL') return `1/11 · ${match.code === 'S1' ? '19:00' : '20:00'}`;
+    if (match.stage === 'FINAL') return '1/11 · 21:00';
+    return `${match.scheduledDate ? this.formatDate(match.scheduledDate) : 'Fecha a confirmar'} · ${match.scheduledTime || 'Hora a confirmar'}`;
+  }
   formatDate(value: string) {
     const date = new Date(`${value}T12:00:00-03:00`);
     return new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'America/Argentina/Cordoba' }).format(date).replace('.', '');
