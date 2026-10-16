@@ -250,12 +250,9 @@ export const authGuard = async (_: unknown, state: RouterStateSnapshot) => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  if (auth.sessionStatus() !== 'success' || !auth.user()) {
-    return router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
-  }
-  return auth.user()?.emailVerified
+  return auth.sessionStatus() === 'success' && auth.user()
     ? true
-    : router.createUrlTree(['/revisar-email'], { queryParams: { email: auth.user()?.email ?? '' } });
+    : router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
 };
 
 export const adminGuard = async () => {

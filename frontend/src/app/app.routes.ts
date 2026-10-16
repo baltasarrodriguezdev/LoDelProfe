@@ -11,21 +11,16 @@ import { InstagramStoriesPage } from './features/admin/instagram-stories-page';
 import { AdminAgendaPage } from './features/admin/admin-agenda-page';
 import { AdminSettingsPage } from './features/admin/admin-settings-page';
 import { adminGuard, authGuard, superAdminGuard } from './core/api';
+import { PhoneVerificationPage } from './features/client/phone-verification-page';
 import { PasswordRecoveryPage } from './features/client/password-recovery-page';
-import { EmailVerificationPage } from './features/client/email-verification-page';
-import { LegacyAccessPage } from './features/client/legacy-access-page';
 import { AdminSecurityPage } from './features/admin/admin-security-page';
-import { AccountPage } from './features/client/account-page';
 
 export const routes: Routes = [
   { path: '', component: HomePage },
   { path: 'ingresar', component: AuthPage },
   { path: 'login', redirectTo: 'ingresar', pathMatch: 'full' },
   { path: 'registro', component: AuthPage },
-  { path: 'validar-telefono', redirectTo: 'actualizar-acceso', pathMatch: 'full' },
-  { path: 'revisar-email', component: EmailVerificationPage },
-  { path: 'confirmar-email', component: EmailVerificationPage },
-  { path: 'actualizar-acceso', component: LegacyAccessPage },
+  { path: 'validar-telefono', component: PhoneVerificationPage, canActivate: [authGuard] },
   { path: 'recuperar-contrasena', component: PasswordRecoveryPage },
   { path: 'restablecer-contrasena', component: PasswordRecoveryPage },
   { path: 'reservar', component: AvailabilityPage },
@@ -34,7 +29,6 @@ export const routes: Routes = [
   { path: 'confirmar-reserva', component: AvailabilityPage, canActivate: [authGuard] },
   { path: 'mis-turnos', component: BookingsPage, canActivate: [authGuard] },
   { path: 'historial', component: BookingsPage, canActivate: [authGuard] },
-  { path: 'mi-cuenta', component: AccountPage, canActivate: [authGuard] },
   { path: 'admin', component: AdminDashboardPage, canActivate: [adminGuard] },
   { path: 'admin/estadisticas', component: AdminStatsPage, canActivate: [superAdminGuard] },
   { path: 'admin/agenda-diaria', component: AdminAgendaPage, canActivate: [adminGuard] },
