@@ -191,6 +191,32 @@ function matchPair(match: Match, side: 'home' | 'away') {
   return clean(side === 'home' ? match.homePair?.displayName ?? match.homePlaceholder : match.awayPair?.displayName ?? match.awayPlaceholder);
 }
 
+function isCurrentKnockoutSchedule(payload: InstagramLeaguePayload) {
+  return payload.league.seasonYear === 2026 && /liga suma 12/i.test(payload.league.name);
+}
+
+function bracketPair(payload: InstagramLeaguePayload, match: Match, side: 'home' | 'away') {
+  const assigned = side === 'home' ? match.homePair?.displayName : match.awayPair?.displayName;
+  if (assigned) return clean(assigned);
+  if (isCurrentKnockoutSchedule(payload) && match.code === 'C2' && side === 'away') return 'Vaca - Arrieta';
+  if (isCurrentKnockoutSchedule(payload) && match.code === 'C3' && side === 'home') return 'Rodriguez Teruel - Ponce';
+  return clean(side === 'home' ? match.homePlaceholder : match.awayPlaceholder);
+}
+
+function isWithdrawnPair(payload: InstagramLeaguePayload, pair: string) {
+  if (!isCurrentKnockoutSchedule(payload)) return false;
+  return pair === 'Auger - Martinez' || pair === 'Prunesti - Britos';
+}
+
+function bracketSchedule(payload: InstagramLeaguePayload, match: Match) {
+  if (isCurrentKnockoutSchedule(payload)) {
+    if (['ROUND_OF_16', 'QUARTERFINAL'].includes(match.stage)) return '18/10 AL 31/10';
+    if (match.stage === 'SEMIFINAL') return `01/11 · ${match.code === 'S1' ? '19:00' : '20:00'}`;
+    if (match.stage === 'FINAL') return '01/11 · 21:00';
+  }
+  return `${formatDate(match.scheduledDate, true)} · ${match.scheduledTime ?? 'Hora a confirmar'}`;
+}
+
 function matchRoundLabel(match: Match) {
   return match.matchday ? `FECHA ${match.matchday}` : stageLabel(match.stage).toUpperCase();
 }
@@ -636,17 +662,21 @@ function standingsPage(payload: InstagramLeaguePayload, format: InstagramFormat,
 function bracketPage(payload: InstagramLeaguePayload, format: InstagramFormat, assets: RenderAssets) {
   const stages = payload.bracket.filter(group => group.matches.length);
   return brandFrame(format, assets, { eyebrow: 'Cruces eliminatorios' }, div({ width: '100%', display: 'flex', flexDirection: 'column', gap: 24 },
-    displayTitle('Camino al título', 'Eliminatorias', format),
+    displayTitle('Camino al título', 'Cruces y fechas', format),
     div({ display: 'flex', flex: 1, alignItems: 'stretch', gap: 13, overflow: 'hidden' },
       ...stages.map((group, stageIndex) => div({ flex: 1, display: 'flex', flexDirection: 'column', gap: format === 'story' ? 10 : 6, justifyContent: 'center' },
         txt(stageLabel(group.stage).toUpperCase(), { height: format === 'story' ? 45 : 36, flexShrink: 0, borderBottom: `3px solid ${stageIndex === stages.length - 1 ? COLORS.lime : COLORS.green}`, fontSize: format === 'story' ? 17 : 15, fontWeight: 900, letterSpacing: 1.5, alignItems: 'center' }),
-        ...group.matches.map(match => div({ height: format === 'story' ? 126 : 101, flexShrink: 0, padding: format === 'story' ? '9px 10px' : '5px 9px', borderRadius: 10, background: '#293f2c', border: `1px solid ${COLORS.line}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: format === 'story' ? 4 : 2, overflow: 'hidden' },
-          txt(clean(match.code), { fontSize: format === 'story' ? 10 : 8, fontWeight: 900, color: COLORS.lime, letterSpacing: 1 }),
-          txt(matchPair(match, 'home'), { fontSize: format === 'story' ? 16 : 13, lineHeight: 1.05, fontWeight: match.result?.winnerSide === 'HOME' ? 900 : 650, color: match.result?.winnerSide === 'HOME' ? COLORS.paper : COLORS.muted, maxHeight: format === 'story' ? 34 : 27, overflow: 'hidden' }),
-          txt(match.sets.length ? setScore(match) : 'VS', { fontSize: format === 'story' ? 12 : 10, fontWeight: 900, color: COLORS.olive }),
-          txt(matchPair(match, 'away'), { fontSize: format === 'story' ? 16 : 13, lineHeight: 1.05, fontWeight: match.result?.winnerSide === 'AWAY' ? 900 : 650, color: match.result?.winnerSide === 'AWAY' ? COLORS.paper : COLORS.muted, maxHeight: format === 'story' ? 34 : 27, overflow: 'hidden' }),
-          txt(statusLabel(match.status, match.official).toUpperCase(), { fontSize: format === 'story' ? 9 : 8, fontWeight: 900, color: match.official ? COLORS.lime : COLORS.muted, letterSpacing: .8 })
-        ))
+        ...group.matches.map(match => {
+          const home = bracketPair(payload, match, 'home');
+          const away = bracketPair(payload, match, 'away');
+          return div({ height: format === 'story' ? 126 : 101, flexShrink: 0, padding: format === 'story' ? '9px 10px' : '5px 9px', borderRadius: 10, background: '#293f2c', border: `1px solid ${COLORS.line}`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: format === 'story' ? 4 : 2, overflow: 'hidden' },
+            txt(clean(match.code), { fontSize: format === 'story' ? 10 : 8, fontWeight: 900, color: COLORS.lime, letterSpacing: 1 }),
+            txt(home, { fontSize: format === 'story' ? 16 : 13, lineHeight: 1.05, fontWeight: match.result?.winnerSide === 'HOME' ? 900 : 650, color: match.result?.winnerSide === 'HOME' ? COLORS.paper : COLORS.muted, textDecoration: isWithdrawnPair(payload, home) ? 'line-through' : 'none', maxHeight: format === 'story' ? 34 : 27, overflow: 'hidden' }),
+            txt(match.sets.length ? setScore(match) : 'VS', { fontSize: format === 'story' ? 12 : 10, fontWeight: 900, color: COLORS.olive }),
+            txt(away, { fontSize: format === 'story' ? 16 : 13, lineHeight: 1.05, fontWeight: match.result?.winnerSide === 'AWAY' ? 900 : 650, color: match.result?.winnerSide === 'AWAY' ? COLORS.paper : COLORS.muted, textDecoration: isWithdrawnPair(payload, away) ? 'line-through' : 'none', maxHeight: format === 'story' ? 34 : 27, overflow: 'hidden' }),
+            txt(bracketSchedule(payload, match), { fontSize: format === 'story' ? 9 : 8, fontWeight: 900, color: COLORS.lime, letterSpacing: .5 })
+          );
+        })
       ))
     )
   ));
@@ -703,7 +733,11 @@ function descriptionFor(payload: InstagramLeaguePayload, selection: InstagramSel
   if (selection.template === 'standings') return [`Así está la tabla de posiciones${zone ? ` de la ${zone.name}` : ''}.`, ending].join('\n');
   if (selection.template === 'individual_result') return [`Resultado final · ${zone?.name ?? stageLabel(matches[0]?.stage ?? '')}`, matches[0] ? `${matchPair(matches[0], 'home')} ${setScore(matches[0])} ${matchPair(matches[0], 'away')}` : null, ending].filter(Boolean).join('\n');
   if (selection.template === 'champions') return [`Campeones de la Liga Suma 12.`, matches[0] ? `${matches[0].result?.winnerSide === 'HOME' ? matchPair(matches[0], 'home') : matchPair(matches[0], 'away')} se quedó con el título.` : null, ending].filter(Boolean).join('\n');
-  if (selection.template === 'bracket') return ['Así continúan los cruces eliminatorios de la Liga Suma 12.', ending].join('\n');
+  if (selection.template === 'bracket') {
+    return isCurrentKnockoutSchedule(payload)
+      ? ['Cruces y fechas de la Liga Suma 12.', 'Octavos y cuartos: del 18/10 al 31/10.', 'Semifinales: 01/11 a las 19:00 y 20:00. Final: 01/11 a las 21:00.', ending].join('\n')
+      : ['Así continúan los cruces eliminatorios de la Liga Suma 12.', ending].join('\n');
+  }
   return ['Así quedaron las zonas de la Liga Suma 12.', ending].join('\n');
 }
 
@@ -841,7 +875,7 @@ function buildPublication(payload: InstagramLeaguePayload, selection: InstagramS
     const matches = payload.bracket.flatMap(group => group.matches);
     if (!matches.length) throw new HttpError(409, 'La temporada todavía no tiene cruces eliminatorios configurados.');
     selectedMatches = matches;
-    pages.push(manifestPage(0, 'eliminatorias', 'Cruces eliminatorios', `${prefix}-eliminatorias-${selection.format}.png`, longTextWarnings(matches.flatMap(match => [matchPair(match, 'home'), matchPair(match, 'away')]), 'el cuadro eliminatorio', 28), assets => bracketPage(payload, selection.format, assets)));
+    pages.push(manifestPage(0, 'cruces-y-fechas', 'Cruces y fechas', `${prefix}-cruces-y-fechas-${selection.format}.png`, longTextWarnings(matches.flatMap(match => [bracketPair(payload, match, 'home'), bracketPair(payload, match, 'away')]), 'el cuadro eliminatorio', 28), assets => bracketPage(payload, selection.format, assets)));
   }
 
   if (selection.template === 'champions') {
