@@ -64,4 +64,19 @@ describe('LeaguePage', () => {
     expect(text).toContain('1.º Zona A');
     expect(text).toContain('8.º Zona B');
   });
+
+  it('publica el cronograma final y los pases directos por abandono', () => {
+    const page = fixture.componentInstance;
+    const match = (code: string, stage: string): any => ({ code, stage, homePair: null, awayPair: null });
+
+    expect(page.matchScheduleLabel(match('P4', 'ROUND_OF_16'))).toBe('Desde el 18/10 hasta el 31/10');
+    expect(page.matchScheduleLabel(match('C2', 'QUARTERFINAL'))).toBe('Desde el 18/10 hasta el 31/10');
+    expect(page.matchScheduleLabel(match('S1', 'SEMIFINAL'))).toBe('1/11 · 19:00');
+    expect(page.matchScheduleLabel(match('S2', 'SEMIFINAL'))).toBe('1/11 · 20:00');
+    expect(page.matchScheduleLabel(match('F1', 'FINAL'))).toBe('1/11 · 21:00');
+    expect(page.isWithdrawnPair('Auger - Martinez')).toBe(true);
+    expect(page.isWithdrawnPair('Prunesti - Britos')).toBe(true);
+    expect(page.bracketPairLabel(match('C2', 'QUARTERFINAL'), 'AWAY')).toBe('Vaca - Arrieta');
+    expect(page.bracketPairLabel(match('C3', 'QUARTERFINAL'), 'HOME')).toBe('Rodriguez Teruel - Ponce');
+  });
 });
