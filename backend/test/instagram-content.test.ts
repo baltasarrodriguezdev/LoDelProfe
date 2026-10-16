@@ -62,6 +62,18 @@ test('genera el ZIP del carrusel en el orden publicado', async () => {
   assert.equal(rendered.fileName, 'liga-suma12-zona-a-fecha-1-carrusel.zip');
 });
 
+test('la placa eliminatoria comunica los cruces y el cronograma vigente', async () => {
+  const manifest = getInstagramManifest(payload, { template: 'bracket', format: 'feed' });
+
+  assert.equal(manifest.pages[0].label, 'Cruces y fechas');
+  assert.equal(manifest.pages[0].fileName, 'liga-suma12-cruces-y-fechas-feed.png');
+  assert.match(manifest.description, /del 18\/10 al 31\/10/i);
+  assert.match(manifest.description, /01\/11 a las 19:00 y 20:00/i);
+  assert.match(manifest.description, /final: 01\/11 a las 21:00/i);
+  const rendered = await renderInstagramPng(payload, { template: 'bracket', format: 'feed' });
+  assert.deepEqual(pngDimensions(rendered.buffer), { width: 1080, height: 1350 });
+});
+
 test('Partidos por día filtra por día real y admite partidos de distintas zonas y fechas', async () => {
   const daily = instagramTestPayload();
   const first = daily.matches.find(match => match.id === 1)!;

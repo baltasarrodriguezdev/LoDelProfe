@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { debounceTime, finalize, merge, Observable, switchMap } from 'rxjs';
 import { Api } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
@@ -12,7 +13,7 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
+  imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
   template: `
     <section class="admin-shell league-admin">
       <div class="admin-content">
@@ -142,7 +143,7 @@ type AdminLeagueTab = 'season' | 'pairs' | 'fixture' | 'results' | 'rules' | 'st
           }
 
           @if (activeTab() === 'bracket') {
-            <div class="league-admin-section-title"><div><span class="eyebrow">ELIMINATORIAS</span><h2>Progresión del cuadro</h2><p>Los ganadores avanzan al confirmar oficialmente cada partido.</p></div></div>
+            <div class="league-admin-section-title"><div><span class="eyebrow">ELIMINATORIAS</span><h2>Progresión del cuadro</h2><p>Los ganadores avanzan al confirmar oficialmente cada partido.</p></div><a class="btn primary" routerLink="/admin/contenido-instagram" [queryParams]="{ template: 'bracket' }">Generar imagen de cruces y fechas</a></div>
             <div class="league-admin-bracket">@for (round of leagueData.bracket; track round.stage) { <section><h3>{{ stageLabel(round.stage) }}</h3>@for (match of round.matches; track match.id) { <article><span>{{ match.code }} · {{ match.scheduledDate || 'Fecha pendiente' }} · {{ match.scheduledTime || 'Hora pendiente' }}</span><strong>{{ match.homePair?.displayName || match.homePlaceholder }}</strong><b>vs.</b><strong>{{ match.awayPair?.displayName || match.awayPlaceholder }}</strong>@if (match.official) { <em>{{ match.result?.homeSets }}–{{ match.result?.awaySets }}</em> }</article> }</section> }</div>
           }
         } @else if (!leagues().length && !showCreate()) {

@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { debounceTime } from 'rxjs';
 import { Api } from '../../core/api';
 import { RealtimeEvent, RealtimeService } from '../../core/realtime';
@@ -162,6 +163,7 @@ type LeagueSummary = { id: number; name: string; seasonYear: number; status: str
 })
 export class InstagramContentPage implements OnInit, OnDestroy {
   private readonly api = inject(Api);
+  private readonly route = inject(ActivatedRoute);
   private readonly realtime = inject(RealtimeService);
   private readonly destroyRef = inject(DestroyRef);
   readonly leagues = signal<LeagueSummary[]>([]);
@@ -202,7 +204,7 @@ export class InstagramContentPage implements OnInit, OnDestroy {
     { id: 'matchday_results', label: 'Resultados', help: 'Todos los partidos de la fecha' },
     { id: 'standings', label: 'Posiciones', help: 'Ocho filas legibles y actualizadas' },
     { id: 'results_standings', label: 'Fecha finalizada', help: 'Pack de resultados + tabla actualizada' },
-    { id: 'bracket', label: 'Eliminatorias', help: 'Cruces y avance de parejas' },
+    { id: 'bracket', label: 'Cruces y fechas', help: 'Cuadro completo con días y horarios para compartir' },
     { id: 'champions', label: 'Campeones', help: 'Disponible tras la final oficial' }
   ];
 
@@ -224,6 +226,10 @@ export class InstagramContentPage implements OnInit, OnDestroy {
   readonly currentWarnings = computed(() => this.manifest()?.pages.find(page => page.index === this.pageIndex())?.warnings ?? []);
 
   ngOnInit() {
+    const requestedTemplate = this.route.snapshot.queryParamMap.get('template');
+    if (this.templateOptions.some(option => option.id === requestedTemplate)) {
+      this.template = requestedTemplate as InstagramTemplate;
+    }
     this.loadLeagues();
     this.realtime.listen(['LEAGUE_CHANGED']).pipe(debounceTime(180), takeUntilDestroyed(this.destroyRef)).subscribe(change => {
       if (typeof change === 'object') {
