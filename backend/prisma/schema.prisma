@@ -26,6 +26,10 @@ enum PasswordResetStatus {
   CANCELLED
   EXPIRED
 }
+enum AccountTokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -93,6 +97,9 @@ model User {
   firstName String
   lastName String
   phone String @unique
+  email String? @unique @db.VarChar(254)
+  emailVerifiedAt DateTime?
+  accessMigratedAt DateTime?
   passwordHash String
   role Role @default(CLIENT)
   active Boolean @default(true)
@@ -106,12 +113,61 @@ model User {
   securityVersion Int @default(0)
   releasedAt DateTime?
   passwordResetRequests PasswordResetRequest[]
+  accountTokens AccountToken[]
+  whatsappLink WhatsappLink?
+  whatsappLinkChallenges WhatsappLinkChallenge[]
   bookings Booking[]
   recurring RecurringBooking[]
   pushSubscriptions PushSubscription[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("users")
+}
+
+model AccountToken {
+  id String @id @default(cuid()) @db.VarChar(30)
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose AccountTokenPurpose
+  tokenHash String @unique @db.Char(64)
+  targetEmail String @db.VarChar(254)
+  expiresAt DateTime
+  consumedAt DateTime?
+  invalidatedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, purpose, createdAt])
+  @@index([purpose, expiresAt])
+  @@map("account_tokens")
+}
+
+model WhatsappLink {
+  id Int @id @default(autoincrement())
+  userId Int @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneE164 String @unique @db.VarChar(20)
+  provider String @db.VarChar(40)
+  verifiedAt DateTime @default(now())
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([phoneE164, revokedAt])
+  @@map("whatsapp_links")
+}
+
+model WhatsappLinkChallenge {
+  id String @id @default(cuid()) @db.VarChar(30)
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique @db.Char(64)
+  claimedPhoneE164 String? @db.VarChar(20)
+  provider String? @db.VarChar(40)
+  providerEventId String? @unique @db.VarChar(191)
+  expiresAt DateTime
+  claimedAt DateTime?
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+  @@map("whatsapp_link_challenges")
 }
 
 model PushSubscription {
@@ -350,7 +406,8 @@ model Booking {
   holdExpiresAt DateTime?
   cancelledAt DateTime?
   cancellationReason String? @db.Text
-  createdBy Int
+  createdBy Int?
+  botRequest BotBookingRequest?
   cashMovements CashMovement[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -358,6 +415,23 @@ model Booking {
   @@index([userId,startTime])
   @@index([status,holdExpiresAt])
   @@map("bookings")
+}
+
+model BotBookingRequest {
+  id Int @id @default(autoincrement())
+  keyHash String @unique @db.Char(64)
+  requestHash String @db.Char(64)
+  bookingId Int? @unique
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@map("bot_booking_requests")
+}
+
+model BotPhoneLock {
+  phoneHash String @id @db.Char(64)
+  createdAt DateTime @default(now())
+  @@map("bot_phone_locks")
 }
 
 model VenueSetting {

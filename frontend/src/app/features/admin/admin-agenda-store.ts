@@ -24,7 +24,7 @@ export type AdminBooking = {
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
-  user?: { firstName: string; lastName: string; phone: string; phoneVerified: boolean } | null;
+  user?: { firstName: string; lastName: string; phone: string; emailVerifiedAt?: string | null } | null;
 };
 
 type AgendaKey = { date: string; days: number };

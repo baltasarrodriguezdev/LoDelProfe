@@ -38,10 +38,12 @@ app.use((request, _response, next) => {
   next();
 });
 app.use(csrfProtection);
+app.use('/api/bot', lazyRouter('bot', () => import('./routes/bot.routes.js')));
 
 const routes = express.Router();
 routes.get('/health', (_request, response) => response.json({ status: 'ok' }));
 routes.use('/auth', auth);
+routes.use('/auth/whatsapp-link', lazyRouter('whatsapp-link', () => import('./routes/whatsapp-link.routes.js')));
 routes.use(pub);
 routes.use('/league', lazyRouter('league-public', () => import('./routes/league-public.routes.js')));
 routes.use('/bookings', lazyRouter('bookings', () => import('./routes/booking.routes.js')));

@@ -14,7 +14,7 @@ let queriedWhere: any = null;
 let transactionOptions: any = null;
 
 const token = (userId: number, role: 'CLIENT' | 'ADMIN' | 'SUPERADMIN' = 'CLIENT') =>
-  jwt.sign({ userId, role }, config.jwtSecret);
+  jwt.sign({ userId, role, scope: 'full' }, config.jwtSecret);
 const headers = (value?: string) => ({ 'content-type': 'application/json', ...(value ? { authorization: `Bearer ${value}` } : {}) });
 const futureDate = '2030-01-02';
 
@@ -25,9 +25,11 @@ function transactionClient(existing: { startTime: Date; endTime: Date }[] = []) 
     businessHour: { findUnique: async () => ({ active: true, openTime: '15:00', closeTime: '00:00' }) },
     booking: {
       findMany: async () => existing,
+      findFirst: async (args: any) => db.booking.findFirst(args),
       create: async ({ data }: any) => { const row = { id: created.length + 1, ...data }; created.push(row); return row; },
-      update: async ({ where, data }: any) => ({ id: where.id, ...data })
+      update: async (args: any) => db.booking.update(args)
     },
+    venueSetting: { findUnique: async (args: any) => db.venueSetting.findUnique(args) },
     user: { update: async ({ where, data }: any) => ({ id: where.id, ...data }) },
     cashMovement: { findFirst: async () => null, create: async ({ data }: any) => data }
   };
@@ -50,13 +52,15 @@ beforeEach(() => {
   created = [];
   queriedWhere = null;
   transactionOptions = null;
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', emailVerifiedAt: new Date(), role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.court.findFirst = async ({ where }: any) => where?.id && where.id !== 1 ? null : ({ id: 1, active: true });
   db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
   db.booking.findFirst = async () => null;
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, priceTotal: 20000 });
   db.booking.update = async ({ where, data }: any) => ({ id: where.id, ...data });
   db.booking.updateMany = async () => ({ count: 0 });
+  db.venueSetting.findUnique = async () => ({ id: 1, cancellationCutoffMinutes: 120 });
   db.auditLog.create = async ({ data }: any) => ({ id: 1n, ...data });
 });
 
@@ -83,7 +87,7 @@ test('un usuario autenticado crea una reserva asociada a su cuenta', async () =>
 });
 
 
-test('usuario no verificado crea primera reserva pendiente para validar telefono', async () => {
+test.skip('flujo histórico: usuario no verificado creaba una reserva pendiente', async () => {
   const requestedAt = Date.now();
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
   const response = await fetch(`${baseUrl}/bookings`, {
@@ -103,7 +107,7 @@ test('usuario no verificado crea primera reserva pendiente para validar telefono
   assert.equal(body.whatsappUrl, undefined);
 });
 
-test('phoneVerified es la única fuente de verdad aunque status legado diga VERIFIED', async () => {
+test.skip('flujo histórico: phoneVerified era la fuente de verdad', async () => {
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Perez', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, status: 'VERIFIED', isBlocked: false });
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(23)),
@@ -112,7 +116,7 @@ test('phoneVerified es la única fuente de verdad aunque status legado diga VERI
   assert.equal(response.status, 201);
   assert.equal(created[0].status, 'PENDING');
 });
-test('usuario no verificado con la misma solicitud pendiente recibe la existente', async () => {
+test.skip('flujo histórico: reutilización de solicitud pendiente', async () => {
   const pending = {
     id: 77,
     courtId: 1,
@@ -135,7 +139,7 @@ test('usuario no verificado con la misma solicitud pendiente recibe la existente
   assert.equal(body.alreadyPending, true);
 });
 
-test('usuario no verificado con otra solicitud pendiente no duplica reservas', async () => {
+test.skip('flujo histórico: límite de solicitudes pendientes', async () => {
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
   db.booking.findFirst = async ({ where }: any) => where.courtId ? null : ({
     id: 78,
@@ -237,6 +241,12 @@ test('disponibilidad bloquea pendientes y no consulta canceladas como ocupadas',
   assert.equal(response.status, 200);
   const body = await response.json() as any;
   assert.ok(body.slots.some((slot: any) => slot.available));
+});
+
+test('disponibilidad rechaza una cancha inexistente o inactiva', async () => {
+  const response = await fetch(`${baseUrl}/availability?date=${futureDate}&duration=60&courtId=999`);
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { message: 'Cancha no encontrada', code: 'COURT_NOT_FOUND' });
 });
 
 test('rechaza horarios pasados aunque el cliente intente enviarlos manualmente', async () => {
@@ -350,7 +360,7 @@ test('admin lista reservas pendientes de confirmación', async () => {
 });
 
 
-test('admin cancela usuario pendiente y libera número cancelando sus reservas pendientes', async () => {
+test.skip('flujo retirado: admin cancelaba registros pendientes', async () => {
   let updateManyArgs: any = null;
   let deletedUserId: number | null = null;
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabián', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
@@ -378,7 +388,7 @@ test('admin cancela usuario pendiente y libera número cancelando sus reservas p
   assert.equal(body.cancelledBookings, 2);
 });
 
-test('admin no puede cancelar usuario ya verificado desde pendientes', async () => {
+test.skip('flujo retirado: cancelación de registros pendientes', async () => {
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Pérez', phone: '3510000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
 
   const response = await fetch(`${baseUrl}/admin/users/23/pending-verification`, {
@@ -389,7 +399,7 @@ test('admin no puede cancelar usuario ya verificado desde pendientes', async () 
   assert.deepEqual(await response.json(), { message: 'Solo se pueden cancelar usuarios pendientes de verificación.' });
 });
 
-test('admin no puede cancelar otro administrador desde pendientes', async () => {
+test.skip('flujo retirado: cancelación de administradores pendientes', async () => {
   db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Admin', lastName: 'Club', phone: '3510000000', role: 'ADMIN', active: true, phoneVerified: false, isBlocked: false });
 
   const response = await fetch(`${baseUrl}/admin/users/24/pending-verification`, {
@@ -429,7 +439,7 @@ test('admin no puede confirmar una retención temporal vencida', async () => {
   assert.deepEqual(await response.json(), { message: 'La retención de este turno ya venció y el horario fue liberado.' });
 });
 
-test('admin confirma y verifica usuario en una transaccion', async () => {
+test.skip('flujo retirado: confirmación manual de usuario y reserva', async () => {
   const seen: string[] = [];
   db.booking.findUnique = async ({ where }: any) => ({ id: where.id, status: 'PENDING', userId: 22, holdExpiresAt: new Date(Date.now() + 60_000), cancellationReason: null });
   db.$transaction = async (work: any) => work({

@@ -10,6 +10,7 @@ import * as passwordReset from '../services/password-reset.service.js';
 import { publishUserChange } from '../realtime/events.js';
 
 const required = (field: string) => ({ required_error: `Ingresá ${field}`, invalid_type_error: `Ingresá ${field}` });
+const emailSchema = z.string(required('tu email')).trim().email('Ingresá un email válido').max(254).transform(value => value.toLowerCase());
 const phoneSchema = z.string(required('tu teléfono')).transform((value, context) => {
   const normalized = normalizeArgentinaPhone(value);
   if (!normalized) {
@@ -18,73 +19,70 @@ const phoneSchema = z.string(required('tu teléfono')).transform((value, context
   }
   return normalized;
 });
+const passwordSchema = z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga');
 const registrationSchema = z.object({
-  firstName: z.string(required('tu nombre')).trim().min(2, 'El nombre debe tener al menos 2 caracteres'),
-  lastName: z.string(required('tu apellido')).trim().min(2, 'El apellido debe tener al menos 2 caracteres'),
+  firstName: z.string(required('tu nombre')).trim().min(2, 'El nombre debe tener al menos 2 caracteres').max(60),
+  lastName: z.string(required('tu apellido')).trim().min(2, 'El apellido debe tener al menos 2 caracteres').max(60),
+  email: emailSchema,
   phone: phoneSchema,
-  password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
-});
+  password: passwordSchema
+}).strict();
 
 const router = Router();
 const cookieOptions = { httpOnly: true, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
 const csrfCookieOptions = { httpOnly: false, secure: config.production, sameSite: 'lax' as const, path: '/', maxAge: config.authCookieMaxAgeMs };
-const authRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.phone ?? '')}`
-});
-const recoveryRequestRateLimit = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.phone ?? '')}`
-});
-const recoveryAttemptRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  key: req => `${req.ip ?? 'unknown'}:${String(req.body?.token ?? '').slice(0, 12)}`
-});
-const establish = (res: Response, result: { token: string; user: unknown }, status = 200) =>
-  res.status(status)
-    .cookie(config.authCookieName, result.token, cookieOptions)
-    .cookie(config.csrfCookieName, createCsrfToken(), csrfCookieOptions)
-    .json({ user: result.user });
+const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, key: req => `${req.ip ?? 'unknown'}:${String(req.body?.email ?? req.body?.phone ?? '')}` });
+const emailRateLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, key: req => `${req.ip ?? 'unknown'}:${String(req.body?.email ?? '')}` });
+const tokenRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, key: req => `${req.ip ?? 'unknown'}:${String(req.body?.token ?? '').slice(0, 12)}` });
+const establish = (res: Response, result: { token: string; user: unknown }, status = 200) => res.status(status)
+  .cookie(config.authCookieName, result.token, cookieOptions)
+  .cookie(config.csrfCookieName, createCsrfToken(), csrfCookieOptions)
+  .json({ user: result.user });
 
 router.post('/register', authRateLimit, asyncHandler(async (req, res) => {
-  const data = registrationSchema.parse(req.body);
-  const result = await auth.register(data);
+  const result = await auth.register(registrationSchema.parse(req.body));
   const userId = (result.user as { id: number }).id;
   await publishUserChange('USER_CREATED', userId);
-  if (config.webPush.enabled) {
-    try {
-      const { notifyPendingUser } = await import('../services/push-notification.service.js');
-      await notifyPendingUser(userId);
-    } catch (error) {
-      console.error('[web-push] el usuario se registró pero no pudo generar el aviso', {
-        userId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
   establish(res, result, 201);
 }));
+
 router.post('/login', authRateLimit, asyncHandler(async (req, res) => {
-  const data = z.object({ phone: phoneSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).parse(req.body);
-  establish(res, await auth.login(data.phone, data.password));
+  const data = z.object({ email: emailSchema, password: z.string(required('tu contraseña')).min(1, 'Ingresá tu contraseña') }).strict().parse(req.body);
+  establish(res, await auth.login(data.email, data.password));
 }));
-router.post('/password-reset-requests', recoveryRequestRateLimit, asyncHandler(async (req, res) => {
-  const data = z.object({ phone: phoneSchema }).parse(req.body);
-  res.status(202).json(await passwordReset.requestPasswordReset(data.phone));
+
+router.post('/legacy-access', authRateLimit, asyncHandler(async (req, res) => {
+  const data = z.object({ phone: phoneSchema, email: emailSchema, password: z.string().min(1) }).strict().parse(req.body);
+  res.status(202).json(await auth.migrateLegacyAccess(data));
 }));
-router.post('/password-reset', recoveryAttemptRateLimit, asyncHandler(async (req, res) => {
-  const data = z.object({
-    token: z.string().min(1),
-    password: z.string(required('una contraseña')).min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
-  }).parse(req.body);
+
+router.post('/email-verification/resend', emailRateLimit, asyncHandler(async (req, res) => {
+  const { email } = z.object({ email: emailSchema }).strict().parse(req.body);
+  res.status(202).json(await auth.resendEmailVerification(email));
+}));
+
+router.post('/email-verification/confirm', tokenRateLimit, asyncHandler(async (req, res) => {
+  const { token } = z.object({ token: z.string().min(1).max(200) }).strict().parse(req.body);
+  const result = await auth.confirmEmail(token);
+  await publishUserChange('USER_UPDATED', result.userId);
+  res.clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
+    .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
+    .json({ message: result.message });
+}));
+
+router.post('/password-reset-requests', emailRateLimit, asyncHandler(async (req, res) => {
+  const { email } = z.object({ email: emailSchema }).strict().parse(req.body);
+  res.status(202).json(await passwordReset.requestPasswordReset(email));
+}));
+
+router.post('/password-reset', tokenRateLimit, asyncHandler(async (req, res) => {
+  const data = z.object({ token: z.string().min(1).max(200), password: passwordSchema }).strict().parse(req.body);
   const result = await passwordReset.resetPassword(data.token, data.password);
   res.clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
     .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })
     .json(result);
 }));
+
 router.post('/logout', (_req, res) => res
   .clearCookie(config.authCookieName, { httpOnly: true, secure: config.production, sameSite: 'lax', path: '/' })
   .clearCookie(config.csrfCookieName, { httpOnly: false, secure: config.production, sameSite: 'lax', path: '/' })

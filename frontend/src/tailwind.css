@@ -1529,3 +1529,11 @@ app-admin-navigation {
     animation-iteration-count: 1 !important;
   }
 }
+/* Email access migration */
+.password-control { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .75rem; }
+.password-control .link { white-space: nowrap; }
+.legacy-access { margin-top: .35rem; }
+.email-verification-card { max-width: 680px; }
+.account-panel { max-width: 920px; margin: 0 auto 5rem; display: grid; gap: 2rem; }
+.account-divider { height: 1px; background: color-mix(in srgb, currentColor 14%, transparent); }
+@media (max-width: 640px) { .password-control { grid-template-columns: 1fr; } .password-control .link { justify-self: start; } }

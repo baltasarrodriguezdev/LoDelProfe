@@ -6,6 +6,9 @@ import { HttpError } from '../utils/http-error.js';
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const csrfExemptPaths = new Set([
   '/auth/login', '/api/auth/login', '/auth/register', '/api/auth/register',
+  '/auth/legacy-access', '/api/auth/legacy-access',
+  '/auth/email-verification/resend', '/api/auth/email-verification/resend',
+  '/auth/email-verification/confirm', '/api/auth/email-verification/confirm',
   '/auth/password-reset-requests', '/api/auth/password-reset-requests',
   '/auth/password-reset', '/api/auth/password-reset'
 ]);
@@ -67,7 +70,7 @@ export function rateLimit(options: { windowMs: number; max: number; key?: (req: 
 
     current.count++;
     if (current.count > options.max) {
-      return next(new HttpError(429, 'Demasiados intentos. Probá nuevamente en unos minutos.'));
+      return next(new HttpError(429, 'Demasiados intentos. Probá nuevamente en unos minutos.', 'RATE_LIMITED'));
     }
 
     next();

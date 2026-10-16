@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { debounceTime, finalize, merge } from 'rxjs';
 import { Api } from '../../core/api';
 import { RealtimeService } from '../../core/realtime';
@@ -15,9 +14,10 @@ type Client = {
   firstName: string;
   lastName: string;
   phone: string;
+  email?: string | null;
+  emailVerifiedAt?: string | null;
   role: string;
   active: boolean;
-  phoneVerified: boolean;
   isBlocked: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -26,7 +26,7 @@ type Client = {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ConfirmDialogComponent],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
   template: `
     <section class="admin-shell clients-admin-shell">
       <div class="admin-content clients-admin-content">
@@ -34,15 +34,14 @@ type Client = {
           <div>
             <span class="eyebrow">CLIENTES</span>
             <h1>Gestión de clientes</h1>
-            <p>Alta, validación y estado de las cuentas que reservan en la cancha.</p>
+            <p>Estado, bloqueo y acceso de las cuentas que reservan en la cancha.</p>
           </div>
-          <button type="button" class="btn primary" (click)="openCreate()">Agregar cliente</button>
         </header>
 
         @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
 
         <section class="clients-toolbar panel">
-          <label class="clients-search">Buscar cliente<input type="search" name="clientSearch" autocomplete="off" placeholder="Nombre, apellido o teléfono…" [(ngModel)]="search"></label>
+          <label class="clients-search">Buscar cliente<input type="search" name="clientSearch" autocomplete="off" placeholder="Nombre, email o teléfono…" [(ngModel)]="search"></label>
           <div class="client-tabs" role="group" aria-label="Filtrar clientes por estado">
             @for (tab of tabs; track tab.id) {
               <button type="button" [class.active]="activeTab === tab.id" [attr.aria-pressed]="activeTab === tab.id" (click)="activeTab = tab.id">
@@ -55,19 +54,15 @@ type Client = {
 
         @if (showForm) {
           <form class="panel client-form" (ngSubmit)="saveForm()">
-            <div class="form-section-title"><span>{{ editingClient ? '02' : '01' }}</span><div><h2>{{ editingClient ? 'Editar cliente' : 'Agregar cliente' }}</h2><p>{{ editingClient ? 'Actualizá el nombre visible del cliente.' : 'La cuenta quedará pendiente hasta comprobar el teléfono desde Seguridad.' }}</p></div></div>
+            <div class="form-section-title"><span>01</span><div><h2>Editar cliente</h2><p>Actualizá el nombre visible del cliente.</p></div></div>
             <div class="form-grid clients-form-grid">
               <label>Nombre<input name="firstName" required minlength="2" [(ngModel)]="form.firstName"></label>
               <label>Apellido<input name="lastName" required minlength="2" [(ngModel)]="form.lastName"></label>
-              @if (!editingClient) {
-                <label>Teléfono<input name="phone" required inputmode="tel" placeholder="Ej. 3576 468131" [(ngModel)]="form.phone"></label>
-                <label>Contraseña inicial<input name="password" required minlength="8" type="password" [(ngModel)]="form.password"></label>
-              }
             </div>
             @if (formError) { <p class="error client-form-error">{{ formError }}</p> }
             <div class="client-form-actions">
               <button type="button" class="btn ghost" [disabled]="saving()" (click)="closeForm()">Cancelar</button>
-              <button type="submit" class="btn primary" [disabled]="saving()">{{ saving() ? 'Guardando...' : editingClient ? 'Guardar cambios' : 'Agregar cliente' }}</button>
+              <button type="submit" class="btn primary" [disabled]="saving()">{{ saving() ? 'Guardando...' : 'Guardar cambios' }}</button>
             </div>
           </form>
         }
@@ -84,20 +79,15 @@ type Client = {
                     <h2>{{ client.firstName }} {{ client.lastName }}</h2>
                     <span [class]="'client-status ' + statusClass(client)">{{ statusLabel(client) }}</span>
                   </div>
-                  <p>{{ client.phone }} · Alta {{ client.createdAt ? (client.createdAt | date:'dd/MM/yyyy') : 'sin fecha' }}</p>
+                  <p>{{ client.email || 'Sin email migrado' }} · {{ client.phone }} · Alta {{ client.createdAt ? (client.createdAt | date:'dd/MM/yyyy') : 'sin fecha' }}</p>
                 </div>
                 <div class="client-actions">
-                  @if (!client.phoneVerified && client.active && !client.isBlocked) {
-                    <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
-                    <button type="button" class="small-action danger-action" (click)="askCancelPending(client)">Cancelar registro</button>
-                  } @else {
-                    <button type="button" class="small-action" (click)="openEdit(client)">Editar</button>
-                    @if (client.active && !client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, true)">Bloquear</button> }
-                    @if (client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, false)">Desbloquear</button> }
-                    @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Desactivar cliente</button> }
-                    @if (!client.active) { <button type="button" class="small-action pay-action" (click)="setActive(client, true)">Reactivar</button> }
-                    @if (!client.active) { <button type="button" class="small-action danger-action" (click)="askReleasePhone(client)">Liberar número</button> }
-                  }
+                  <button type="button" class="small-action" (click)="openEdit(client)">Editar</button>
+                  @if (client.active && !client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, true)">Bloquear</button> }
+                  @if (client.isBlocked) { <button type="button" class="small-action" (click)="setBlocked(client, false)">Desbloquear</button> }
+                  @if (client.active) { <button type="button" class="small-action danger-action" (click)="askDeactivate(client)">Desactivar cliente</button> }
+                  @if (!client.active) { <button type="button" class="small-action pay-action" (click)="setActive(client, true)">Reactivar</button> }
+                  @if (!client.active) { <button type="button" class="small-action danger-action" (click)="askReleasePhone(client)">Liberar número</button> }
                 </div>
               </article>
             } @empty {
@@ -140,9 +130,9 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   noticeError = false;
   showForm = false;
   editingClient: Client | null = null;
-  form: any = { firstName: '', lastName: '', phone: '', password: '' };
+  form: any = { firstName: '', lastName: '' };
   formError = '';
-  confirmDialog: { type: 'cancelPending' | 'deactivate' | 'releasePhone'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
+  confirmDialog: { type: 'deactivate' | 'releasePhone'; target: Client; title: string; message: string; secondaryMessage: string; confirmText: string; loadingText: string } | null = null;
   readonly confirmLoading = signal(false);
   confirmError = '';
   private clientsRequestId = 0;
@@ -171,7 +161,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     const term = this.search.trim().toLowerCase();
     return this.clientRows.filter(client => this.matchesTab(client, this.activeTab)).filter(client => {
       if (!term) return true;
-      return `${client.firstName} ${client.lastName} ${client.phone}`.toLowerCase().includes(term);
+      return `${client.firstName} ${client.lastName} ${client.email ?? ''} ${client.phone}`.toLowerCase().includes(term);
     });
   }
 
@@ -209,8 +199,8 @@ export class AdminClientsPage implements OnInit, OnDestroy {
 
   matchesTab(client: Client, status: ClientStatus) {
     if (status === 'all') return true;
-    if (status === 'pending') return client.active && !client.phoneVerified && !client.isBlocked;
-    if (status === 'confirmed') return client.active && client.phoneVerified && !client.isBlocked;
+    if (status === 'pending') return client.active && !client.emailVerifiedAt && !client.isBlocked;
+    if (status === 'confirmed') return client.active && Boolean(client.emailVerifiedAt) && !client.isBlocked;
     if (status === 'inactive') return !client.active;
     if (status === 'blocked') return client.isBlocked;
     return true;
@@ -219,25 +209,18 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   statusLabel(client: Client) {
     if (!client.active) return 'Desactivado';
     if (client.isBlocked) return 'Bloqueado';
-    if (!client.phoneVerified) return 'Pendiente';
+    if (!client.emailVerifiedAt) return 'Email pendiente';
     return 'Confirmado';
   }
 
   statusClass(client: Client) {
     if (!client.active) return 'inactive';
     if (client.isBlocked) return 'blocked';
-    if (!client.phoneVerified) return 'pending';
+    if (!client.emailVerifiedAt) return 'pending';
     return 'confirmed';
   }
 
   initials(client: Client) { return `${client.firstName?.[0] ?? ''}${client.lastName?.[0] ?? ''}`.toUpperCase() || 'CL'; }
-
-  openCreate() {
-    this.editingClient = null;
-    this.form = { firstName: '', lastName: '', phone: '', password: '' };
-    this.formError = '';
-    this.showForm = true;
-  }
 
   openEdit(client: Client) {
     this.editingClient = client;
@@ -259,36 +242,18 @@ export class AdminClientsPage implements OnInit, OnDestroy {
       this.formError = 'Completá nombre y apellido.';
       return;
     }
-    if (!this.editingClient && (!this.form.phone?.trim() || !this.form.password || this.form.password.length < 8)) {
-      this.formError = 'Completá teléfono y una contraseña de al menos 8 caracteres.';
-      return;
-    }
+    if (!this.editingClient) return;
     this.saving.set(true);
-    const request = this.editingClient
-      ? this.api.patch<Client>(`/admin/users/${this.editingClient.id}`, { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim() })
-      : this.api.post<Client>('/admin/users', { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim(), phone: this.form.phone.trim(), password: this.form.password });
+    const request = this.api.patch<Client>(`/admin/users/${this.editingClient.id}`, { firstName: this.form.firstName.trim(), lastName: this.form.lastName.trim() });
     request.pipe(finalize(() => this.saving.set(false))).subscribe({
       next: client => {
-        const wasEditing = !!this.editingClient;
-        if (wasEditing) this.clients = this.clients.map(item => item.id === client.id ? client : item);
-        else this.clients = [client, ...this.clients];
+        this.clients = this.clients.map(item => item.id === client.id ? client : item);
         this.showForm = false;
         this.editingClient = null;
         this.activeTab = 'confirmed';
-        this.showNotice(wasEditing ? 'Cliente actualizado correctamente.' : 'Cliente agregado correctamente.');
+        this.showNotice('Cliente actualizado correctamente.');
       },
       error: error => { this.formError = error.error?.message ?? 'No pudimos guardar el cliente.'; }
-    });
-  }
-
-  verifyClient(client: Client) {
-    if (!client.id || this.savingClientId() !== null) return;
-    this.savingClientId.set(client.id);
-    this.api.patch<Client>(`/admin/users/${client.id}/verify`, {}).pipe(
-      finalize(() => this.savingClientId.set(null))
-    ).subscribe({
-      next: updated => { this.replaceClient({ ...client, ...updated, phoneVerified: true }); this.showNotice('Usuario verificado.'); },
-      error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
     });
   }
 
@@ -312,19 +277,6 @@ export class AdminClientsPage implements OnInit, OnDestroy {
       next: updated => { this.replaceClient({ ...client, ...updated, isBlocked }); this.showNotice(isBlocked ? 'Cliente bloqueado.' : 'Cliente desbloqueado.'); },
       error: error => this.showNotice(error.error?.message ?? 'No pudimos actualizar el cliente. Intentá nuevamente.', true)
     });
-  }
-
-  askCancelPending(client: Client) {
-    this.confirmDialog = {
-      type: 'cancelPending',
-      target: client,
-      title: 'Cancelar usuario pendiente',
-      message: `¿Querés cancelar el registro pendiente de ${client.firstName} ${client.lastName}?`,
-      secondaryMessage: 'El número quedará disponible para que otra persona pueda registrarse.',
-      confirmText: 'Sí, cancelar',
-      loadingText: 'Cancelando...'
-    };
-    this.confirmError = '';
   }
 
   askDeactivate(client: Client) {
@@ -361,24 +313,8 @@ export class AdminClientsPage implements OnInit, OnDestroy {
 
   confirmDialogConfirmed() {
     if (!this.confirmDialog || this.confirmLoading()) return;
-    if (this.confirmDialog.type === 'cancelPending') this.confirmCancelPending(this.confirmDialog.target);
-    else if (this.confirmDialog.type === 'releasePhone') this.confirmReleasePhone(this.confirmDialog.target);
+    if (this.confirmDialog.type === 'releasePhone') this.confirmReleasePhone(this.confirmDialog.target);
     else this.confirmDeactivate(this.confirmDialog.target);
-  }
-
-  private confirmCancelPending(client: Client) {
-    this.confirmLoading.set(true);
-    this.confirmError = '';
-    this.api.delete<any>(`/admin/users/${client.id}/pending-verification`).pipe(
-      finalize(() => this.confirmLoading.set(false))
-    ).subscribe({
-      next: () => {
-        this.clients = this.clients.filter(item => item.id !== client.id);
-        this.confirmDialog = null;
-        this.showNotice('Usuario pendiente cancelado. El número ya está disponible.');
-      },
-      error: () => { this.confirmError = 'No pudimos cancelar el usuario pendiente. Intentá nuevamente.'; }
-    });
   }
 
   private confirmDeactivate(client: Client) {

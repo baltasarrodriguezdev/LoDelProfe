@@ -2,8 +2,10 @@ import 'dotenv/config';
 
 const production = process.env.NODE_ENV === 'production';
 const jwtSecret = process.env.JWT_SECRET ?? 'dev-only-secret-change-me';
+const botApiKey = process.env.BOT_API_KEY?.trim() ?? '';
 if (production && !process.env.JWT_SECRET) throw new Error('JWT_SECRET es obligatorio en producción');
 if (production && !process.env.FRONTEND_URL) throw new Error('FRONTEND_URL es obligatorio en producción');
+if (production && !botApiKey) throw new Error('BOT_API_KEY es obligatorio en producción');
 
 const frontendUrls = [
   ...(process.env.FRONTEND_URL ?? 'http://localhost:4200').split(','),
@@ -17,6 +19,10 @@ const frontendUrls = [
 const webPushPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY?.trim() ?? '';
 const webPushPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY?.trim() ?? '';
 const webPushSubject = process.env.WEB_PUSH_VAPID_SUBJECT?.trim() ?? '';
+const emailProvider = process.env.EMAIL_PROVIDER?.trim().toLowerCase() ?? (production ? 'disabled' : 'local');
+const emailApiUrl = process.env.EMAIL_API_URL?.trim() ?? '';
+const emailApiKey = process.env.EMAIL_API_KEY?.trim() ?? '';
+const emailFrom = process.env.EMAIL_FROM?.trim() ?? '';
 const hasPartialWebPushConfig = Boolean(webPushPublicKey || webPushPrivateKey || webPushSubject);
 if (hasPartialWebPushConfig && !(webPushPublicKey && webPushPrivateKey && webPushSubject)) {
   throw new Error('WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY y WEB_PUSH_VAPID_SUBJECT deben configurarse juntos');
@@ -26,6 +32,7 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   production,
   jwtSecret,
+  botApiKey,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   authCookieName: process.env.AUTH_COOKIE_NAME ?? 'padel_session',
   csrfCookieName: process.env.CSRF_COOKIE_NAME ?? 'padel_csrf',
@@ -33,6 +40,18 @@ export const config = {
   frontendUrls,
   publicAppUrl: (process.env.PUBLIC_APP_URL ?? frontendUrls[0]).replace(/\/$/, ''),
   passwordResetTtlMinutes: Math.max(5, Math.min(60, Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 15)),
+  emailVerificationTtlMinutes: Math.max(10, Math.min(1440, Number(process.env.EMAIL_VERIFICATION_TTL_MINUTES) || 30)),
+  emailResendCooldownSeconds: Math.max(30, Math.min(3600, Number(process.env.EMAIL_RESEND_COOLDOWN_SECONDS) || 60)),
+  email: {
+    provider: emailProvider,
+    apiUrl: emailApiUrl,
+    apiKey: emailApiKey,
+    from: emailFrom,
+    configured: emailProvider === 'local'
+      ? !production
+      : emailProvider === 'http' && Boolean(emailApiUrl && emailApiKey && emailFrom)
+  },
+  whatsappLinkTtlMinutes: Math.max(5, Math.min(60, Number(process.env.WHATSAPP_LINK_TTL_MINUTES) || 10)),
   realtime: {
     redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
     redisChannel: process.env.REALTIME_REDIS_CHANNEL ?? 'lo-del-profe:realtime:v1',

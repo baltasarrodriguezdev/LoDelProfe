@@ -96,7 +96,7 @@ npm run build
 - El sistema permite una sola cancha activa; las pantallas consultan su identificador y no dependen de que sea `1`.
 - Un turno cancelado conserva su registro con estado `CANCELLED`.
 - Los descansos de una jornada se configuran en los horarios, sin reglas ocultas por día.
-- `phoneVerified` es la fuente de verdad para la identidad telefónica.
+- `emailVerifiedAt` habilita el autoservicio. El teléfono es un dato de contacto; la identidad de WhatsApp requiere una vinculación separada y confirmada.
 - Desactivar un cliente conserva su número e historial; liberar el número es una acción separada, irreversible y auditada.
 - Una seña siempre incluye el importe cobrado y genera el movimiento de caja correspondiente.
 - Los clientes pueden cancelar hasta el límite configurado por `SUPERADMIN`; inicialmente son 120 minutos.
@@ -141,6 +141,14 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 - `JWT_EXPIRES_IN=7d`
 - `APP_TIMEZONE=America/Argentina/Buenos_Aires`
 - `PASSWORD_RESET_TTL_MINUTES=15`
+- `EMAIL_VERIFICATION_TTL_MINUTES=30`
+- `EMAIL_RESEND_COOLDOWN_SECONDS=60`
+- `EMAIL_PROVIDER=http`: en producción nunca usar el buzón local de pruebas.
+- `EMAIL_API_URL`: endpoint HTTPS del adaptador/proveedor de correo.
+- `EMAIL_API_KEY`: credencial secreta del proveedor de correo.
+- `EMAIL_FROM`: remitente perteneciente a un dominio validado.
+- `WHATSAPP_LINK_TTL_MINUTES=10`
+- `BOT_API_KEY`: clave exclusiva para las llamadas servidor a servidor de n8n.
 - `BUSINESS_WHATSAPP_PHONE`: número de WhatsApp de la cancha en formato internacional, sin espacios.
 - `REALTIME_REDIS_URL`: URL TLS de Redis compartido (por ejemplo, la integración de Redis del marketplace de Vercel). Es necesaria para que los eventos crucen instancias.
 - `REALTIME_REDIS_CHANNEL=lo-del-profe:realtime:v1`: canal Pub/Sub; puede conservarse el valor predeterminado.
@@ -151,7 +159,7 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 
 `VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.
 
-El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
+El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro y la recuperación envían enlaces de email de un solo uso; los tokens se guardan mediante hash y se consumen con una acción POST. La falta de configuración de correo en producción produce un error y nunca activa cuentas ni simula envíos. El contrato y la transición están documentados en [docs/email-auth.md](docs/email-auth.md); la integración de n8n está en [docs/bot-api.md](docs/bot-api.md).
 
 Las notificaciones Web Push se activan una vez por dispositivo desde la barra del panel administrador. Avisan nuevas reservas, cancelaciones y registros pendientes aunque la web esté cerrada. Requieren HTTPS, las tres variables `WEB_PUSH_VAPID_*` y la migración `push_subscriptions`; si falta la configuración, el botón lo informa sin afectar el resto del sistema.
 

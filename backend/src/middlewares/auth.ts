@@ -6,7 +6,7 @@ import { HttpError } from '../utils/http-error.js';
 import { prisma } from '../prisma/client.js';
 import { cookieValue } from './security.js';
 
-export type AuthenticatedSession = { userId: number; role: Role; sessionVersion?: number };
+export type AuthenticatedSession = { userId: number; role: Role; sessionVersion?: number; scope?: 'full' | 'email_verification' };
 
 export async function resolveAuthenticatedSession(cookieHeader?: string, authorizationHeader?: string) {
   const token = cookieValue(cookieHeader, config.authCookieName)
@@ -19,6 +19,8 @@ export async function resolveAuthenticatedSession(cookieHeader?: string, authori
   } catch {
     throw new HttpError(401, 'Token inválido o vencido');
   }
+
+  if (!payload.scope) throw new HttpError(401, 'La sesiÃ³n anterior venciÃ³. IngresÃ¡ nuevamente.', 'LEGACY_SESSION_REVOKED');
 
   if (payload.sessionVersion !== undefined) {
     const user = await prisma.user.findUnique({
@@ -37,6 +39,9 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
   try {
     const payload = await resolveAuthenticatedSession(req.headers.cookie, req.headers.authorization);
     if (!payload) return next(new HttpError(401, 'Se requiere autenticación'));
+    if (payload.scope === 'email_verification') {
+      return next(new HttpError(403, 'Primero tenÃ©s que confirmar tu email.', 'EMAIL_NOT_VERIFIED'));
+    }
     req.auth = payload;
     next();
   } catch (error) {

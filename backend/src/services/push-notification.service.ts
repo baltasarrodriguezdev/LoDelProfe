@@ -57,15 +57,6 @@ export function buildBookingNotification(
   };
 }
 
-export function buildPendingUserNotification(user: { id: number; firstName: string; lastName: string }): AdminNotification {
-  return {
-    title: 'Nuevo usuario pendiente',
-    body: `${user.firstName} ${user.lastName} solicitó acceso. Tocá para revisarlo.`,
-    tag: `pending-user-${user.id}`,
-    url: '/admin/seguridad'
-  };
-}
-
 export function pushPublicKey() {
   return config.webPush.enabled ? config.webPush.publicKey : null;
 }
@@ -178,14 +169,4 @@ export async function notifyBookingChange(type: 'BOOKING_CREATED' | 'BOOKING_CAN
   });
   if (!booking) return;
   await sendToAdminDevices(buildBookingNotification(type, booking));
-}
-
-export async function notifyPendingUser(userId: number) {
-  if (!config.webPush.enabled) return;
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, firstName: true, lastName: true, role: true, phoneVerified: true }
-  });
-  if (!user || user.role !== Role.CLIENT || user.phoneVerified) return;
-  await sendToAdminDevices(buildPendingUserNotification(user));
 }
