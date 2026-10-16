@@ -13,16 +13,16 @@ import {
   listBotBookings
 } from '../services/bot-booking.service.js';
 import { publishBookingChange } from '../realtime/events.js';
+import { claimWhatsappLink } from '../services/whatsapp-link.service.js';
 
 const router = Router();
 const botRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
 router.use(botRateLimit, authenticateBot);
 
-const phone = z.string().trim().min(6).max(30);
+const senderPhone = z.string().trim().min(6).max(30);
 const noControlCharacters = (value: string) => !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 const createSchema = z.object({
-  phone,
-  name: z.string().trim().min(1).max(60).refine(noControlCharacters).optional(),
+  senderPhone,
   date: z.string().date(),
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   durationMinutes: z.number().int().positive(),
@@ -37,13 +37,23 @@ function parse<S extends z.ZodTypeAny>(schema: S, value: unknown): z.output<S> {
 }
 
 router.get('/customer', asyncHandler(async (req, res) => {
-  const query = parse(z.object({ phone }), req.query);
-  res.json(await getBotCustomer(query.phone));
+  const query = parse(z.object({ senderPhone }), req.query);
+  res.json(await getBotCustomer(query.senderPhone));
 }));
 
 router.get('/bookings', asyncHandler(async (req, res) => {
-  const query = parse(z.object({ phone }), req.query);
-  res.json(await listBotBookings(query.phone));
+  const query = parse(z.object({ senderPhone }), req.query);
+  res.json(await listBotBookings(query.senderPhone));
+}));
+
+router.post('/link/claim', asyncHandler(async (req, res) => {
+  const input = parse(z.object({
+    challenge: z.string().trim().min(20).max(100),
+    senderPhone,
+    provider: z.string().trim().min(2).max(40),
+    providerEventId: z.string().trim().min(1).max(191)
+  }).strict(), req.body);
+  res.json(await claimWhatsappLink(input));
 }));
 
 router.post('/bookings', asyncHandler(async (req, res) => {
@@ -58,8 +68,8 @@ router.post('/bookings', asyncHandler(async (req, res) => {
 
 router.patch('/bookings/:id/cancel', asyncHandler(async (req, res) => {
   const id = parse(z.coerce.number().int().positive(), req.params.id);
-  const input = parse(z.object({ phone }).strict(), req.body);
-  const { previous, updated } = await cancelBotBooking(id, input.phone);
+  const input = parse(z.object({ senderPhone }).strict(), req.body);
+  const { previous, updated } = await cancelBotBooking(id, input.senderPhone);
   await publishBookingChange('BOOKING_CANCELLED', updated, previous!);
   res.json({ id: updated.id, status: updated.status, message: 'La reserva fue cancelada.' });
 }));

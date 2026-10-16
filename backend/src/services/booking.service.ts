@@ -21,12 +21,8 @@ export type BookingCancellationResult = {
 
 export const defaultPlayersCount = 4;
 
-export function customerBookingStatus(user: { phoneVerified: boolean } | null, guestPhoneVerified = false): BookingStatus {
-  return user ? (user.phoneVerified ? 'CONFIRMED' : 'PENDING') : (guestPhoneVerified ? 'CONFIRMED' : 'PENDING');
-}
-
-export function holdForBookingStatus(status: BookingStatus, from = new Date()) {
-  return status === 'PENDING' ? pendingBookingExpiresAt(from) : null;
+export function pendingBookingExpiresAt(from = new Date()) {
+  return new Date(from.getTime() + config.booking.pendingHoldMinutes * 60_000);
 }
 
 export const occupiedBookingStatuses: BookingStatus[] = ['PENDING', 'CONFIRMED', 'PLAYED', 'NO_SHOW', 'BLOCKED'];
@@ -39,10 +35,6 @@ export const bookingTransactionOptions = {
 } as const;
 const deadGapWarning = 'Este turno deja un espacio libre menor a 60 minutos. Probablemente no se venda.';
 const gapIsDead = (minutes: number) => minutes > 0 && minutes < config.booking.minBookableMinutes;
-
-export function pendingBookingExpiresAt(from = new Date()) {
-  return new Date(from.getTime() + config.booking.pendingHoldMinutes * 60_000);
-}
 
 export async function expirePendingBookings(filter: { userId?: number; bookingId?: number } = {}, now = new Date()) {
   const where: Prisma.BookingWhereInput = {

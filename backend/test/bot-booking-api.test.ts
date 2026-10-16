@@ -1,6 +1,7 @@
 import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
+import { createHash } from 'node:crypto';
 import { app } from '../src/app.js';
 import { config } from '../src/config.js';
 import { prisma } from '../src/prisma/client.js';
@@ -22,7 +23,8 @@ let cancellationCutoffMinutes = 120;
 let transactionQueue = Promise.resolve();
 
 const botHeaders = { 'content-type': 'application/json', 'x-api-key': apiKey };
-const adminToken = () => jwt.sign({ userId: 1, role: 'SUPERADMIN' }, config.jwtSecret);
+const adminToken = () => jwt.sign({ userId: 1, role: 'SUPERADMIN', scope: 'full' }, config.jwtSecret);
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 function matches(row: any, where: any): boolean {
   if (!where) return true;
@@ -108,7 +110,7 @@ before(async () => {
 after(async () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
 
 beforeEach(() => {
-  users = [];
+  users = [{ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: localPhone, email: 'ana@example.com', emailVerifiedAt: new Date(), active: true, isBlocked: false, role: 'CLIENT' }];
   bookings = [];
   requests = [];
   audits = [];
@@ -119,6 +121,9 @@ beforeEach(() => {
 
   db.user.findFirst = async ({ where }: any) => users.find(user => where.phone.in.includes(user.phone)) ?? null;
   db.user.findUnique = async ({ where }: any) => users.find(user => user.id === where.id) ?? null;
+  db.whatsappLink.findUnique = async ({ where }: any) => where.phoneE164 === `+54${localPhone}`
+    ? { id: 1, userId: users[0].id, phoneE164: `+54${localPhone}`, provider: 'test', revokedAt: null, user: users[0] }
+    : null;
   db.booking.findMany = async ({ where }: any) => bookings.filter(item => matches(item, where));
   db.booking.findFirst = async ({ where }: any) => bookings.find(item => matches(item, where)) ?? null;
   db.booking.findUnique = async ({ where }: any) => bookings.find(item => item.id === where.id) ?? null;
@@ -141,8 +146,7 @@ beforeEach(() => {
 
 function createBody(overrides: Record<string, unknown> = {}) {
   return {
-    phone: `549${localPhone}`,
-    name: 'Cliente WhatsApp',
+    senderPhone: `549${localPhone}`,
     date: futureDate,
     startTime: '20:30',
     durationMinutes: 90,
@@ -152,71 +156,85 @@ function createBody(overrides: Record<string, unknown> = {}) {
 }
 
 test('bot exige x-api-key y no acepta una clave incorrecta', async () => {
-  const missing = await fetch(`${baseUrl}/api/bot/customer?phone=549${localPhone}`);
+  const missing = await fetch(`${baseUrl}/api/bot/customer?senderPhone=549${localPhone}`);
   assert.equal(missing.status, 401);
   assert.deepEqual(await missing.json(), { message: 'No autorizado.', code: 'BOT_UNAUTHORIZED' });
-  const wrong = await fetch(`${baseUrl}/api/bot/customer?phone=549${localPhone}`, { headers: { 'x-api-key': 'wrong' } });
+  const wrong = await fetch(`${baseUrl}/api/bot/customer?senderPhone=549${localPhone}`, { headers: { 'x-api-key': 'wrong' } });
   assert.equal(wrong.status, 401);
 });
 
+test('claim de vinculaciÃ³n usa el remitente autenticado, es atÃ³mico y deduplica el evento', async () => {
+  const challengeValue = 'challenge-token-1234567890';
+  const challenge: any = {
+    id: 'challenge-1', tokenHash: sha256(challengeValue), userId: 7,
+    user: users[0], consumedAt: null, claimedAt: null,
+    providerEventId: null, expiresAt: new Date(Date.now() + 60_000)
+  };
+  db.whatsappLinkChallenge.findUnique = async ({ where }: any) => challenge.providerEventId === where.providerEventId ? challenge : null;
+  db.whatsappLinkChallenge.findFirst = async ({ where }: any) => (
+    challenge.tokenHash === where.tokenHash && !challenge.consumedAt && !challenge.claimedAt && challenge.expiresAt > where.expiresAt.gt
+  ) ? challenge : null;
+  db.whatsappLinkChallenge.updateMany = async ({ where, data }: any) => {
+    if (challenge.id !== where.id || challenge.claimedAt || challenge.consumedAt) return { count: 0 };
+    Object.assign(challenge, data); return { count: 1 };
+  };
+
+  const claim = () => fetch(`${baseUrl}/api/bot/link/claim`, {
+    method: 'POST', headers: botHeaders,
+    body: JSON.stringify({ challenge: challengeValue, senderPhone: `549${localPhone}`, provider: 'meta', providerEventId: 'wamid.event-1' })
+  });
+  const first = await claim();
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), { linked: false, pendingWebConfirmation: true });
+  assert.equal(challenge.claimedPhoneE164, `+54${localPhone}`);
+  const replay = await claim();
+  assert.equal(replay.status, 409);
+  assert.equal((await replay.json() as any).code, 'PROVIDER_EVENT_REPLAY');
+});
+
+test('claim de vinculaciÃ³n rechaza un remitente distinto del contacto', async () => {
+  const challengeValue = 'challenge-token-abcdefghijk';
+  const challenge = {
+    id: 'challenge-2', tokenHash: sha256(challengeValue), userId: 7,
+    user: users[0], consumedAt: null, claimedAt: null, expiresAt: new Date(Date.now() + 60_000)
+  };
+  db.whatsappLinkChallenge.findUnique = async () => null;
+  db.whatsappLinkChallenge.findFirst = async () => challenge;
+  const response = await fetch(`${baseUrl}/api/bot/link/claim`, {
+    method: 'POST', headers: botHeaders,
+    body: JSON.stringify({ challenge: challengeValue, senderPhone: '5493511111111', provider: 'meta', providerEventId: 'wamid.event-2' })
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json() as any).code, 'WHATSAPP_PHONE_MISMATCH');
+});
+
 test('customer normaliza 549, 54 y diez dígitos y expone solamente nombre', async () => {
-  users.push({ id: 7, firstName: 'Ana', lastName: 'Pérez', phone: localPhone, active: true, isBlocked: false, phoneVerified: true });
   for (const phone of [`549${localPhone}`, `54${localPhone}`, localPhone]) {
-    const response = await fetch(`${baseUrl}/api/bot/customer?phone=${phone}`, { headers: botHeaders });
+    const response = await fetch(`${baseUrl}/api/bot/customer?senderPhone=${phone}`, { headers: botHeaders });
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { exists: true, firstName: 'Ana' });
+    assert.deepEqual(await response.json(), { exists: true, linked: true, emailVerified: true, firstName: 'Ana', action: null });
   }
 });
 
-test('cliente sin cuenta requiere nombre válido y crea CONFIRMED con defaults', async () => {
-  const missingName = await fetch(`${baseUrl}/api/bot/bookings`, {
-    method: 'POST', headers: botHeaders, body: JSON.stringify(createBody({ name: undefined }))
-  });
-  assert.equal(missingName.status, 400);
-  assert.equal((await missingName.json() as any).code, 'NAME_REQUIRED');
-
-  const invalid = await fetch(`${baseUrl}/api/bot/bookings`, {
-    method: 'POST', headers: botHeaders, body: JSON.stringify(createBody({ name: 'Nombre\nInyectado' }))
-  });
-  assert.equal(invalid.status, 400);
-  assert.equal((await invalid.json() as any).code, 'VALIDATION_ERROR');
-
-  const response = await fetch(`${baseUrl}/api/bot/bookings`, {
-    method: 'POST', headers: botHeaders, body: JSON.stringify(createBody())
-  });
-  assert.equal(response.status, 201);
-  const body = await response.json() as any;
-  assert.equal(body.status, 'CONFIRMED');
-  assert.equal(body.pendingApproval, false);
-  assert.equal(body.holdExpiresAt, null);
-  assert.equal(bookings[0].playersCount, 4);
-  assert.equal(bookings[0].userId, null);
-  assert.equal(bookings[0].createdBy, null);
-  assert.equal(bookings[0].origin, 'WHATSAPP');
-  assert.equal(audits[0].action, 'BOOKING_BOT_CREATED');
+test('cliente sin vinculación no puede crear ni consultar reservas', async () => {
+  db.whatsappLink.findUnique = async () => null;
+  const response = await fetch(`${baseUrl}/api/bot/bookings`, { method: 'POST', headers: botHeaders, body: JSON.stringify(createBody()) });
+  assert.equal(response.status, 403); assert.equal((await response.json() as any).code, 'WHATSAPP_NOT_LINKED'); assert.equal(bookings.length, 0);
 });
 
-test('usuario existente usa sus datos y conserva la regla VERIFIED/PENDING', async () => {
-  users.push({ id: 8, firstName: 'Mora', lastName: 'Díaz', phone: localPhone, active: true, isBlocked: false, phoneVerified: true });
-  let response = await fetch(`${baseUrl}/api/bot/bookings`, {
-    method: 'POST', headers: botHeaders, body: JSON.stringify(createBody({ name: undefined }))
-  });
+test('el bot tampoco reserva si la cuenta vinculada no confirmó el email', async () => {
+  users[0].emailVerifiedAt = null;
+  const response = await fetch(`${baseUrl}/api/bot/bookings`, { method: 'POST', headers: botHeaders, body: JSON.stringify(createBody()) });
+  assert.equal(response.status, 403); assert.equal((await response.json() as any).code, 'EMAIL_NOT_VERIFIED'); assert.equal(bookings.length, 0);
+});
+
+test('usuario vinculado y con email verificado crea CONFIRMED con sus datos', async () => {
+  users[0].firstName = 'Mora'; users[0].lastName = 'Díaz';
+  const response = await fetch(`${baseUrl}/api/bot/bookings`, { method: 'POST', headers: botHeaders, body: JSON.stringify(createBody()) });
   assert.equal(response.status, 201);
   assert.equal((await response.json() as any).status, 'CONFIRMED');
   assert.equal(bookings[0].clientName, 'Mora Díaz');
-  assert.equal(bookings[0].userId, 8);
-
-  users[0].phoneVerified = false;
-  bookings = [];
-  requests = [];
-  response = await fetch(`${baseUrl}/api/bot/bookings`, {
-    method: 'POST', headers: botHeaders, body: JSON.stringify(createBody({ idempotencyKey: 'event-2', name: undefined }))
-  });
-  assert.equal(response.status, 201);
-  const pending = await response.json() as any;
-  assert.equal(pending.status, 'PENDING');
-  assert.equal(pending.pendingApproval, true);
-  assert.ok(pending.holdExpiresAt);
+  assert.equal(bookings[0].userId, 7); assert.equal(bookings[0].createdBy, null); assert.equal(bookings[0].origin, 'WHATSAPP');
 });
 
 test('doble envío idempotente devuelve la misma reserva y no repite auditoría', async () => {
@@ -233,7 +251,9 @@ test('doble envío idempotente devuelve la misma reserva y no repite auditoría'
   assert.equal(secondBody.idempotentReplay, true);
   assert.equal(bookings.length, 1);
   assert.equal(audits.length, 1);
-  assert.equal(events.filter(event => event.type === 'BOOKING_CREATED').length, 1);
+  const createdEvents = events.filter(event => event.type === 'BOOKING_CREATED');
+  assert.deepEqual(createdEvents.map(event => event.audience).sort(), ['ADMIN', 'USER']);
+  assert.equal(new Set(createdEvents.map(event => event.resource.id)).size, 1);
   assert.equal(events.filter(event => event.type === 'AVAILABILITY_CHANGED').length, 1);
 });
 
@@ -292,7 +312,7 @@ test('el límite diario cuenta reservas exitosas aunque luego se cancelen', asyn
     assert.equal(created.status, 201);
     const booking = await created.json() as any;
     const cancelled = await fetch(`${baseUrl}/api/bot/bookings/${booking.id}/cancel`, {
-      method: 'PATCH', headers: botHeaders, body: JSON.stringify({ phone: localPhone })
+      method: 'PATCH', headers: botHeaders, body: JSON.stringify({ senderPhone: localPhone })
     });
     assert.equal(cancelled.status, 200);
   }
@@ -320,21 +340,22 @@ test('rechaza horario pasado y duración sin precio', async () => {
 test('listado y cancelación no filtran reservas de otro teléfono', async () => {
   const start = new Date('2030-01-02T23:30:00.000Z');
   bookings.push(
-    { id: 1, courtId: 1, userId: null, clientPhone: localPhone, startTime: start, endTime: new Date(start.getTime() + 90 * 60_000), durationMinutes: 90, status: 'CONFIRMED', priceTotal: 20000, holdExpiresAt: null },
-    { id: 2, courtId: 1, userId: null, clientPhone: '3511111111', startTime: start, endTime: new Date(start.getTime() + 90 * 60_000), durationMinutes: 90, status: 'CONFIRMED', priceTotal: 20000, holdExpiresAt: null }
+    { id: 1, courtId: 1, userId: 7, clientPhone: localPhone, startTime: start, endTime: new Date(start.getTime() + 90 * 60_000), durationMinutes: 90, status: 'CONFIRMED', priceTotal: 20000, holdExpiresAt: null },
+    { id: 2, courtId: 1, userId: 99, clientPhone: localPhone, startTime: start, endTime: new Date(start.getTime() + 90 * 60_000), durationMinutes: 90, status: 'CONFIRMED', priceTotal: 20000, holdExpiresAt: null },
+    { id: 3, courtId: 1, userId: null, clientPhone: localPhone, startTime: start, endTime: new Date(start.getTime() + 90 * 60_000), durationMinutes: 90, status: 'CONFIRMED', priceTotal: 20000, holdExpiresAt: null }
   );
-  const list = await fetch(`${baseUrl}/api/bot/bookings?phone=549${localPhone}`, { headers: botHeaders });
+  const list = await fetch(`${baseUrl}/api/bot/bookings?senderPhone=549${localPhone}`, { headers: botHeaders });
   assert.equal(list.status, 200);
   assert.deepEqual((await list.json() as any).bookings.map((item: any) => item.id), [1]);
 
   const foreign = await fetch(`${baseUrl}/api/bot/bookings/2/cancel`, {
-    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ phone: `549${localPhone}` })
+    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ senderPhone: `549${localPhone}` })
   });
   assert.equal(foreign.status, 404);
   assert.equal((await foreign.json() as any).code, 'BOOKING_NOT_FOUND');
 
   const own = await fetch(`${baseUrl}/api/bot/bookings/1/cancel`, {
-    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ phone: `54${localPhone}` })
+    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ senderPhone: `54${localPhone}` })
   });
   assert.equal(own.status, 200);
   assert.equal(bookings[0].status, 'CANCELLED');
@@ -342,9 +363,9 @@ test('listado y cancelación no filtran reservas de otro teléfono', async () =>
 
 test('cancelación respeta el cutoff y permite cancelar PENDING dentro del plazo', async () => {
   const soon = new Date(Date.now() + 60 * 60_000);
-  bookings.push({ id: 3, courtId: 1, userId: null, clientPhone: localPhone, startTime: soon, endTime: new Date(soon.getTime() + 60 * 60_000), durationMinutes: 60, status: 'CONFIRMED', priceTotal: 16000 });
+  bookings.push({ id: 3, courtId: 1, userId: 7, clientPhone: localPhone, startTime: soon, endTime: new Date(soon.getTime() + 60 * 60_000), durationMinutes: 60, status: 'CONFIRMED', priceTotal: 16000 });
   let response = await fetch(`${baseUrl}/api/bot/bookings/3/cancel`, {
-    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ phone: localPhone })
+    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ senderPhone: localPhone })
   });
   assert.equal(response.status, 409);
   assert.equal((await response.json() as any).code, 'CANCELLATION_CUTOFF');
@@ -352,7 +373,7 @@ test('cancelación respeta el cutoff y permite cancelar PENDING dentro del plazo
   bookings[0].status = 'PENDING';
   bookings[0].holdExpiresAt = new Date(Date.now() + 10 * 60_000);
   response = await fetch(`${baseUrl}/api/bot/bookings/3/cancel`, {
-    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ phone: localPhone })
+    method: 'PATCH', headers: botHeaders, body: JSON.stringify({ senderPhone: localPhone })
   });
   assert.equal(response.status, 200);
 });
@@ -377,10 +398,10 @@ test('panel y dashboard admiten reservas con createdBy nulo', async () => {
 test('rate limit del bot corta en 120 solicitudes por minuto e IP', async () => {
   const headers = { ...botHeaders, 'x-forwarded-for': '203.0.113.25' };
   for (let index = 0; index < 120; index++) {
-    const response = await fetch(`${baseUrl}/api/bot/customer?phone=${localPhone}`, { headers });
+    const response = await fetch(`${baseUrl}/api/bot/customer?senderPhone=${localPhone}`, { headers });
     assert.equal(response.status, 200);
   }
-  const limited = await fetch(`${baseUrl}/api/bot/customer?phone=${localPhone}`, { headers });
+  const limited = await fetch(`${baseUrl}/api/bot/customer?senderPhone=${localPhone}`, { headers });
   assert.equal(limited.status, 429);
   assert.equal((await limited.json() as any).code, 'RATE_LIMITED');
 });

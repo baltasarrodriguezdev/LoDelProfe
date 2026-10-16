@@ -18,7 +18,7 @@ before(async () => new Promise<void>(resolve => {
 after(async () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
 
 test('un usuario común no puede modificar ni consultar la administración de la liga', async () => {
-  const token = jwt.sign({ userId: 99, role: 'CLIENT' }, config.jwtSecret);
+  const token = jwt.sign({ userId: 99, role: 'CLIENT', scope: 'full' }, config.jwtSecret);
   const response = await fetch(`${baseUrl}/api/admin/leagues`, { headers: { authorization: `Bearer ${token}` } });
   assert.equal(response.status, 403);
   assert.match((await response.json() as { message: string }).message, /permisos/i);

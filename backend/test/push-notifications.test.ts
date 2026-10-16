@@ -7,17 +7,14 @@ import jwt from 'jsonwebtoken';
 import { app } from '../src/app.js';
 import { config } from '../src/config.js';
 import { prisma } from '../src/prisma/client.js';
-import {
-  buildBookingNotification,
-  buildPendingUserNotification
-} from '../src/services/push-notification.service.js';
+import { buildBookingNotification } from '../src/services/push-notification.service.js';
 
 const db = prisma as any;
 const server = createServer(app);
 let baseUrl = '';
 
 const token = (userId: number, role: 'CLIENT' | 'ADMIN' | 'SUPERADMIN') =>
-  jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: '5m' });
+  jwt.sign({ userId, role, scope: 'full' }, config.jwtSecret, { expiresIn: '5m' });
 
 const headers = (userId: number, role: 'CLIENT' | 'ADMIN' | 'SUPERADMIN') => ({
   authorization: `Bearer ${token(userId, role)}`,
@@ -111,14 +108,10 @@ test('construye avisos accionables sin exponer datos sensibles', () => {
   assert.match(booking.body, /20:00 a 21:30/);
   assert.equal(booking.url, '/admin?date=2030-01-15&booking=44');
 
-  const pendingUser = buildPendingUserNotification({ id: 8, firstName: 'Ana', lastName: 'Gómez' });
-  assert.equal(pendingUser.title, 'Nuevo usuario pendiente');
-  assert.equal(pendingUser.url, '/admin/seguridad');
-  assert.doesNotMatch(pendingUser.body, /teléfono|contraseña|código/i);
 });
 
 
-test('booking creation, cancellation and pending registration send Web Push without an admin connection', async t => {
+test('booking creation and cancellation send Web Push without an admin connection', async t => {
   const previous = { ...config.webPush };
   Object.assign(config.webPush, { enabled: true, publicKey: 'test', privateKey: 'test', subject: 'mailto:test@example.com' });
   t.mock.method(webPush, 'setVapidDetails', () => undefined);
@@ -137,18 +130,10 @@ test('booking creation, cancellation and pending registration send Web Push with
   const booking = { id: 80, courtId: 1, userId: 3, clientName: 'Ana Perez',
     startTime: new Date('2030-01-15T20:00:00Z'), endTime: new Date('2030-01-15T21:00:00Z'), status: 'CONFIRMED' };
   stub('booking', 'findUnique', async () => booking);
-  stub('user', 'findFirst', async () => null);
-  stub('user', 'create', async ({ data }: any) => ({ id: 82, role: 'CLIENT', ...data }));
-  stub('user', 'findUnique', async () => ({ id: 82, firstName: 'Ana', lastName: 'Perez', role: 'CLIENT', phoneVerified: false }));
   try {
     await publishBookingChange('BOOKING_CREATED', booking);
     await publishBookingChange('BOOKING_CANCELLED', { ...booking, status: 'CANCELLED' });
-    const response = await fetch(`${baseUrl}/api/auth/register`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ firstName: 'Ana', lastName: 'Perez', phone: '3576111122', password: 'test-password-123' })
-    });
-    assert.equal(response.status, 201);
     assert.deepEqual(sent.map(payload => payload.notification.title),
-      ['Nuevo turno reservado', 'Turno cancelado', 'Nuevo usuario pendiente']);
+      ['Nuevo turno reservado', 'Turno cancelado']);
   } finally { Object.assign(config.webPush, previous); }
 });

@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes } from 'crypto';
 import {
   BookingOrigin,
   BookingStatus,
   CashCategory,
   CashType,
   PaymentStatus,
-  PhoneVerificationMethod,
   Role,
   UserStatus
 } from '@prisma/client';
@@ -28,9 +27,7 @@ import {
 } from '../services/booking.service.js';
 import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
-import { ARGENTINA_PHONE_ERROR, localArgentinaPhone, normalizeArgentinaPhone, storedPhoneCandidates } from '../utils/argentina-phone.js';
 import { businessIntervals, localDateTime } from '../utils/time.js';
-import * as passwordReset from '../services/password-reset.service.js';
 import { writeAudit } from '../services/audit.service.js';
 import {
   publishAdminChange,
@@ -62,74 +59,6 @@ async function publishRecurringInvalidation(courtId: number, userId?: number | n
   ]);
 }
 
-const manualVerificationSchema = z.discriminatedUnion('method', [
-  z.object({ method: z.literal(PhoneVerificationMethod.WHATSAPP_MANUAL), senderPhone: z.string().min(6).max(30), code: z.string().trim().min(6).max(20) }),
-  z.object({ method: z.literal(PhoneVerificationMethod.PHONE_CALL), confirmedIdentity: z.literal(true) }),
-  z.object({ method: z.literal(PhoneVerificationMethod.IN_PERSON), confirmedIdentity: z.literal(true) })
-]);
-
-function sameText(left: string, right: string) {
-  const a = Buffer.from(left.trim().toUpperCase());
-  const b = Buffer.from(right.trim().toUpperCase());
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function approvalWhatsappUrl(user: { firstName: string; phone: string }) {
-  const local = user.phone.replace(/\D/g, '').replace(/^549?/, '');
-  const message = `Hola ${user.firstName}. Tu cuenta de Lo del Profe fue verificada. Ya podés ingresar y reservar turnos.`;
-  return `https://wa.me/549${local}?text=${encodeURIComponent(message)}`;
-}
-
-async function verifyUserIdentity(client: any, userId: number, adminId: number, input: z.infer<typeof manualVerificationSchema>) {
-  const user = await client.user.findUnique({ where: { id: userId } });
-  if (!user) throw new HttpError(404, 'Usuario no encontrado');
-  if (user.role !== Role.CLIENT) throw new HttpError(403, 'No se puede verificar un usuario administrador desde este flujo.');
-  if (user.phoneVerified) throw new HttpError(409, 'El usuario ya está verificado.');
-  if (user.isBlocked || !user.active) throw new HttpError(409, 'La cuenta está bloqueada o inactiva.');
-
-  if (input.method === PhoneVerificationMethod.WHATSAPP_MANUAL) {
-    const sender = normalizeArgentinaPhone(input.senderPhone);
-    if (!sender || !storedPhoneCandidates(sender).includes(user.phone)) {
-      throw new HttpError(400, 'El número remitente no coincide con el teléfono registrado.');
-    }
-    if (!user.verificationCode || !sameText(input.code, user.verificationCode)) {
-      throw new HttpError(400, 'El código recibido no coincide con la solicitud del usuario.');
-    }
-  }
-
-  const updated = await client.user.update({
-    where: { id: userId },
-    data: {
-      phoneVerified: true,
-      status: UserStatus.VERIFIED,
-      phoneVerifiedAt: new Date(),
-      phoneVerifiedById: adminId,
-      phoneVerificationMethod: input.method,
-      verificationCode: null
-    },
-    omit: { passwordHash: true, securityVersion: true }
-  });
-  await writeAudit({
-    actorId: adminId,
-    action: 'USER_VERIFIED',
-    entityType: 'USER',
-    entityId: userId,
-    details: { method: input.method }
-  }, client);
-  return { user: updated, approvalWhatsappUrl: approvalWhatsappUrl(updated) };
-}
-
-r.get('/password-reset-requests', authorize(Role.SUPERADMIN), asyncHandler(async (_req, res) => {
-  res.json(await passwordReset.listPendingPasswordResets());
-}));
-
-r.patch('/password-reset-requests/:id/authorize', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await passwordReset.authorizePasswordReset(String(req.params.id), req.auth!.userId));
-}));
-
-r.delete('/password-reset-requests/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  res.json(await passwordReset.cancelPasswordReset(String(req.params.id)));
-}));
 
 const bookingSchema = z.object({
   courtId: z.number(),
@@ -199,97 +128,13 @@ function assertPendingReservation(booking: { status: BookingStatus; cancellation
 r.get('/users', asyncHandler(async (req, res) => {
   const search = String(req.query.search ?? '');
   res.json(await prisma.user.findMany({
-    where: search ? { OR: [{ firstName: { contains: search } }, { lastName: { contains: search } }, { phone: { contains: search } }] } : {},
+    where: search ? { OR: [{ firstName: { contains: search } }, { lastName: { contains: search } }, { email: { contains: search } }, { phone: { contains: search } }] } : {},
     omit: { passwordHash: true, securityVersion: true }
-  }));
-}));
-
-r.get('/users/pending-verification', asyncHandler(async (_req, res) => {
-  await expirePendingBookings();
-  res.json(await prisma.user.findMany({
-    where: { role: Role.CLIENT, active: true, phoneVerified: false, isBlocked: false },
-    omit: { passwordHash: true, securityVersion: true },
-    include: { _count: { select: { bookings: { where: { status: 'PENDING' } } } } },
-    orderBy: { createdAt: 'asc' }
   }));
 }));
 
 r.get('/users/:id', asyncHandler(async (req, res) => {
   res.json(await prisma.user.findUnique({ where: { id: +req.params.id }, omit: { passwordHash: true, securityVersion: true } }));
-}));
-
-r.post('/users', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  const data = z.object({
-    firstName: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres'),
-    lastName: z.string().trim().min(2, 'El apellido debe tener al menos 2 caracteres'),
-    phone: z.string().transform((value, context) => {
-      const normalized = normalizeArgentinaPhone(value);
-      if (!normalized) {
-        context.addIssue({ code: z.ZodIssueCode.custom, message: ARGENTINA_PHONE_ERROR });
-        return z.NEVER;
-      }
-      return normalized;
-    }),
-    password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(72, 'La contraseña es demasiado larga')
-  }).parse(req.body);
-  if (await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(data.phone) } } })) {
-    throw new HttpError(409, 'Ese teléfono ya está registrado');
-  }
-  const user = await prisma.user.create({
-    data: {
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: localArgentinaPhone(data.phone),
-      passwordHash: await bcrypt.hash(data.password, 12),
-      role: Role.CLIENT,
-      active: true,
-      phoneVerified: false,
-      status: UserStatus.PENDING_VERIFICATION,
-      isBlocked: false,
-      verificationCode: `VAL-${randomBytes(4).toString('hex').toUpperCase()}`
-    },
-    omit: { passwordHash: true, securityVersion: true }
-  });
-  await publishUserChange('USER_CREATED', user.id);
-  res.status(201).json(user);
-}));
-
-r.patch('/users/:id/verify', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  const id = +req.params.id;
-  const result = await verifyUserIdentity(prisma, id, req.auth!.userId, manualVerificationSchema.parse(req.body));
-  await publishUserChange('USER_VERIFICATION_CHANGED', id);
-  res.json(result);
-}));
-
-r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  const id = +req.params.id;
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new HttpError(404, 'Usuario no encontrado');
-  if (user.role !== 'CLIENT') throw new HttpError(403, 'No se puede cancelar un usuario administrador.');
-  if (user.phoneVerified) throw new HttpError(409, 'Solo se pueden cancelar usuarios pendientes de verificación.');
-
-  const affectedBookings = await prisma.booking.findMany({
-    where: { userId: id, status: 'PENDING' },
-    select: { id: true, courtId: true, userId: true, startTime: true, status: true, holdExpiresAt: true }
-  });
-  const result = await prisma.$transaction(async tx => {
-    const cancelledBookings = await tx.booking.updateMany({
-      where: { userId: id, status: 'PENDING' },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-        cancellationReason: 'Usuario pendiente cancelado por administración'
-      }
-    });
-    await tx.user.delete({ where: { id } });
-    return { cancelledBookings: cancelledBookings.count };
-  });
-
-  await Promise.all([
-    publishUserChange('USER_UPDATED', id),
-    ...affectedBookings.map(booking => publishBookingChange('BOOKING_CANCELLED', { ...booking, status: 'CANCELLED' }))
-  ]);
-  res.json({ message: 'Usuario pendiente cancelado. El número quedó disponible.', ...result });
 }));
 
 r.patch('/users/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
@@ -334,6 +179,8 @@ r.post('/users/:id/release-phone', authorize(Role.SUPERADMIN), asyncHandler(asyn
         firstName: 'Cliente',
         lastName: `liberado ${id}`,
         phone: `liberado-${id}-${Date.now()}`,
+        email: null,
+        emailVerifiedAt: null,
         passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), 12),
         active: false,
         isBlocked: true,
@@ -351,6 +198,14 @@ r.post('/users/:id/release-phone', authorize(Role.SUPERADMIN), asyncHandler(asyn
     await tx.passwordResetRequest.updateMany({
       where: { userId: id, status: { in: ['PENDING', 'AUTHORIZED'] } },
       data: { status: 'CANCELLED', cancelledAt: new Date(), tokenHash: null }
+    });
+    await tx.accountToken.updateMany({
+      where: { userId: id, consumedAt: null, invalidatedAt: null },
+      data: { invalidatedAt: new Date() }
+    });
+    await tx.whatsappLink.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() }
     });
     await writeAudit({
       actorId: req.auth!.userId,
@@ -591,29 +446,6 @@ r.patch('/reservations/:id/confirm', asyncHandler(async (req, res) => {
   await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_CONFIRMED', entityType: 'BOOKING', entityId: id });
   await publishBookingChange('BOOKING_CONFIRMED', updated, booking);
   res.json(await findReservation(id));
-}));
-
-r.patch('/reservations/:id/confirm-and-verify-user', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
-  const id = +req.params.id;
-  const booking = await findReservation(id);
-  assertPendingReservation(booking);
-  if (!booking.userId) throw new HttpError(409, 'El turno no tiene un usuario asociado para verificar.');
-
-  const verification = manualVerificationSchema.parse(req.body);
-  const result = await prisma.$transaction(async tx => {
-    const reservation = await tx.booking.update({
-      where: { id },
-      data: { status: 'CONFIRMED', holdExpiresAt: null },
-      include: reservationInclude()
-    });
-    const verified = await verifyUserIdentity(tx, booking.userId!, req.auth!.userId, verification);
-    return { reservation, ...verified };
-  });
-  await Promise.all([
-    publishBookingChange('BOOKING_CONFIRMED', result.reservation, booking),
-    publishUserChange('USER_VERIFICATION_CHANGED', booking.userId!)
-  ]);
-  res.json(result);
 }));
 
 r.patch('/reservations/:id/cancel', asyncHandler(async (req, res) => {

@@ -1,56 +1,153 @@
 # API del bot de WhatsApp
 
-Contrato para la integración servidor a servidor entre n8n y Lo del Profe. Esta API usa la misma base MySQL y el mismo servicio de reservas que la web y el panel administrativo.
+Contrato para la integración servidor a servidor entre n8n y Lo del Profe. La API usa la misma base MySQL y el mismo servicio de reservas que la web y el panel.
 
-## Conexión
+> Cambio incompatible pendiente de coordinación: el contrato anterior aceptaba `phone`, invitados y reservas `PENDING`. El contrato nuevo requiere una cuenta activa, email confirmado y una vinculación de WhatsApp confirmada. Adaptar y publicar el workflow de n8n antes de activar este backend en producción.
 
-- URL base de producción: `https://api.lodelprofe.com/api/bot`
+## Conexión y confianza
+
+- URL base prevista: `https://api.lodelprofe.com/api/bot`
 - Header obligatorio: `x-api-key: <valor>`
-- Variable de entorno del backend: `BOT_API_KEY`
-- Content-Type para `POST` y `PATCH`: `application/json`
-- Zona horaria de fechas y horarios: `APP_TIMEZONE` (`America/Argentina/Buenos_Aires` por defecto)
+- Variable secreta del backend: `BOT_API_KEY`
+- `Content-Type: application/json` para `POST` y `PATCH`
+- Zona horaria: `APP_TIMEZONE` (`America/Argentina/Buenos_Aires` por defecto)
+- Límite: 120 solicitudes por minuto y por IP, en memoria
 
-No se debe enviar un JWT de usuario o administrador. La API key no debe incluirse en logs, URLs ni mensajes de WhatsApp.
+La API key autentica a n8n, no al cliente. `senderPhone` debe salir exclusivamente del remitente del webhook autenticado por el proveedor de WhatsApp. Nunca debe salir del texto, un campo escrito por el usuario ni una decisión del modelo. n8n debe validar la autenticidad del webhook antes de llamar a esta API.
 
-## Teléfonos
+No enviar JWT de clientes o administradores. No registrar la API key, tokens, texto de mensajes ni teléfonos completos. La aplicación no guarda el texto de la conversación.
 
-Se aceptan las variantes argentinas `549XXXXXXXXXX`, `54XXXXXXXXXX`, `+549XXXXXXXXXX`, `+54XXXXXXXXXX` y los 10 dígitos nacionales. El backend las normaliza a los 10 dígitos nacionales antes de buscar usuarios y reservas.
+## Requisitos del cliente
 
-Las búsquedas contemplan formatos históricos en `users.phone` y `bookings.clientPhone`.
+Para consultar, crear o cancelar reservas, el remitente debe tener una cuenta activa y no bloqueada, el email confirmado y una vinculación de WhatsApp verificada y confirmada por el usuario en la web.
+
+Una coincidencia con `users.phone` no vincula una cuenta. Las reservas históricas de invitados con `userId = null` se conservan, pero no se reasignan por teléfono.
+
+Se aceptan `549XXXXXXXXXX`, `54XXXXXXXXXX`, sus variantes con `+` y diez dígitos nacionales. El backend normaliza el valor a E.164 para la vinculación y a diez dígitos para los campos históricos de reservas.
+
+## Vinculación segura
+
+### 1. Crear el desafío desde la sesión web
+
+```http
+POST /api/auth/whatsapp-link/challenges
+Cookie: padel_session=<sesión del usuario>
+X-CSRF-Token: <token CSRF>
+```
+
+Respuesta `201`:
+
+```json
+{
+  "challenge": "desafio-aleatorio-de-un-solo-uso",
+  "expiresAt": "2026-10-16T18:10:00.000Z"
+}
+```
+
+El desafío vence según `WHATSAPP_LINK_TTL_MINUTES` y el valor anterior se invalida al generar uno nuevo.
+
+### 2. Reclamar el desafío desde n8n
+
+Solo después de validar el webhook y tomar el remitente real:
+
+```http
+POST /api/bot/link/claim
+x-api-key: <valor>
+Content-Type: application/json
+```
+
+```json
+{
+  "challenge": "desafio-aleatorio-de-un-solo-uso",
+  "senderPhone": "5493576000000",
+  "provider": "meta",
+  "providerEventId": "wamid.identificador-unico"
+}
+```
+
+Respuesta `200`:
+
+```json
+{
+  "linked": false,
+  "pendingWebConfirmation": true
+}
+```
+
+El remitente debe coincidir con el teléfono de contacto de la cuenta. El desafío se reclama atómicamente y `providerEventId` se deduplica.
+
+### 3. Confirmar en la sesión web
+
+```http
+POST /api/auth/whatsapp-link/confirm
+Cookie: padel_session=<sesión del usuario>
+X-CSRF-Token: <token CSRF>
+```
+
+Respuesta `200`:
+
+```json
+{
+  "linked": true,
+  "phone": "••••••0000"
+}
+```
+
+La web consulta el estado con `GET /api/auth/whatsapp-link`. El backend nunca simula la recepción del evento de WhatsApp. Falta configurar en n8n el proveedor real y su validación de firma.
 
 ## 1. Consultar cliente
 
 ```http
-GET /api/bot/customer?phone=5493576000000
+GET /api/bot/customer?senderPhone=5493576000000
 x-api-key: <valor>
 ```
 
-Cliente registrado:
+Cuenta vinculada y lista:
 
 ```json
 {
   "exists": true,
-  "firstName": "Ana"
+  "linked": true,
+  "emailVerified": true,
+  "firstName": "Ana",
+  "action": null
 }
 ```
 
-Cliente sin cuenta:
+Sin vinculación:
 
 ```json
 {
   "exists": false,
-  "firstName": null
+  "linked": false,
+  "emailVerified": false,
+  "firstName": null,
+  "action": "COMPLETE_REGISTRATION"
 }
 ```
 
-No devuelve apellido, ID, rol, estado, teléfono ni ningún otro dato del usuario.
+Vinculada pero sin email confirmado:
+
+```json
+{
+  "exists": true,
+  "linked": true,
+  "emailVerified": false,
+  "firstName": "Ana",
+  "action": "VERIFY_EMAIL"
+}
+```
+
+No devuelve ID, apellido, rol, email ni teléfono.
 
 ## 2. Consultar reservas futuras
 
 ```http
-GET /api/bot/bookings?phone=5493576000000
+GET /api/bot/bookings?senderPhone=5493576000000
 x-api-key: <valor>
 ```
+
+Respuesta `200`:
 
 ```json
 {
@@ -64,30 +161,12 @@ x-api-key: <valor>
       "priceTotal": 20000,
       "pendingApproval": false,
       "holdExpiresAt": null
-    },
-    {
-      "id": 124,
-      "status": "PENDING",
-      "date": "2026-10-21",
-      "startTime": "20:00",
-      "durationMinutes": 60,
-      "priceTotal": 16000,
-      "pendingApproval": true,
-      "holdExpiresAt": "2026-10-21T22:50:00.000Z"
     }
   ]
 }
 ```
 
-Devuelve únicamente reservas futuras que continúan activas: confirmadas, pendientes cuyo hold no venció y estados operativos futuros que todavía bloquean la cancha. No devuelve reservas canceladas ni pendientes vencidas.
-
-Si no hay resultados:
-
-```json
-{
-  "bookings": []
-}
-```
+Busca exclusivamente por el `userId` de la vinculación confirmada. Devuelve reservas futuras activas; no incorpora reservas de invitados por coincidencia de teléfono.
 
 ## 3. Crear reserva
 
@@ -97,45 +176,27 @@ x-api-key: <valor>
 Content-Type: application/json
 ```
 
-Cliente sin cuenta:
-
 ```json
 {
-  "phone": "5493576000000",
-  "name": "Ana",
+  "senderPhone": "5493576000000",
   "date": "2026-10-20",
   "startTime": "18:30",
   "durationMinutes": 90,
   "playersCount": 4,
-  "idempotencyKey": "meta-event-id-unico"
+  "idempotencyKey": "wamid.identificador-unico"
 }
 ```
-
-Cliente registrado, sin volver a pedirle el nombre:
-
-```json
-{
-  "phone": "5493576000000",
-  "date": "2026-10-20",
-  "startTime": "18:30",
-  "durationMinutes": 90,
-  "idempotencyKey": "meta-event-id-unico"
-}
-```
-
-Campos:
 
 | Campo | Tipo | Obligatorio | Regla |
-|---|---|---|---|
-| `phone` | string | Sí | Teléfono argentino válido. |
-| `name` | string | Sólo sin cuenta | De 1 a 60 caracteres después de `trim`; no admite caracteres de control. Si existe el usuario, se ignora y se usan sus datos guardados. |
-| `date` | string | Sí | `YYYY-MM-DD`. |
-| `startTime` | string | Sí | `HH:mm`, en `APP_TIMEZONE`. |
-| `durationMinutes` | integer | Sí | Entero positivo con precio activo; actualmente 60, 90 o 120. |
-| `playersCount` | integer | No | De 1 a 12; por defecto 4. |
-| `idempotencyKey` | string | Sí | De 1 a 200 caracteres, única para el evento de Meta/n8n. |
+|---|---|---:|---|
+| `senderPhone` | string | Sí | Remitente del webhook autenticado. |
+| `date` | string | Sí | `YYYY-MM-DD` en `APP_TIMEZONE`. |
+| `startTime` | string | Sí | `HH:mm`. |
+| `durationMinutes` | integer | Sí | Debe tener un precio activo; hoy se configuran 60, 90 y 120. |
+| `playersCount` | integer | No | 1 a 12; por defecto 4. |
+| `idempotencyKey` | string | Sí | 1 a 200 caracteres, estable y única por operación. Se recomienda el ID del evento más el tipo de operación. |
 
-Primera creación (`201 Created`):
+Primera creación, `201`:
 
 ```json
 {
@@ -151,38 +212,16 @@ Primera creación (`201 Created`):
 }
 ```
 
-Reintento con la misma `idempotencyKey` y los mismos datos (`200 OK`):
+Reintento idéntico, `200`, con los mismos datos e `idempotentReplay: true`.
 
-```json
-{
-  "id": 123,
-  "status": "CONFIRMED",
-  "date": "2026-10-20",
-  "startTime": "18:30",
-  "durationMinutes": 90,
-  "priceTotal": 20000,
-  "pendingApproval": false,
-  "holdExpiresAt": null,
-  "idempotentReplay": true
-}
-```
+La reserva queda asociada al usuario, con `origin = WHATSAPP`, `createdBy = null` y estado `CONFIRMED`. Se muestra en el panel, en “Mis turnos” y bloquea inmediatamente la disponibilidad. Se revalidan cancha activa, precio, apertura, grilla de 30 minutos, horario pasado, solapamientos y `DEAD_GAP` dentro de la operación transaccional.
 
-Reglas del estado inicial:
+Límites exclusivos del bot, sin extenderlos a web ni turnos fijos:
 
-- Cliente sin cuenta: `CONFIRMED`; WhatsApp se considera verificación del teléfono. No se crea un usuario web.
-- Usuario web con `phoneVerified=true`: `CONFIRMED` y vinculado mediante `userId`.
-- Usuario web con `phoneVerified=false`: `PENDING`, con un hold de 10 minutos, igual que en la web.
-- Usuario bloqueado o inactivo: creación rechazada; no se lo convierte en invitado.
-- `origin` siempre queda guardado como `WHATSAPP`.
-
-Límites por teléfono:
-
-- Máximo 2 reservas futuras activas, incluyendo reservas hechas por web, bot o panel que correspondan al teléfono.
-- Máximo 4 creaciones exitosas mediante el bot por día calendario de `APP_TIMEZONE`.
-- El límite diario cuenta reservas luego canceladas.
-- Un reintento idempotente no vuelve a contar.
-
-La creación revalida en el backend cancha activa, precio, día y horario de apertura, grilla de 30 minutos, fecha futura, solapamientos y `DEAD_GAP`.
+- máximo 2 reservas futuras activas del usuario, aunque provengan de otros canales;
+- máximo 4 creaciones exitosas mediante el bot por día de `APP_TIMEZONE`;
+- las canceladas siguen contando en el límite diario;
+- un reintento idempotente no vuelve a contar.
 
 ## 4. Cancelar reserva
 
@@ -194,11 +233,11 @@ Content-Type: application/json
 
 ```json
 {
-  "phone": "5493576000000"
+  "senderPhone": "5493576000000"
 }
 ```
 
-Respuesta (`200 OK`):
+Respuesta `200`:
 
 ```json
 {
@@ -208,27 +247,19 @@ Respuesta (`200 OK`):
 }
 ```
 
-La cancelación sólo encuentra la reserva cuando el teléfono coincide con el usuario vinculado o con `bookings.clientPhone`. Para una reserva inexistente y una reserva ajena se devuelve exactamente el mismo `404`.
+Solo encuentra reservas cuyo `userId` coincide con la cuenta vinculada. Una reserva ajena y una inexistente producen el mismo `404`. Las confirmadas respetan `venue_settings.cancellationCutoffMinutes`; las retenciones históricas pendientes conservan su tratamiento actual.
 
-Reglas:
-
-- Sólo reservas futuras `PENDING` o `CONFIRMED`.
-- Una reserva `PENDING` futura puede cancelarse aunque esté dentro del cutoff.
-- Una reserva `CONFIRMED` respeta `venue_settings.cancellationCutoffMinutes`, actualmente 120 minutos.
-
-## Disponibilidad pública usada antes de crear
-
-n8n puede consultar:
+## Disponibilidad pública
 
 ```http
 GET https://api.lodelprofe.com/api/availability?date=2026-10-20&duration=90&courtId=1
 ```
 
-Este endpoint sigue siendo público. Ahora devuelve `404 COURT_NOT_FOUND` si `courtId` no existe o está inactiva. La respuesta de disponibilidad es orientativa: `POST /api/bot/bookings` siempre vuelve a validar todo dentro de una transacción.
+Es orientativa. La creación siempre revalida dentro de una transacción. Una cancha inexistente o inactiva devuelve `404 COURT_NOT_FOUND`.
 
-## Formato de errores
+## Errores
 
-Los errores del bot tienen un mensaje legible y un código estable:
+Formato general:
 
 ```json
 {
@@ -237,32 +268,47 @@ Los errores del bot tienen un mensaje legible y un código estable:
 }
 ```
 
-| HTTP | `code` | Significado |
+| HTTP | `code` | Uso |
 |---:|---|---|
-| 400 | `VALIDATION_ERROR` | Body, query, ID o formato de campo inválido. |
-| 400 | `INVALID_PHONE` | El teléfono no pudo normalizarse como teléfono argentino. |
-| 400 | `NAME_REQUIRED` | Cliente sin cuenta y sin nombre. |
-| 400 | `DURATION_NOT_AVAILABLE` | No existe un precio activo para la duración. |
-| 400 | `COURT_CLOSED` | El día no está habilitado. |
+| 400 | `VALIDATION_ERROR` | Body, query, ID o formato inválido. |
+| 400 | `INVALID_PHONE` | `senderPhone` no es un teléfono argentino válido. |
+| 400 | `DURATION_NOT_AVAILABLE` | No hay precio activo para la duración. |
+| 400 | `COURT_CLOSED` | Día cerrado. |
 | 400 | `PAST_START_TIME` | Fecha u hora pasada. |
-| 400 | `OUTSIDE_BUSINESS_HOURS` | El turno no cabe en un intervalo de apertura. |
-| 400 | `INVALID_START_TIME` | La hora no respeta la grilla de 30 minutos. |
-| 400 | `INVALID_BUSINESS_HOURS` | La configuración de apertura/descanso es inconsistente. |
-| 401 | `BOT_UNAUTHORIZED` | Falta `x-api-key` o no coincide con `BOT_API_KEY`. |
-| 403 | `CUSTOMER_BLOCKED` | La cuenta encontrada está bloqueada. |
-| 403 | `CUSTOMER_INACTIVE` | La cuenta encontrada está inactiva. |
-| 404 | `BOOKING_NOT_FOUND` | Reserva inexistente o perteneciente a otro teléfono. |
-| 404 | `COURT_NOT_FOUND` | No hay cancha activa disponible para crear o consultar. |
-| 409 | `SLOT_UNAVAILABLE` | Otro turno ocupa total o parcialmente el horario. |
-| 409 | `DEAD_GAP` | La reserva dejaría un hueco menor de 60 minutos. |
-| 409 | `PHONE_ACTIVE_BOOKING_LIMIT` | El teléfono ya tiene 2 reservas futuras activas. |
-| 409 | `PENDING_BOOKING_EXISTS` | El usuario no verificado ya tiene una solicitud pendiente activa. |
-| 409 | `IDEMPOTENCY_KEY_REUSED` | La clave ya se utilizó con otro payload normalizado. |
-| 409 | `IDEMPOTENCY_IN_PROGRESS` | La misma solicitud todavía está terminando de procesarse. |
-| 409 | `CANCELLATION_NOT_ALLOWED` | Estado o fecha que ya no admiten cancelación. |
-| 409 | `CANCELLATION_CUTOFF` | Reserva confirmada dentro del plazo de no cancelación. |
-| 429 | `PHONE_DAILY_BOOKING_LIMIT` | El teléfono ya creó 4 reservas mediante el bot ese día. |
-| 429 | `RATE_LIMITED` | Más de 120 solicitudes por minuto desde la misma IP. |
-| 500 | `INTERNAL_ERROR` | Error interno sin detalles sensibles. |
+| 400 | `OUTSIDE_BUSINESS_HOURS` | Fuera del horario de apertura. |
+| 400 | `INVALID_START_TIME` | Hora fuera de la grilla. |
+| 400 | `INVALID_BUSINESS_HOURS` | Configuración horaria inconsistente. |
+| 400 | `INVALID_LINK_CHALLENGE` | Desafío de vinculación inválido o vencido. |
+| 401 | `BOT_UNAUTHORIZED` | Falta o no coincide `x-api-key`. |
+| 403 | `WHATSAPP_NOT_LINKED` | No hay vinculación confirmada. |
+| 403 | `EMAIL_NOT_VERIFIED` | Falta confirmar el email. |
+| 403 | `CUSTOMER_BLOCKED` | Cuenta bloqueada. |
+| 403 | `CUSTOMER_INACTIVE` | Cuenta inactiva. |
+| 403 | `CUSTOMER_NOT_ELIGIBLE` | La cuenta no puede completar la vinculación. |
+| 404 | `BOOKING_NOT_FOUND` | Reserva inexistente o ajena. |
+| 404 | `COURT_NOT_FOUND` | No existe una cancha activa. |
+| 409 | `WHATSAPP_PHONE_MISMATCH` | El remitente no coincide con el contacto. |
+| 409 | `WHATSAPP_ALREADY_LINKED` | El número ya está vinculado a otra cuenta. |
+| 409 | `LINK_NOT_CLAIMED` | La web confirmó antes del evento autenticado. |
+| 409 | `LINK_CHALLENGE_ALREADY_CLAIMED` | Otro evento ya reclamó el desafío. |
+| 409 | `PROVIDER_EVENT_REPLAY` | `providerEventId` ya fue procesado. |
+| 409 | `SLOT_UNAVAILABLE` | Horario ocupado total o parcialmente. |
+| 409 | `DEAD_GAP` | La reserva dejaría un hueco menor al permitido. |
+| 409 | `PHONE_ACTIVE_BOOKING_LIMIT` | Ya existen 2 reservas futuras activas. |
+| 409 | `IDEMPOTENCY_KEY_REUSED` | Clave usada con otro payload normalizado. |
+| 409 | `IDEMPOTENCY_IN_PROGRESS` | La solicitud idéntica todavía se procesa. |
+| 409 | `CANCELLATION_NOT_ALLOWED` | Estado o fecha no cancelable. |
+| 409 | `CANCELLATION_CUTOFF` | Dentro del plazo de no cancelación. |
+| 429 | `PHONE_DAILY_BOOKING_LIMIT` | Ya hubo 4 creaciones exitosas por bot ese día. |
+| 429 | `RATE_LIMITED` | Más de 120 solicitudes por minuto desde la IP. |
+| 500 | `INTERNAL_ERROR` | Error interno, sin detalles sensibles. |
 
-Los precios, horarios, cutoff y duraciones activas pueden cambiar desde el panel. n8n no debe hardcodearlos ni interpretar un slot como reservado hasta que `POST /api/bot/bookings` responda exitosamente.
+## Adaptación requerida en n8n
+
+1. Verificar la firma/autenticidad del webhook según el proveedor real.
+2. Extraer `senderPhone` del remitente verificado y `providerEventId` del ID del proveedor.
+3. Implementar `VINCULAR <challenge>` llamando a `/link/claim`.
+4. Ante `COMPLETE_REGISTRATION`, `WHATSAPP_NOT_LINKED` o `EMAIL_NOT_VERIFIED`, enviar un enlace a la web; no crear reservas de invitado.
+5. Cambiar `phone` por `senderPhone` y quitar `name`.
+6. Conservar la misma `idempotencyKey` al reintentar.
+7. No activar este backend en producción hasta publicar y probar el workflow compatible.

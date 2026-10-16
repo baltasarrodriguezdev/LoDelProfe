@@ -2,10 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/async-handler.js';
-import { cancelCustomerBooking, createBooking, customerBookingStatus, defaultPlayersCount, expirePendingBookings, holdForBookingStatus } from '../services/booking.service.js';
+import { cancelCustomerBooking, createBooking, defaultPlayersCount, expirePendingBookings } from '../services/booking.service.js';
 import { prisma } from '../prisma/client.js';
 import { HttpError } from '../utils/http-error.js';
-import { localDateTime } from '../utils/time.js';
 import { writeAudit } from '../services/audit.service.js';
 import { publishBookingChange } from '../realtime/events.js';
 
@@ -25,56 +24,28 @@ r.post('/', asyncHandler(async (req, res) => {
   const input = bookingSchema.parse(req.body);
   const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
   if (!user) throw new HttpError(404, 'Usuario no encontrado');
+  if (!user.active) throw new HttpError(403, 'La cuenta no está activa.', 'CUSTOMER_INACTIVE');
   if (user.isBlocked) throw new HttpError(403, 'Tu cuenta está bloqueada. Comunicate con la cancha.');
-
-  const status = customerBookingStatus(user);
-  const isVerified = status === 'CONFIRMED';
-  if (!isVerified) {
-    await expirePendingBookings({ userId: user.id });
-    const now = new Date();
-    const requestedStart = localDateTime(input.date, input.startTime).toJSDate();
-    const samePending = await prisma.booking.findFirst({
-      where: {
-        userId: user.id,
-        status: 'PENDING',
-        holdExpiresAt: { gt: now },
-        courtId: input.courtId,
-        startTime: requestedStart,
-        durationMinutes: input.durationMinutes
-      },
-      include: { court: true },
-      orderBy: { createdAt: 'desc' }
-    });
-    if (samePending) return res.status(200).json({ reservation: samePending, alreadyPending: true });
-
-    const pending = await prisma.booking.findFirst({
-      where: { userId: user.id, status: 'PENDING', holdExpiresAt: { gt: now }, startTime: { gte: now } },
-      include: { court: true },
-      orderBy: { createdAt: 'desc' }
-    });
-    if (pending) {
-      throw new HttpError(409, 'Ya tenés una solicitud pendiente de confirmación. Esperá la respuesta de la cancha antes de pedir otro turno.');
-    }
-  }
+  if (!user.emailVerifiedAt) throw new HttpError(403, 'Confirmá tu email antes de reservar.', 'EMAIL_NOT_VERIFIED');
 
   const booking = await createBooking({
     ...input,
     userId: user.id,
     clientName: `${user.firstName} ${user.lastName}`,
     clientPhone: user.phone,
-    status,
-    holdExpiresAt: holdForBookingStatus(status),
+    status: 'CONFIRMED',
+    holdExpiresAt: null,
     origin: 'WEB'
   }, user.id);
   await writeAudit({
     actorId: user.id,
-    action: isVerified ? 'BOOKING_WEB_CREATED' : 'BOOKING_REQUESTED',
+    action: 'BOOKING_WEB_CREATED',
     entityType: 'BOOKING',
     entityId: booking.id
   });
   await publishBookingChange('BOOKING_CREATED', booking);
 
-  res.status(201).json(isVerified ? booking : { reservation: booking, alreadyPending: false });
+  res.status(201).json(booking);
 }));
 
 r.get('/my', asyncHandler(async (req, res) => {

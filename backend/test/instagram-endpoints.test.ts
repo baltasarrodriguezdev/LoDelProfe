@@ -7,8 +7,8 @@ import { config } from '../src/config.js';
 
 let server: ReturnType<typeof app.listen>;
 let baseUrl = '';
-const adminToken = jwt.sign({ userId: 1, role: 'ADMIN' }, config.jwtSecret);
-const clientToken = jwt.sign({ userId: 99, role: 'CLIENT' }, config.jwtSecret);
+const adminToken = jwt.sign({ userId: 1, role: 'ADMIN', scope: 'full' }, config.jwtSecret);
+const clientToken = jwt.sign({ userId: 99, role: 'CLIENT', scope: 'full' }, config.jwtSecret);
 
 before(async () => new Promise<void>(resolve => {
   server = app.listen(0, '127.0.0.1', () => {
