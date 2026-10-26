@@ -455,6 +455,7 @@ r.patch('/prices/:id', authorize(Role.SUPERADMIN), asyncHandler(async (req, res)
 }));
 
 r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
+  if (!Array.isArray(req.body) || req.body.length > 7) throw new HttpError(400, 'Ingresá hasta siete días de horarios.');
   const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Usá un horario HH:mm válido');
   const rows = z.array(z.object({
     dayOfWeek: z.number().int().min(0).max(6),
@@ -466,7 +467,7 @@ r.put('/business-hours', authorize(Role.SUPERADMIN), asyncHandler(async (req, re
   }).superRefine((row, context) => {
     if (row.openTime === row.closeTime) context.addIssue({ code: z.ZodIssueCode.custom, message: 'La apertura y el cierre no pueden ser iguales' });
     if (Boolean(row.breakStartTime) !== Boolean(row.breakEndTime)) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Completá ambos horarios del descanso' });
-  })).min(1).superRefine((value, context) => {
+  })).min(1).max(7).superRefine((value, context) => {
     if (new Set(value.map(item => item.dayOfWeek)).size !== value.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'No puede repetirse un día' });
     }
