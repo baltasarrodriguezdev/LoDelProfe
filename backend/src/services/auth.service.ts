@@ -1,14 +1,13 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { randomBytes } from 'crypto';
 import { Role, UserStatus } from '@prisma/client';
 import { prisma } from '../prisma/client.js';
 import { config } from '../config.js';
 import { HttpError } from '../utils/http-error.js';
-import { localArgentinaPhone, normalizeArgentinaPhone, storedPhoneCandidates } from '../utils/argentina-phone.js';
+import { normalizeArgentinaPhone, storedPhoneCandidates } from '../utils/argentina-phone.js';
+import { assertEmail, ensureEmailAvailable, issueEmailCode, normalizeEmail } from './email.service.js';
+import { EmailTokenPurpose } from '@prisma/client';
 
-const canonicalPhone = (value: string) => normalizeArgentinaPhone(value)!;
-const storedPhone = (e164Phone: string) => localArgentinaPhone(e164Phone);
 const publicUser = ({ passwordHash: _, securityVersion: __, ...user }: any) => ({
   ...user,
   status: user.phoneVerified === true ? UserStatus.VERIFIED : UserStatus.PENDING_VERIFICATION
@@ -21,38 +20,59 @@ function session(user: { id: number; role: Role; passwordHash: string; [key: str
   };
 }
 
-export async function register(data: { firstName: string; lastName: string; phone: string; password: string }) {
-  const e164 = canonicalPhone(data.phone);
-  const phone = storedPhone(e164);
-  if (await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164) } } })) {
-    throw new HttpError(409, 'Ese teléfono ya está registrado');
-  }
+export async function register(data: { firstName: string; lastName: string; email: string; password: string }) {
+  ensureEmailAvailable();
+  const email = assertEmail(data.email);
+  if (await prisma.user.findUnique({ where: { email } })) throw new HttpError(409, 'Ese email ya está registrado');
   const user = await prisma.user.create({
     data: {
       firstName: data.firstName,
       lastName: data.lastName,
-      phone,
+      email,
       passwordHash: await bcrypt.hash(data.password, 12),
       phoneVerified: false,
       status: UserStatus.PENDING_VERIFICATION,
       isBlocked: false,
-      active: true,
-      verificationCode: `VAL-${randomBytes(4).toString('hex').toUpperCase()}`
+      active: true
     }
   });
+  try {
+    await issueEmailCode(user.id, email, EmailTokenPurpose.VERIFY);
+  } catch (error) {
+    console.error('[auth] cuenta creada; el email inicial no pudo enviarse', { userId: user.id, error: error instanceof Error ? error.message : String(error) });
+  }
   return session(user);
 }
 
 export async function login(input: string, password: string) {
-  const e164 = canonicalPhone(input);
-  const user = await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164) } } });
+  const email = input.includes('@') ? normalizeEmail(input) : null;
+  const phone = email ? null : normalizeArgentinaPhone(input);
+  const user = email
+    ? await prisma.user.findUnique({ where: { email } })
+    : phone ? await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(phone) }, legacyAccount: true, emailVerifiedAt: null } }) : null;
   if (!user || !user.active || !await bcrypt.compare(password, user.passwordHash)) {
-    throw new HttpError(401, 'Teléfono o contraseña incorrectos');
+    throw new HttpError(401, 'Email, teléfono o contraseña incorrectos');
   }
   if (user.isBlocked) {
     throw new HttpError(403, 'Tu cuenta está bloqueada. Comunicate con la cancha.');
   }
   return session(user);
+}
+
+export async function requestEmailVerification(userId: number, value: string, password?: string) {
+  ensureEmailAvailable();
+  const email = assertEmail(value);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || !user.active || user.isBlocked) throw new HttpError(403, 'La cuenta no está habilitada.');
+  if (user.emailVerifiedAt) throw new HttpError(409, 'El email ya está confirmado.');
+  if (user.legacyAccount && email !== user.email && (!password || !await bcrypt.compare(password, user.passwordHash))) {
+    throw new HttpError(401, 'Ingresá tu contraseña actual para vincular el email.');
+  }
+  const owner = await prisma.user.findUnique({ where: { email } });
+  if (owner && owner.id !== userId) throw new HttpError(409, 'Ese email ya está registrado');
+  await prisma.user.update({ where: { id: userId }, data: { email } });
+  await issueEmailCode(userId, email, EmailTokenPurpose.VERIFY);
+  return { message: 'Te enviamos un código de 6 dígitos. Vence en 10 minutos.' };
 }
 
 export async function me(id: number) {

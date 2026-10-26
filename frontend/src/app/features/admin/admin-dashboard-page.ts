@@ -29,7 +29,7 @@ type Booking = {
   updatedAt?: string;
   createdBy?: number;
   creator?: { firstName: string; lastName: string; role: string } | null;
-  user?: { firstName: string; lastName: string; phone: string; phoneVerified: boolean } | null;
+  user?: { firstName: string; lastName: string; phone: string | null; phoneVerified: boolean; bookingApprovedAt?: string | null } | null;
 };
 
 @Component({
@@ -94,7 +94,7 @@ type Booking = {
                 <div class="operations-booking-labels">
                   <span [class]="'status-pill status-' + booking.status.toLowerCase()">Pendiente de confirmación</span>
                   <span class="hold-pill" [class.urgent]="holdRemainingSeconds(booking) <= 120">Vence en {{ holdRemainingLabel(booking) }}</span>
-                  @if (booking.user && !booking.user.phoneVerified) { <span class="origin-pill">Este usuario todavía no está verificado</span> }
+                  @if (booking.user && !booking.user.bookingApprovedAt) { <span class="origin-pill">Este usuario todavía no está habilitado</span> }
                 </div>
                 <h3>{{ booking.user ? booking.user.firstName + ' ' + booking.user.lastName : booking.clientName }}</h3>
                 <p>{{ booking.user?.phone || booking.clientPhone }} · {{ booking.durationMinutes }} min · creado {{ booking.createdAt | date:'dd/MM/yyyy HH:mm' }} · se libera {{ booking.holdExpiresAt | date:'HH:mm' }}</p>

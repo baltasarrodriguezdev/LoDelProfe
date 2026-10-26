@@ -8,6 +8,9 @@ const csrfExemptPaths = new Set([
   '/auth/login', '/api/auth/login', '/auth/register', '/api/auth/register',
   '/auth/password-reset-requests', '/api/auth/password-reset-requests',
   '/auth/password-reset', '/api/auth/password-reset'
+  ,'/auth/email-verification/confirm', '/api/auth/email-verification/confirm'
+  ,'/auth/email-password-reset/request', '/api/auth/email-password-reset/request'
+  ,'/auth/email-password-reset/confirm', '/api/auth/email-password-reset/confirm'
 ]);
 
 export function cookieValue(header: string | undefined, name: string) {

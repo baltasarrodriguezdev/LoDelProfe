@@ -10,6 +10,7 @@ import { RealtimeService } from '../../core/realtime';
 type PendingUser = { id: number; firstName: string; lastName: string; phone: string; verificationCode?: string | null; createdAt: string };
 type ResetRequest = { id: string; requestedAt: string; user: { id: number; firstName: string; lastName: string; phone: string } };
 type AuditLog = { id: string; action: string; entityType: string; entityId?: string | null; actorId?: number | null; createdAt: string };
+type FirstRequest = { id: string; phone: string; startTime: string; durationMinutes: number; codeExpiresAt: string; user: { firstName: string; lastName: string; email?: string | null } };
 
 @Component({
   standalone: true,
@@ -19,6 +20,14 @@ type AuditLog = { id: string; action: string; entityType: string; entityId?: str
       <header class="security-head"><div><span class="eyebrow">SEGURIDAD Y ACCESOS</span><h1>Validaciones.</h1><p>El código identifica la solicitud; el teléfono remitente demuestra que la persona controla el número registrado.</p></div><a class="btn ghost" routerLink="/admin">Volver al panel</a></header>
       @if (notice) { <p class="notice" [class.error-notice]="noticeError">{{ notice }}</p> }
       <section class="security-grid">
+        <article class="security-panel">
+          <header class="panel-title"><div><span class="eyebrow">PRIMERA RESERVA</span><h2>Solicitudes por WhatsApp</h2></div><button class="refresh-action" type="button" (click)="loadRequests()">Actualizar</button></header>
+          <div class="request-list">
+            @for (request of firstRequests; track request.id) {
+              <section class="request-card"><h3>{{ request.user.firstName }} {{ request.user.lastName }}</h3><p>{{ request.phone }} · {{ request.startTime | date:'dd/MM/yyyy HH:mm' }} · {{ request.durationMinutes }} min</p><p>Código válido hasta {{ request.codeExpiresAt | date:'dd/MM/yyyy HH:mm' }}</p><div class="card-actions"><button type="button" class="small-action pay-action" (click)="requestTarget = request; requestForm = { senderPhone: '', code: '' }">Comprobar y confirmar</button></div></section>
+            } @empty { <div class="empty">No hay primeras solicitudes pendientes.</div> }
+          </div>
+        </article>
         <article class="security-panel">
           <header class="panel-title"><div><span class="eyebrow">CUENTAS NUEVAS</span><h2>Pendientes de validar</h2></div><div class="panel-title-actions"><button class="refresh-action" type="button" [disabled]="usersLoading()" (click)="loadUsers()">{{ usersLoading() ? 'Actualizando...' : 'Actualizar' }}</button><span class="count">{{ users.length }}</span></div></header>
           <div class="request-list">
@@ -53,27 +62,34 @@ type AuditLog = { id: string; action: string; entityType: string; entityId?: str
     @if (verificationTarget; as user) {
       <div class="modal-backdrop" (click)="closeVerification()"><section class="booking-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()"><button class="modal-close" type="button" aria-label="Cerrar" (click)="closeVerification()">×</button><span class="eyebrow">COMPROBAR IDENTIDAD</span><h2>{{ user.firstName }} {{ user.lastName }}</h2><div class="expected"><div><span>TELÉFONO REGISTRADO</span><strong>{{ user.phone }}</strong></div><div><span>CÓDIGO ESPERADO</span><strong>{{ user.verificationCode }}</strong></div></div><form class="modal-form" (ngSubmit)="submitVerification()"><label>Método<select name="method" [(ngModel)]="verificationForm.method"><option value="WHATSAPP_MANUAL">WhatsApp recibido</option><option value="PHONE_CALL">Llamada al número registrado</option><option value="IN_PERSON">Comprobación presencial</option></select></label>@if (verificationForm.method === 'WHATSAPP_MANUAL') {<label>Número desde el que llegó el WhatsApp<input name="senderPhone" [(ngModel)]="verificationForm.senderPhone" placeholder="Pegalo o escribilo completo"></label><label>Código escrito en el mensaje<input name="code" [(ngModel)]="verificationForm.code" autocomplete="off" placeholder="VAL-XXXXXXXX"></label>} @else {<label class="confirmation"><input type="checkbox" name="confirmedIdentity" [(ngModel)]="verificationForm.confirmedIdentity"><span>Confirmo que realicé esta comprobación usando el teléfono registrado o presencialmente.</span></label>}@if (verificationError) { <p class="error">{{ verificationError }}</p> }<div class="modal-actions"><button class="btn ghost" type="button" (click)="closeVerification()">Volver</button><button class="btn primary" type="submit" [disabled]="verifying()">{{ verifying() ? 'Verificando...' : 'Aprobar y avisar' }}</button></div></form></section></div>
     }
+    @if (requestTarget; as request) {
+      <div class="modal-backdrop" (click)="requestTarget = null"><section class="booking-modal" role="dialog" aria-modal="true" (click)="$event.stopPropagation()"><button class="modal-close" type="button" aria-label="Cerrar" (click)="requestTarget = null">×</button><span class="eyebrow">PRIMERA SOLICITUD</span><h2>{{ request.user.firstName }} {{ request.user.lastName }}</h2><p>Teléfono registrado: {{ request.phone }}</p><p>Turno solicitado: {{ request.startTime | date:'dd/MM/yyyy HH:mm' }}</p><form class="modal-form" (ngSubmit)="approveRequest()"><label>Remitente que aparece en WhatsApp<input name="senderPhone" required [(ngModel)]="requestForm.senderPhone"></label><label>Código recibido<input name="code" required autocomplete="off" [(ngModel)]="requestForm.code"></label>@if (requestError) { <p class="error">{{ requestError }}</p> }<div class="modal-actions"><button class="btn ghost" type="button" (click)="requestTarget = null">Volver</button><button class="btn primary" type="submit" [disabled]="requestBusy()">{{ requestBusy() ? 'Comprobando...' : 'Aprobar y confirmar si está libre' }}</button></div></form></section></div>
+    }
   `
 })
 export class AdminSecurityPage implements OnInit, OnDestroy {
   private api = inject(Api);
   private realtime = inject(RealtimeService);
   private destroyRef = inject(DestroyRef);
-  users: PendingUser[] = []; resets: ResetRequest[] = []; auditLogs: AuditLog[] = [];
+  users: PendingUser[] = []; resets: ResetRequest[] = []; auditLogs: AuditLog[] = []; firstRequests: FirstRequest[] = [];
+  requestTarget: FirstRequest | null = null;
+  requestForm = { senderPhone: '', code: '' };
+  requestError = '';
+  readonly requestBusy = signal(false);
   verificationTarget: PendingUser | null = null;
   verificationForm = { method: 'WHATSAPP_MANUAL', senderPhone: '', code: '', confirmedIdentity: false };
   verificationError = ''; notice = ''; noticeError = false;
   readonly verifying = signal(false); readonly resetMutation = signal<string | null>(null);
   readonly usersLoading = signal(false); readonly usersLoadError = signal('');
   ngOnInit() {
-    this.loadUsers(); this.loadResets(); this.loadAuditLogs();
+    this.loadUsers(); this.loadResets(); this.loadAuditLogs(); this.loadRequests();
     merge(this.realtime.listen([
         'USER_CREATED', 'USER_UPDATED', 'USER_VERIFICATION_CHANGED', 'PASSWORD_RESET_CHANGED',
         'BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CONFIRMED', 'BOOKING_CANCELLED',
         'BOOKING_STATUS_CHANGED', 'BOOKING_PAYMENT_CHANGED', 'SCHEDULE_BLOCKED', 'SCHEDULE_UNBLOCKED',
         'CONFIGURATION_CHANGED', 'RECURRING_BOOKING_CHANGED', 'CASH_MOVEMENT_CREATED'
       ]).pipe(debounceTime(150)), this.realtime.poll$()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      this.loadUsers(); this.loadResets(); this.loadAuditLogs();
+      this.loadUsers(); this.loadResets(); this.loadAuditLogs(); this.loadRequests();
     });
   }
   ngOnDestroy() {}
@@ -91,6 +107,16 @@ export class AdminSecurityPage implements OnInit, OnDestroy {
     });
   }
   loadResets() { this.api.get<ResetRequest[]>('/admin/password-reset-requests', undefined, { noCache: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: value => this.resets = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudieron cargar las recuperaciones.', true) }); }
+  loadRequests() { this.api.get<FirstRequest[]>('/admin/booking-requests', undefined, { noCache: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: value => this.firstRequests = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudieron cargar las primeras solicitudes.', true) }); }
+  approveRequest() {
+    const target = this.requestTarget;
+    if (!target || this.requestBusy()) return;
+    this.requestBusy.set(true); this.requestError = '';
+    this.api.patch<any>(`/admin/booking-requests/${target.id}/approve`, this.requestForm).pipe(finalize(() => this.requestBusy.set(false))).subscribe({
+      next: response => { this.firstRequests = this.firstRequests.filter(item => item.id !== target.id); this.requestTarget = null; this.showNotice(response.status === 'CONFIRMED' ? 'Cliente aprobado y turno confirmado.' : response.message); },
+      error: response => this.requestError = response.error?.message ?? 'No se pudo aprobar la solicitud.'
+    });
+  }
   loadAuditLogs() { this.api.get<AuditLog[]>('/admin/audit-logs', { limit: 50 }, { noCache: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({ next: value => this.auditLogs = Array.isArray(value) ? value : [], error: () => this.showNotice('No se pudo cargar la actividad administrativa.', true) }); }
   auditLabel(action: string) {
     return ({

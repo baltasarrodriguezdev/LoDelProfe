@@ -96,7 +96,7 @@ npm run build
 - El sistema permite una sola cancha activa; las pantallas consultan su identificador y no dependen de que sea `1`.
 - Un turno cancelado conserva su registro con estado `CANCELLED`.
 - Los descansos de una jornada se configuran en los horarios, sin reglas ocultas por día.
-- `phoneVerified` es la fuente de verdad para la identidad telefónica.
+- `emailVerifiedAt` confirma el acceso por email. `bookingApprovedAt` habilita reservas directas; para cuentas nuevas se establece cuando la cancha comprueba el número remitente y el código de la primera solicitud.
 - Desactivar un cliente conserva su número e historial; liberar el número es una acción separada, irreversible y auditada.
 - Una seña siempre incluye el importe cobrado y genera el movimiento de caja correspondiente.
 - Los clientes pueden cancelar hasta el límite configurado por `SUPERADMIN`; inicialmente son 120 minutos.
@@ -125,7 +125,7 @@ frontend/
 
 Configurar HTTPS, una clave JWT larga, credenciales MySQL exclusivas, backups automáticos y el origen CORS real. `BUSINESS_WHATSAPP_PHONE` define el número de la cancha para los enlaces administrativos; el frontend conserva el contacto público en su configuración del establecimiento.
 
-El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` envía `/api/*` al servicio Express conservando la ruta original, y el backend acepta tanto ese prefijo como las rutas sin prefijo usadas localmente. Configurá `FRONTEND_URL=https://lodelprofe.com.ar` en el backend. Esta topología mantiene la cookie HttpOnly como first-party y es compatible con `SameSite=Lax`; no se debe reemplazar `/api` por una URL de otro sitio registrable.
+El frontend usa `/api` como ruta relativa. En Vercel Services, `vercel.json` envía `/api/*` al servicio Express conservando la ruta original, y el backend acepta tanto ese prefijo como las rutas sin prefijo usadas localmente. Configurá `FRONTEND_URL=https://www.lodelprofe.com` en el backend. Esta topología mantiene la cookie HttpOnly como first-party y es compatible con `SameSite=Lax`; no se debe reemplazar `/api` por una URL de otro sitio registrable.
 
 ### Vercel Services
 
@@ -134,14 +134,15 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 - `NODE_ENV=production`
 - `DATABASE_URL`: conexión MySQL remota, preferentemente mediante un endpoint con pooling compatible con funciones serverless.
 - `JWT_SECRET`: valor largo, aleatorio y exclusivo de producción.
-- `FRONTEND_URL=https://lodelprofe.com.ar` (o el dominio final asignado al proyecto).
-- `PUBLIC_APP_URL=https://lodelprofe.com.ar`: origen fijo usado para construir los enlaces descartables de recuperación.
+- `FRONTEND_URL=https://www.lodelprofe.com` (o el dominio final asignado al proyecto).
+- `PUBLIC_APP_URL=https://www.lodelprofe.com`: origen fijo usado para los enlaces de recuperación por teléfono de cuentas anteriores.
 - `AUTH_COOKIE_NAME=padel_session`
 - `AUTH_COOKIE_MAX_AGE_MS=604800000`
 - `JWT_EXPIRES_IN=7d`
 - `APP_TIMEZONE=America/Argentina/Buenos_Aires`
 - `PASSWORD_RESET_TTL_MINUTES=15`
 - `BUSINESS_WHATSAPP_PHONE`: número de WhatsApp de la cancha en formato internacional, sin espacios.
+- `RESEND_API_KEY` y `EMAIL_FROM`: necesarios para enviar confirmaciones y recuperaciones por email. El remitente debe estar autorizado en el proveedor; sin ellos, el backend de producción rechaza el envío y deja la cuenta pendiente para reintentar.
 - `REALTIME_REDIS_URL`: URL TLS de Redis compartido (por ejemplo, la integración de Redis del marketplace de Vercel). Es necesaria para que los eventos crucen instancias.
 - `REALTIME_REDIS_CHANNEL=lo-del-profe:realtime:v1`: canal Pub/Sub; puede conservarse el valor predeterminado.
 - `REALTIME_HEARTBEAT_MS=30000`: intervalo de control de conexiones inactivas.
@@ -151,7 +152,7 @@ En la configuración del proyecto de Vercel, seleccioná **Services** como frame
 
 `VERCEL_URL` es provista automáticamente por Vercel y se agrega a los orígenes permitidos para que funcionen los previews. `PORT`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SUPERADMIN_PHONE` y `SUPERADMIN_PASSWORD` no son variables de runtime requeridas en Vercel. Las dos últimas solo hacen falta al ejecutar el seed de forma controlada.
 
-El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro crea una cuenta pendiente con un código aleatorio. Un SUPERADMIN debe comparar el código y el número remitente de WhatsApp, o registrar una comprobación por llamada/presencial. La recuperación de contraseña genera una solicitud administrativa; al autorizarla se abre WhatsApp hacia el teléfono guardado con un enlace de un solo uso y vencimiento corto.
+El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, cuando las variables de producción ya están disponibles, y solo después inicia el servidor. El registro nuevo usa email y contraseña, con un código de 6 dígitos enviado por Resend para confirmar el correo. El código vence en 10 minutos, se usa una vez y admite hasta cinco intentos. La recuperación de contraseña por email usa el mismo mecanismo. En desarrollo, si no hay credenciales de Resend, el código se imprime en la consola del backend y no llega a Gmail; para entregas reales se requieren `RESEND_API_KEY`, `EMAIL_FROM` y un remitente autorizado. En la primera solicitud de turno el cliente registra su teléfono y abre WhatsApp con un código distinto. Un SUPERADMIN compara ese código con el número remitente y confirma el turno si todavía está disponible; la solicitud no retiene el horario. Después el cliente reserva directamente. La migración conserva las cuentas existentes y habilita sus teléfonos para reservar una vez que confirmen su email. Los clientes anteriores pueden entrar y recuperar la contraseña por teléfono hasta completar esa confirmación; luego la recuperación se hace por email.
 
 Las notificaciones Web Push se activan una vez por dispositivo desde la barra del panel administrador. Avisan nuevas reservas, cancelaciones y registros pendientes aunque la web esté cerrada. Requieren HTTPS, las tres variables `WEB_PUSH_VAPID_*` y la migración `push_subscriptions`; si falta la configuración, el botón lo informa sin afectar el resto del sistema.
 

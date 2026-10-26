@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import {
   BookingOrigin,
   BookingStatus,
@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { DateTime } from 'luxon';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/async-handler.js';
+import { rateLimit } from '../middlewares/security.js';
 import { prisma } from '../prisma/client.js';
 import {
   availability,
@@ -102,6 +103,8 @@ async function verifyUserIdentity(client: any, userId: number, adminId: number, 
     data: {
       phoneVerified: true,
       status: UserStatus.VERIFIED,
+      bookingApprovedAt: new Date(),
+      bookingApprovalMethod: input.method,
       phoneVerifiedAt: new Date(),
       phoneVerifiedById: adminId,
       phoneVerificationMethod: input.method,
@@ -207,7 +210,7 @@ r.get('/users', asyncHandler(async (req, res) => {
 r.get('/users/pending-verification', asyncHandler(async (_req, res) => {
   await expirePendingBookings();
   res.json(await prisma.user.findMany({
-    where: { role: Role.CLIENT, active: true, phoneVerified: false, isBlocked: false },
+    where: { role: Role.CLIENT, active: true, phoneVerified: false, isBlocked: false, legacyAccount: true, verificationCode: { not: null } },
     omit: { passwordHash: true, securityVersion: true },
     include: { _count: { select: { bookings: { where: { status: 'PENDING' } } } } },
     orderBy: { createdAt: 'asc' }
@@ -242,6 +245,7 @@ r.post('/users', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {
       phone: localArgentinaPhone(data.phone),
       passwordHash: await bcrypt.hash(data.password, 12),
       role: Role.CLIENT,
+      legacyAccount: true,
       active: true,
       phoneVerified: false,
       status: UserStatus.PENDING_VERIFICATION,
@@ -259,6 +263,57 @@ r.patch('/users/:id/verify', authorize(Role.SUPERADMIN), asyncHandler(async (req
   const result = await verifyUserIdentity(prisma, id, req.auth!.userId, manualVerificationSchema.parse(req.body));
   await publishUserChange('USER_VERIFICATION_CHANGED', id);
   res.json(result);
+}));
+
+r.get('/booking-requests', authorize(Role.SUPERADMIN), asyncHandler(async (_req, res) => {
+  await prisma.bookingRequest.updateMany({ where: { status: 'PENDING', startTime: { lte: new Date() } }, data: { status: 'EXPIRED' } });
+  res.json(await prisma.bookingRequest.findMany({ where: { status: 'PENDING' }, include: { user: { omit: { passwordHash: true, securityVersion: true } } }, orderBy: { createdAt: 'asc' } }));
+}));
+
+r.patch('/booking-requests/:id/approve', authorize(Role.SUPERADMIN), rateLimit({ windowMs: 15 * 60_000, max: 10, key: req => `${req.auth?.userId}:${req.params.id}` }), asyncHandler(async (req, res) => {
+  const { senderPhone, code } = z.object({ senderPhone: z.string(), code: z.string() }).parse(req.body);
+  const request = await prisma.bookingRequest.findUnique({ where: { id: String(req.params.id) }, include: { user: true } });
+  if (!request || request.status !== 'PENDING' || request.startTime <= new Date()) throw new HttpError(409, 'La solicitud ya no está pendiente.');
+  const sender = normalizeArgentinaPhone(senderPhone);
+  if (!sender || localArgentinaPhone(sender) !== request.phone || request.user.phone !== request.phone) throw new HttpError(400, 'El remitente no coincide con el teléfono registrado.');
+  const provided = Buffer.from(createHash('sha256').update(code.trim().toUpperCase()).digest('hex'));
+  const expected = Buffer.from(request.codeHash);
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected) || request.codeExpiresAt <= new Date()) throw new HttpError(400, 'El código es incorrecto o venció.');
+  if (!request.user.active || request.user.isBlocked || !request.user.emailVerifiedAt) throw new HttpError(403, 'La cuenta no está habilitada.');
+
+  await prisma.user.update({ where: { id: request.userId }, data: {
+    phoneVerified: true, status: UserStatus.VERIFIED, phoneVerifiedAt: new Date(),
+    phoneVerifiedById: req.auth!.userId, phoneVerificationMethod: PhoneVerificationMethod.WHATSAPP_MANUAL,
+    bookingApprovedAt: new Date(), bookingApprovalMethod: 'WHATSAPP_MANUAL'
+  } });
+  await publishUserChange('USER_VERIFICATION_CHANGED', request.userId);
+  const dateTime = DateTime.fromJSDate(request.startTime, { zone: config.timezone });
+  const date = dateTime.toISODate()!;
+  const startTime = dateTime.toFormat('HH:mm');
+  try {
+    const booking = await prisma.$transaction(async tx => {
+      const claimed = await tx.bookingRequest.updateMany({ where: { id: request.id, status: 'PENDING' }, data: { status: 'CONFIRMED' } });
+      if (!claimed.count) throw new HttpError(409, 'La solicitud ya fue procesada.');
+      const currentPrice = await tx.price.findFirst({ where: { durationMinutes: request.durationMinutes, active: true } });
+      if (!currentPrice || Number(currentPrice.price) !== Number(request.priceQuoted)) throw new HttpError(409, 'El precio del turno cambió.');
+      const created = await createBookingInTransaction(tx, {
+        courtId: request.courtId, userId: request.userId,
+        clientName: `${request.user.firstName} ${request.user.lastName}`, clientPhone: request.phone,
+        date, startTime, durationMinutes: request.durationMinutes,
+        playersCount: request.playersCount, notes: request.notes ?? undefined,
+        status: BookingStatus.CONFIRMED, origin: BookingOrigin.WEB
+      }, req.auth!.userId);
+      await tx.bookingRequest.update({ where: { id: request.id }, data: { bookingId: created.id } });
+      return created;
+    }, bookingTransactionOptions);
+    await writeAudit({ actorId: req.auth!.userId, action: 'BOOKING_REQUEST_APPROVED', entityType: 'BOOKING_REQUEST', entityId: request.id });
+    await publishBookingChange('BOOKING_CREATED', booking);
+    res.json({ status: 'CONFIRMED', booking });
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.status !== 409) throw error;
+    await prisma.bookingRequest.updateMany({ where: { id: request.id, status: 'PENDING' }, data: { status: 'NEEDS_NEW_SLOT' } });
+    res.json({ status: 'NEEDS_NEW_SLOT', message: 'Cliente aprobado. El horario o precio cambió; deberá elegir otro turno.' });
+  }
 }));
 
 r.delete('/users/:id/pending-verification', authorize(Role.SUPERADMIN), asyncHandler(async (req, res) => {

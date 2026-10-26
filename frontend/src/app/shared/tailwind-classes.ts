@@ -13,18 +13,12 @@ export const APP_TAILWIND_CLASSES = `
   [&_h2]:font-display [&_h2]:font-medium [&_h3]:font-body [&_h3]:font-semibold
   [&_b]:font-body [&_strong]:font-body
   [&_p]:leading-[1.65] [&_p]:text-brand-muted
-  [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-[7px] [&_input]:border [&_input]:border-brand-border [&_input]:bg-white [&_input]:px-3 [&_input]:py-2.5 [&_input]:text-brand-text
-  [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-[7px] [&_select]:border [&_select]:border-brand-border [&_select]:bg-white [&_select]:px-3 [&_select]:py-2.5 [&_select]:text-brand-text
-  [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-[7px] [&_textarea]:border [&_textarea]:border-brand-border [&_textarea]:bg-white [&_textarea]:p-3 [&_textarea]:text-brand-text
-  [&_input:focus]:border-brand-green [&_input:focus]:outline-2 [&_input:focus]:outline-brand-green/40
-  [&_select:focus]:border-brand-green [&_select:focus]:outline-2 [&_select:focus]:outline-brand-green/40
-  [&_textarea:focus]:border-brand-green [&_textarea:focus]:outline-2 [&_textarea:focus]:outline-brand-green/40
+  [&_input]:min-h-11 [&_input]:w-full [&_input]:rounded-lg [&_input]:border [&_input]:border-brand-border [&_input]:bg-white [&_input]:px-3 [&_input]:py-2.5 [&_input]:text-brand-text
+  [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-lg [&_select]:border [&_select]:border-brand-border [&_select]:bg-white [&_select]:px-3 [&_select]:py-2.5 [&_select]:text-brand-text
+  [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:border-brand-border [&_textarea]:bg-white [&_textarea]:p-3 [&_textarea]:text-brand-text
   [&_a]:touch-manipulation [&_button]:touch-manipulation
   [&_a:focus-visible]:rounded-sm [&_a:focus-visible]:outline-3 [&_a:focus-visible]:outline-offset-3 [&_a:focus-visible]:outline-brand-gold
   [&_button:focus-visible]:outline-3 [&_button:focus-visible]:outline-offset-3 [&_button:focus-visible]:outline-brand-gold
-  [&_input:focus-visible]:outline-3 [&_input:focus-visible]:outline-offset-2 [&_input:focus-visible]:outline-brand-green/60
-  [&_select:focus-visible]:outline-3 [&_select:focus-visible]:outline-offset-2 [&_select:focus-visible]:outline-brand-green/60
-  [&_textarea:focus-visible]:outline-3 [&_textarea:focus-visible]:outline-offset-2 [&_textarea:focus-visible]:outline-brand-green/60
   [&_.eyebrow]:font-display [&_.eyebrow]:text-xs [&_.eyebrow]:font-semibold [&_.eyebrow]:tracking-[.2em] [&_.eyebrow]:text-brand-gold
   [&_.link]:cursor-pointer [&_.link]:border-0 [&_.link]:bg-transparent [&_.link]:text-inherit
   [&_.full]:w-full

@@ -19,7 +19,7 @@ export async function requestPasswordReset(e164Phone: string) {
   const user = await prisma.user.findFirst({ where: { phone: { in: storedPhoneCandidates(e164Phone) } } });
   let changed = false;
 
-  if (user?.active && !user.isBlocked && user.phoneVerified) {
+  if (user?.active && !user.isBlocked && user.legacyAccount && !user.emailVerifiedAt) {
     const existing = await prisma.passwordResetRequest.findFirst({
       where: { userId: user.id, status: { in: [PasswordResetStatus.PENDING, PasswordResetStatus.AUTHORIZED] } },
       orderBy: { requestedAt: 'desc' }
@@ -60,7 +60,7 @@ export async function authorizePasswordReset(id: string, adminId: number) {
   if (!request || request.status !== PasswordResetStatus.PENDING) {
     throw new HttpError(409, 'La solicitud ya no está pendiente.');
   }
-  if (!request.user.active || request.user.isBlocked || !request.user.phoneVerified) {
+  if (!request.user.active || request.user.isBlocked || !request.user.phone || !request.user.legacyAccount || request.user.emailVerifiedAt) {
     throw new HttpError(409, 'La cuenta no está habilitada para recuperar la contraseña.');
   }
 
@@ -107,6 +107,10 @@ export async function resetPassword(token: string, password: string) {
 
   const passwordHash = await bcrypt.hash(password, 12);
   await prisma.$transaction(async tx => {
+    const owner = await tx.user.findUnique({ where: { id: request.userId } });
+    if (!owner?.active || owner.isBlocked || !owner.legacyAccount || owner.emailVerifiedAt) {
+      throw new HttpError(400, 'El enlace es inválido o ya venció.');
+    }
     const consumed = await tx.passwordResetRequest.updateMany({
       where: { id: request.id, status: PasswordResetStatus.AUTHORIZED, expiresAt: { gt: new Date() } },
       data: { status: PasswordResetStatus.USED, usedAt: new Date(), tokenHash: null }

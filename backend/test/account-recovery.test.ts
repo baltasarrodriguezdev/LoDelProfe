@@ -29,7 +29,7 @@ test('la solicitud de recuperación no revela si el teléfono existe', async () 
   let createdFor: number | null = null;
   db.passwordResetRequest.findFirst = async () => null;
   db.passwordResetRequest.create = async ({ data }: any) => { createdFor = data.userId; return { id: 'reset-1', ...data }; };
-  db.user.findFirst = async () => ({ id: 17, active: true, isBlocked: false, phoneVerified: true, status: 'VERIFIED' });
+  db.user.findFirst = async () => ({ id: 17, active: true, isBlocked: false, legacyAccount: true, emailVerifiedAt: null, phoneVerified: true, status: 'VERIFIED' });
   const known = await fetch(`${baseUrl}/api/auth/password-reset-requests`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' }, body: JSON.stringify({ phone: '3576524440' }) });
   db.user.findFirst = async () => null;
   const unknown = await fetch(`${baseUrl}/api/auth/password-reset-requests`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' }, body: JSON.stringify({ phone: '3511112222' }) });
@@ -51,7 +51,7 @@ test('verificación manual exige el mismo remitente y el código correcto', asyn
 
 test('autorización envía un token hasheado solamente al teléfono registrado', async () => {
   let saved: any;
-  db.passwordResetRequest.findUnique = async () => ({ id: 'reset-1', status: 'PENDING', user: { id: 17, firstName: 'Ana', phone: '3576524440', active: true, isBlocked: false, phoneVerified: true, status: 'VERIFIED' } });
+  db.passwordResetRequest.findUnique = async () => ({ id: 'reset-1', status: 'PENDING', user: { id: 17, firstName: 'Ana', phone: '3576524440', active: true, isBlocked: false, legacyAccount: true, emailVerifiedAt: null, phoneVerified: true, status: 'VERIFIED' } });
   db.passwordResetRequest.updateMany = async ({ data }: any) => { saved = data; return { count: 1 }; };
   const response = await fetch(`${baseUrl}/api/admin/password-reset-requests/reset-1/authorize`, { method: 'PATCH', headers: adminHeaders(), body: '{}' });
   assert.equal(response.status, 200);
@@ -66,7 +66,7 @@ test('el enlace se consume una vez e incrementa la versión de seguridad', async
   db.passwordResetRequest.findFirst = async () => consumed ? null : ({ id: 'reset-1', userId: 17, status: 'AUTHORIZED', expiresAt: new Date(Date.now() + 60_000) });
   db.$transaction = async (work: any) => work({
     passwordResetRequest: { updateMany: async () => { consumed = true; return { count: 1 }; } },
-    user: { update: async ({ data }: any) => { userUpdate = data; return { id: 17 }; } }
+    user: { findUnique: async () => ({ id: 17, active: true, isBlocked: false, legacyAccount: true, emailVerifiedAt: null }), update: async ({ data }: any) => { userUpdate = data; return { id: 17 }; } }
   });
   const first = await fetch(`${baseUrl}/api/auth/password-reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' }, body: JSON.stringify({ token, password: 'nueva-clave-segura' }) });
   assert.equal(first.status, 200); assert.deepEqual(userUpdate.securityVersion, { increment: 1 }); assert.notEqual(userUpdate.passwordHash, 'nueva-clave-segura');

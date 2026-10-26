@@ -23,26 +23,30 @@ import { Auth } from '../../core/api';
       <div class="auth-form-side">
         <form class="panel auth-card" novalidate (ngSubmit)="submit()">
           <span class="eyebrow">LO DEL PROFE</span>
-          <h2>{{ registerMode ? 'Crear cuenta' : 'Ingresar' }}</h2>
+          <h2>{{ registerMode ? 'Crear cuenta' : legacyMode ? 'Cuenta anterior' : 'Ingresar' }}</h2>
           @if (authMessage) { <p class="auth-message">{{ authMessage }}</p> }
+          @if (legacyMode) { <p>Entrá con tu teléfono y contraseña de siempre. Después agregás un email para los próximos ingresos.</p> }
           @if (registerMode) {
             <div class="two">
               <label>Nombre<input required minlength="2" [(ngModel)]="form.firstName" name="firstName">@if (fieldErrors.firstName) { <small class="field-error">{{ fieldErrors.firstName }}</small> }</label>
               <label>Apellido<input required minlength="2" [(ngModel)]="form.lastName" name="lastName">@if (fieldErrors.lastName) { <small class="field-error">{{ fieldErrors.lastName }}</small> }</label>
             </div>
           }
-          <label>Teléfono
+          @if (legacyMode) { <label>Teléfono
             <span class="phone-control">
               <span class="phone-country" aria-label="País Argentina, código más 54"><span aria-hidden="true">AR</span><span class="phone-country-name">Argentina</span> +54</span>
               <input required inputmode="numeric" autocomplete="tel-national" [ngModel]="form.phone" (ngModelChange)="onPhoneInput($event)" name="phone" placeholder="Ej: 3515551234" maxlength="17">
             </span>
             <small>Ingresá los 10 dígitos, con código de área y sin 0 ni 15.</small>
             @if (fieldErrors.phone) { <small class="field-error">{{ fieldErrors.phone }}</small> }
-          </label>
-          <label>Contraseña<input required minlength="8" type="password" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><small>Mínimo 8 caracteres.</small>@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
+          </label> } @else { <label>Email<input required type="email" autocomplete="email" [(ngModel)]="form.email" name="email" placeholder="tu@email.com">@if (fieldErrors.email) { <small class="field-error">{{ fieldErrors.email }}</small> }</label> }
+          <label>Contraseña<span class="password-control"><input required minlength="8" [type]="showPassword() ? 'text' : 'password'" [autocomplete]="registerMode ? 'new-password' : 'current-password'" [(ngModel)]="form.password" name="password"><button type="button" class="password-reveal" [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'" [attr.aria-pressed]="showPassword()" (click)="showPassword.set(!showPassword())">{{ showPassword() ? 'Ocultar' : 'Mostrar' }}</button></span>@if (registerMode) { <small>Mínimo 8 caracteres.</small> }@if (fieldErrors.password) { <small class="field-error">{{ fieldErrors.password }}</small> }</label>
+          @if (registerMode) { <label>Repetir contraseña<input required [type]="showPassword() ? 'text' : 'password'" autocomplete="new-password" [(ngModel)]="form.confirmation" name="confirmation">@if (fieldErrors.confirmation) { <small class="field-error">{{ fieldErrors.confirmation }}</small> }</label> }
           @if (error) { <p class="error">{{ error }}</p> }
           <button type="submit" class="btn primary full" [disabled]="loading()">{{ loading() ? 'Procesando...' : registerMode ? 'Crear cuenta' : 'Ingresar' }}</button>
           @if (!registerMode) { <p class="switch"><a routerLink="/recuperar-contrasena">Olvidé mi contraseña</a></p> }
+          @if (!registerMode && !legacyMode) { <p class="switch"><a routerLink="/ingresar-anterior">Ya tenía una cuenta con teléfono</a></p> }
+          @if (legacyMode) { <p class="switch"><a routerLink="/ingresar">Ingresar con email</a></p> }
           <p class="switch">
             {{ registerMode ? '¿Ya tenés cuenta?' : '¿Todavía no tenés cuenta?' }}
             <a [routerLink]="registerMode ? '/ingresar' : '/registro'">{{ registerMode ? 'Ingresá' : 'Registrate' }}</a>
@@ -58,11 +62,13 @@ export class AuthPage {
   private route = inject(ActivatedRoute);
 
   registerMode = this.router.url.includes('registro');
+  legacyMode = !this.registerMode && this.router.url.includes('ingresar-anterior');
   authMessage = this.route.snapshot.queryParamMap.get('authRequired') === '1' ? 'Tenés que iniciar sesión para continuar.' : '';
   form: any = {};
   error = '';
-  fieldErrors: { firstName?: string; lastName?: string; phone?: string; password?: string } = {};
+  fieldErrors: { firstName?: string; lastName?: string; phone?: string; email?: string; password?: string; confirmation?: string } = {};
   loading = signal(false);
+  showPassword = signal(false);
 
   onPhoneInput(value: string) { this.form.phone = String(value ?? '').replace(/\D/g, ''); }
 
@@ -72,16 +78,16 @@ export class AuthPage {
     this.error = '';
     this.fieldErrors = {};
     const phone = this.validateForm();
-    if (!phone) { this.loading.set(false); return; }
-    const payload = { ...this.form, phone };
+    if (Object.keys(this.fieldErrors).length) { this.loading.set(false); return; }
+    const payload = this.legacyMode ? { phone, password: this.form.password } : { ...this.form, email: String(this.form.email ?? '').trim().toLowerCase() };
     const call = this.registerMode ? this.auth.register(payload) : this.auth.login(payload);
     call.subscribe({
       next: value => {
         this.loading.set(false);
-        const requestedUrl = this.route.snapshot.queryParamMap.get('returnUrl');
-        if (this.registerMode) sessionStorage.setItem('accountCreatedNotice', '1');
-        if (this.registerMode) {
-          this.router.navigate(['/validar-telefono'], { queryParams: requestedUrl ? { returnUrl: requestedUrl } : undefined });
+        const requested = this.route.snapshot.queryParamMap.get('returnUrl');
+        const requestedUrl = requested?.startsWith('/') && !requested.startsWith('//') ? requested : null;
+        if (this.registerMode || !value.user.emailVerifiedAt) {
+          this.router.navigate([value.user.legacyAccount ? '/completar-email' : '/confirmar-email'], { queryParams: requestedUrl ? { returnUrl: requestedUrl } : undefined });
         } else {
           this.router.navigateByUrl(['ADMIN', 'SUPERADMIN'].includes(value.user.role) ? '/admin' : requestedUrl || '/reservar');
         }
@@ -100,10 +106,12 @@ export class AuthPage {
     if (this.registerMode) {
       if (String(this.form.firstName ?? '').trim().length < 2) this.fieldErrors.firstName = 'El nombre debe tener al menos 2 caracteres.';
       if (String(this.form.lastName ?? '').trim().length < 2) this.fieldErrors.lastName = 'El apellido debe tener al menos 2 caracteres.';
-      if (String(this.form.password ?? '').length < 8) this.fieldErrors.password = 'La contraseña debe tener al menos 8 caracteres.';
+      if (String(this.form.password ?? '').length < 8 || String(this.form.password ?? '').length > 72) this.fieldErrors.password = 'La contraseña debe tener entre 8 y 72 caracteres.';
+      if (this.form.password !== this.form.confirmation) this.fieldErrors.confirmation = 'Las contraseñas no coinciden.';
     } else if (!this.form.password) this.fieldErrors.password = 'Ingresá tu contraseña.';
-    if (!phone) this.fieldErrors.phone = 'Ingresá un teléfono argentino válido, por ejemplo 3515551234.';
-    return Object.keys(this.fieldErrors).length === 0 ? phone : null;
+    if (this.legacyMode && !phone) this.fieldErrors.phone = 'Ingresá un teléfono argentino válido, por ejemplo 3515551234.';
+    if (!this.legacyMode && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(this.form.email ?? '').trim())) this.fieldErrors.email = 'Ingresá un email válido.';
+    return phone;
   }
 
   private registrationError(response: any) {

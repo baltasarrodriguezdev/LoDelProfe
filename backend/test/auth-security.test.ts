@@ -103,47 +103,50 @@ test('registro informa errores concretos por campo', async () => {
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ firstName: 'A', lastName: '', phone: '123', password: 'corta' })
+    body: JSON.stringify({ firstName: 'A', lastName: '', email: 'incorrecto', password: 'corta' })
   });
   assert.equal(response.status, 400);
   const body = await response.json() as any;
   assert.match(body.errors.firstName[0], /nombre/i);
   assert.match(body.errors.lastName[0], /apellido/i);
-  assert.match(body.errors.phone[0], /tel.fono/i);
+  assert.match(body.errors.email[0], /email/i);
   assert.match(body.errors.password[0], /contrase.a/i);
 });
 
-test('registro crea usuario no verificado e inicia sesión', async () => {
+test('registro crea usuario con email no verificado e inicia sesión', async () => {
   let created: any;
-  db.user.findFirst = async () => null;
+  db.user.findUnique = async () => null;
+  db.emailToken.create = async ({ data }: any) => ({ id: 'verify-12', ...data });
   db.user.create = async ({ data }: any) => {
     created = { id: 12, role: 'CLIENT', active: true, createdAt: new Date(), updatedAt: new Date(), ...data };
     return created;
   };
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', email: 'Ana@Ejemplo.com', password: 'clave-segura' })
   });
   assert.equal(response.status, 201);
   assert.match(response.headers.get('set-cookie') ?? '', /HttpOnly/i);
   const body = await response.json() as any;
-  assert.equal(created.phone, '3576524440');
+  assert.equal(created.email, 'ana@ejemplo.com');
+  assert.equal(created.phone, undefined);
   assert.equal(created.phoneVerified, false);
   assert.equal(created.status, 'PENDING_VERIFICATION');
   assert.equal(created.isBlocked, false);
   assert.equal(body.user.passwordHash, undefined);
   assert.equal(body.user.phoneVerified, false);
+  assert.equal(body.user.email, 'ana@ejemplo.com');
   assert.equal(body.user.status, 'PENDING_VERIFICATION');
 });
 
-test('registro existente responde 409', async () => {
-  db.user.findFirst = async () => ({ id: 20, phone: '3576524440' });
+test('email existente responde 409', async () => {
+  db.user.findUnique = async () => ({ id: 20, email: 'ana@ejemplo.com' });
   const response = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost:4200' },
-    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', phone: '3576524440', password: 'clave-segura' })
+    body: JSON.stringify({ firstName: 'Ana', lastName: 'Pérez', email: 'ANA@EJEMPLO.COM', password: 'clave-segura' })
   });
   assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), { message: 'Ese teléfono ya está registrado' });
+  assert.deepEqual(await response.json(), { message: 'Ese email ya está registrado' });
 });
 
 test('expone health tanto bajo /api como en desarrollo sin prefijo', async () => {

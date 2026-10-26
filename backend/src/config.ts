@@ -39,6 +39,8 @@ export const config = {
   frontendUrls,
   publicAppUrl: (process.env.PUBLIC_APP_URL ?? frontendUrls[0]).replace(/\/$/, ''),
   passwordResetTtlMinutes: Math.max(5, Math.min(60, Number(process.env.PASSWORD_RESET_TTL_MINUTES) || 15)),
+  resendApiKey: process.env.RESEND_API_KEY?.trim() ?? '',
+  emailFrom: process.env.EMAIL_FROM?.trim() ?? '',
   realtime: {
     redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
     redisChannel: process.env.REALTIME_REDIS_CHANNEL ?? 'lo-del-profe:realtime:v1',

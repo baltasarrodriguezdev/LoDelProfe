@@ -99,13 +99,15 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending' | '
               <button type="button" class="link cancel-modal" (click)="closeModal()">Elegir otro horario</button>
             } @else {
               <div class="modal-fields">
+                @if (!isPhoneVerified()) { <label>Tu teléfono para la primera solicitud<input inputmode="tel" autocomplete="tel" [(ngModel)]="firstPhone" placeholder="Ej: 3515551234"><small>La cancha comprobará que el WhatsApp llegue desde este número.</small></label> }
                 <label>Cantidad de jugadores<input type="number" min="1" max="12" [(ngModel)]="players"></label>
                 <label>Nota para la cancha <small>(opcional)</small><textarea maxlength="1000" [(ngModel)]="notes" placeholder="Ej. llegamos cinco minutos antes"></textarea></label>
               </div>
               @if (modalError) { <p class="notice error-notice modal-alert">{{ modalError }}</p> }
               <div class="booking-modal-footer">
                 <button type="button" class="link cancel-modal" [disabled]="submitting()" (click)="closeModal()">Elegir otro horario</button>
-                @if (isPhoneVerified()) {
+                @if (!auth.user()?.emailVerifiedAt) { <a class="btn primary confirm-booking" routerLink="/confirmar-email">Confirmar email para continuar</a> }
+                @else if (isPhoneVerified()) {
                   <button type="button" class="btn primary confirm-booking" [disabled]="submitting()" (click)="confirmBooking()">{{ submitting() ? 'Reservando...' : 'Confirmar reserva' }}</button>
                 } @else {
                   <button type="button" class="btn primary confirm-booking" [disabled]="submitting()" (click)="sendVerificationRequest()">{{ submitting() ? 'Enviando...' : 'Enviar solicitud por WhatsApp' }}</button>
@@ -125,34 +127,28 @@ type ModalState = 'confirm' | 'reservationConfirmed' | 'verificationPending' | '
             </div>
           } @else if (modalState === 'verificationPending') {
             <div class="booking-success unified-success">
-              <span class="hold-clock-mark" aria-hidden="true">10</span>
-              <span class="eyebrow">RETENCIÓN TEMPORAL</span>
-              <h2 id="confirm-title">Guardamos tu horario</h2>
-              <p>Enviá ahora el mensaje de WhatsApp. La cancha debe validarlo antes de que termine la cuenta regresiva.</p>
-              <div class="hold-countdown" role="timer" aria-live="polite">
-                <span>Tiempo restante</span>
-                <strong>{{ holdRemainingLabel }}</strong>
-                <small>Se libera automáticamente a las {{ holdEndsAtLabel }}</small>
-              </div>
+              <span class="eyebrow">SOLICITUD ENVIADA</span>
+              <h2 id="confirm-title">Esperando a la cancha</h2>
+              <p>Enviá el mensaje desde tu WhatsApp. La cancha revisará tu número y confirmará el turno si sigue disponible. Este horario todavía no está reservado.</p>
               <div class="booking-summary pending-summary">
                 <div><span>Día</span><strong>{{ formattedDate }}</strong></div>
                 <div><span>Horario</span><strong>{{ selectedSlot.startTime }} — {{ selectedSlot.endTime }}</strong></div>
                 <div><span>Duración</span><strong>{{ durationLabel(duration) }}</strong></div>
-                <div><span>Estado</span><strong class="pending-chip">Esperando WhatsApp</strong></div>
+                <div><span>Estado</span><strong class="pending-chip">Sin confirmar</strong></div>
               </div>
               @if (modalError) { <p class="notice error-notice modal-alert">{{ modalError }}</p> }
               <div class="hold-actions">
                 <button type="button" class="btn primary" (click)="openWhatsappAgain()">Abrir WhatsApp nuevamente</button>
-                <button type="button" class="btn ghost" [disabled]="submitting()" (click)="cancelPendingHold()">{{ submitting() ? 'Liberando...' : 'Cancelar solicitud' }}</button>
+                <button type="button" class="btn ghost" [disabled]="submitting()" (click)="cancelPendingHold()">{{ submitting() ? 'Cancelando...' : 'Cancelar solicitud' }}</button>
               </div>
-              <button type="button" class="link cancel-modal resend-whatsapp" (click)="closeModal()">Cerrar y verla en Mis turnos</button>
+              <button type="button" class="link cancel-modal resend-whatsapp" (click)="closeModal()">Cerrar</button>
             </div>
           } @else {
             <div class="booking-success unified-success hold-released-state">
               <span class="hold-released-mark" aria-hidden="true">↻</span>
-              <span class="eyebrow">HORARIO LIBERADO</span>
+              <span class="eyebrow">SOLICITUD CERRADA</span>
               <h2 id="confirm-title">{{ holdReleaseReason === 'expired' ? 'La solicitud venció' : 'Solicitud cancelada' }}</h2>
-              <p>{{ holdReleaseReason === 'expired' ? 'Pasaron los 10 minutos sin confirmación. El horario volvió a estar disponible para otros jugadores.' : 'Liberamos el horario. Ya podés elegir otro turno cuando quieras.' }}</p>
+              <p>{{ holdReleaseReason === 'expired' ? 'El horario solicitado ya pasó. Podés elegir otro turno.' : 'Cancelamos la solicitud. Podés elegir otro turno cuando quieras.' }}</p>
               <button type="button" class="btn primary full" (click)="closeModal()">Elegir otro horario</button>
             </div>
           }
@@ -178,6 +174,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   duration = 90;
   players = 4;
   notes = '';
+  firstPhone = '';
   today = this.dateInput(new Date());
   date = this.today;
   selectedSlot: Slot | null = null;
@@ -195,7 +192,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
   modalError = '';
   private pendingBooking: PendingBooking | null = null;
   private lastWhatsappUrl = '';
-  private pendingReservationId: number | null = null;
+  private pendingReservationId: string | null = null;
   private holdExpiresAt: string | null = null;
   holdReleaseReason: 'expired' | 'cancelled' = 'expired';
   private holdTimer: ReturnType<typeof setInterval> | null = null;
@@ -225,7 +222,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
 
   get modalText() {
     if (!this.auth.user()) return 'Para reservar desde la web, ingresá o creá tu cuenta.';
-    if (!this.isPhoneVerified()) return 'Para validar tu número, abriremos WhatsApp y guardaremos el horario durante 10 minutos mientras enviás el mensaje.';
+    if (!this.isPhoneVerified()) return 'Enviá tu primera solicitud por WhatsApp. La cancha comprobará tu número y te avisará si el horario sigue disponible.';
     return 'Revisá los datos antes de guardar la reserva.';
   }
 
@@ -276,7 +273,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.clearAvailabilityRefresh();
   }
 
-  isPhoneVerified() { return this.auth.user()?.phoneVerified === true; }
+  isPhoneVerified() { return Boolean(this.auth.user()?.bookingApprovedAt && this.auth.user()?.phone); }
 
   selectDuration(duration: number) {
     this.duration = duration;
@@ -304,6 +301,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     this.modalState = 'confirm';
     this.modalError = '';
     this.players = pending?.players ?? 4;
+    this.firstPhone = this.auth.user()?.phone ?? '';
     this.notes = '';
     this.lastWhatsappUrl = '';
     this.pendingReservationId = null;
@@ -351,20 +349,17 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     }
     this.submitting.set(true);
     this.modalError = '';
-    this.api.post<any>('/bookings', this.bookingPayload()).pipe(
+    this.api.post<any>('/bookings/requests', { ...this.bookingPayload(), phone: this.firstPhone }).pipe(
       finalize(() => {
         this.submitting.set(false);
       })
     ).subscribe({
       next: response => {
-        this.myBookingsStore.upsertBooking(response);
-        this.adminAgendaStore.invalidate();
-        const reservation = response?.reservation ?? response;
-        const url = this.buildVerificationWhatsappUrl();
+        const reservation = response.request;
+        const url = response.whatsappUrl;
         this.lastWhatsappUrl = url;
-        this.pendingReservationId = Number(reservation?.id ?? 0) || null;
+        this.pendingReservationId = reservation.id;
         this.modalState = 'verificationPending';
-        this.startHoldCountdown(reservation?.holdExpiresAt);
         popup.location.href = url;
         sessionStorage.removeItem(this.pendingKey);
       },
@@ -376,7 +371,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     });
   }
   openWhatsappAgain() {
-    if (!this.lastWhatsappUrl || this.holdRemainingSeconds() <= 0) return;
+    if (!this.lastWhatsappUrl) return;
     window.open(this.lastWhatsappUrl, '_blank');
   }
 
@@ -385,7 +380,7 @@ export class AvailabilityPage implements OnInit, OnDestroy {
     if (!id || this.submitting()) return;
     this.submitting.set(true);
     this.modalError = '';
-    this.api.patch(`/bookings/${id}/cancel`, {}).pipe(
+    this.api.patch(`/bookings/requests/${id}/cancel`, {}).pipe(
       finalize(() => this.submitting.set(false))
     ).subscribe({
       next: () => {
@@ -393,8 +388,6 @@ export class AvailabilityPage implements OnInit, OnDestroy {
         this.holdReleaseReason = 'cancelled';
         this.modalState = 'holdReleased';
         this.lastWhatsappUrl = '';
-        this.myBookingsStore.updateBookingStatus(id, 'CANCELLED');
-        this.adminAgendaStore.invalidate();
       },
       error: error => {
         this.modalError = this.friendlyBookingError(error.error?.message ?? error.message);

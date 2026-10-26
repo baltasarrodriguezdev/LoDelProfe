@@ -9,6 +9,7 @@ import { VENUE } from '../../shared/venue';
 import { buildPhoneVerificationWhatsappUrl } from '../../shared/whatsapp-booking';
 import { AdminAgendaStore } from '../admin/admin-agenda-store';
 import { ClientBooking, MyBookingsStore } from './my-bookings-store';
+type FirstRequest = { id: string; startTime: string; durationMinutes: number; playersCount: number; status: string; phone: string };
 
 @Component({
   standalone: true,
@@ -22,6 +23,11 @@ import { ClientBooking, MyBookingsStore } from './my-bookings-store';
     </section>
 
     <section class="cards-list">
+      @if (!history()) {
+        @for (request of firstRequests(); track request.id) {
+          <article class="booking-card"><div class="date-block"><b>{{ request.startTime | date:'dd' }}</b><span>{{ request.startTime | date:'MMM' }}</span></div><div><span class="tag">{{ request.status === 'PENDING' ? 'Solicitud sin confirmar' : 'Elegí otro horario' }}</span><h2>{{ request.startTime | date:'HH:mm' }} · {{ request.durationMinutes }} min</h2><p>{{ request.status === 'PENDING' ? 'La cancha revisará tu WhatsApp. El horario todavía puede ocuparse.' : 'Tu cuenta está habilitada; este horario ya no está disponible.' }}</p></div><div class="booking-card-actions">@if (request.status === 'PENDING') { <button type="button" class="btn primary" (click)="resendRequest(request)">Reenviar WhatsApp</button><button type="button" class="btn danger" (click)="cancelRequest(request)">Cancelar solicitud</button> } @else { <a class="btn primary" routerLink="/reservar">Elegir otro</a> }</div></article>
+        }
+      }
       @if (bookingsStatus() === 'loading') {
         <div class="empty">Cargando tus turnos...</div>
       } @else if (loadError()) {
@@ -115,6 +121,7 @@ export class BookingsPage implements OnInit, OnDestroy {
   readonly cancelled = signal(false);
   readonly error = signal('');
   readonly notice = signal('');
+  readonly firstRequests = signal<FirstRequest[]>([]);
   readonly now = signal(Date.now());
   cancellationCutoffMinutes = 120;
   private holdTimer: ReturnType<typeof setInterval> | null = null;
@@ -130,8 +137,11 @@ export class BookingsPage implements OnInit, OnDestroy {
     this.destroyRef.onDestroy(this.bookingsStore.activate());
     this.realtime.poll$().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       void this.bookingsStore.loadBookings(true, this.history() ? 'history' : 'upcoming');
+      this.loadRequests();
     });
+    this.realtime.listen(['USER_VERIFICATION_CHANGED', 'BOOKING_CREATED']).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadRequests());
     void this.bookingsStore.loadBookings(true);
+    this.loadRequests();
     this.holdTimer = setInterval(() => this.tickHolds(), 1000);
     this.api.get<any>('/booking-policy', undefined, { noCache: true }).subscribe({
       next: value => this.cancellationCutoffMinutes = Number(value?.cancellationCutoffMinutes ?? 120)
@@ -149,6 +159,16 @@ export class BookingsPage implements OnInit, OnDestroy {
   }
 
   loadBookings() { return this.bookingsStore.loadBookings(); }
+  loadRequests() { this.api.get<FirstRequest[]>('/bookings/requests/my', undefined, { noCache: true }).subscribe({ next: value => this.firstRequests.set((Array.isArray(value) ? value : []).filter(item => item.status === 'PENDING' || item.status === 'NEEDS_NEW_SLOT')), error: () => this.notice.set('No pudimos cargar tus solicitudes.') }); }
+  cancelRequest(request: FirstRequest) { this.api.patch(`/bookings/requests/${request.id}/cancel`, {}).subscribe({ next: () => { this.firstRequests.update(items => items.filter(item => item.id !== request.id)); this.notice.set('Solicitud cancelada.'); }, error: response => this.notice.set(response.error?.message ?? 'No pudimos cancelar la solicitud.') }); }
+  resendRequest(request: FirstRequest) {
+    const popup = window.open('', '_blank');
+    if (!popup) { this.notice.set('Permití las ventanas emergentes para abrir WhatsApp.'); return; }
+    this.api.post<any>(`/bookings/requests/${request.id}/resend`, {}).subscribe({
+      next: response => { popup.location.href = response.whatsappUrl; this.notice.set('Se generó un código nuevo. Enviá el mensaje desde tu WhatsApp.'); },
+      error: response => { popup.close(); this.notice.set(response.error?.message ?? 'No pudimos reenviar la solicitud.'); this.loadRequests(); }
+    });
+  }
 
   canCancel(booking: ClientBooking) {
     if (booking.status === 'PENDING') return this.isActiveHold(booking);

@@ -29,7 +29,7 @@ describe('AuthPage zoneless', () => {
     }).compileComponents();
 
     const fixture: ComponentFixture<AuthPage> = TestBed.createComponent(AuthPage);
-    fixture.componentInstance.form = { phone: '3515551234', password: 'incorrecta' };
+    fixture.componentInstance.form = { email: 'ana@ejemplo.com', password: 'incorrecta' };
     fixture.detectChanges();
 
     fixture.componentInstance.submit();

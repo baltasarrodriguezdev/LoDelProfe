@@ -97,6 +97,7 @@ export class AppComponent {
       { label: 'Reservar', route: '/reservar' },
       { label: 'La Liga', route: '/la-liga' },
       ...(this.auth.user() ? [{ label: 'Mis turnos', route: '/mis-turnos' }] : []),
+      ...(this.auth.user() ? [{ label: 'Mi cuenta', route: '/mi-cuenta' }] : []),
       { label: 'Cómo llegar', route: '/', fragment: 'como-llegar' },
       ...(this.auth.isAdmin() ? [{ label: 'Admin', route: '/admin' }] : []),
       ...(!this.auth.user() ? [
@@ -139,7 +140,7 @@ export class AppComponent {
   }
 
   isAuthPage() {
-    return ['/ingresar', '/login', '/registro'].some(path => this.router.url.startsWith(path));
+    return ['/ingresar', '/login', '/registro', '/completar-email', '/confirmar-email'].some(path => this.router.url.startsWith(path));
   }
 
   isHomePage() {

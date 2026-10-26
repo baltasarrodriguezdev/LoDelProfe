@@ -11,22 +11,27 @@ import { InstagramStoriesPage } from './features/admin/instagram-stories-page';
 import { AdminAgendaPage } from './features/admin/admin-agenda-page';
 import { AdminSettingsPage } from './features/admin/admin-settings-page';
 import { adminGuard, authGuard, superAdminGuard } from './core/api';
-import { PhoneVerificationPage } from './features/client/phone-verification-page';
 import { PasswordRecoveryPage } from './features/client/password-recovery-page';
+import { EmailOnboardingPage } from './features/client/email-onboarding-page';
+import { AccountPage } from './features/client/account-page';
 import { AdminSecurityPage } from './features/admin/admin-security-page';
 
 export const routes: Routes = [
   { path: '', component: HomePage },
   { path: 'ingresar', component: AuthPage },
+  { path: 'ingresar-anterior', component: AuthPage },
   { path: 'login', redirectTo: 'ingresar', pathMatch: 'full' },
   { path: 'registro', component: AuthPage },
-  { path: 'validar-telefono', component: PhoneVerificationPage, canActivate: [authGuard] },
+  { path: 'confirmar-email', component: EmailOnboardingPage },
+  { path: 'completar-email', component: EmailOnboardingPage },
+  { path: 'validar-telefono', redirectTo: 'reservar' },
   { path: 'recuperar-contrasena', component: PasswordRecoveryPage },
   { path: 'restablecer-contrasena', component: PasswordRecoveryPage },
   { path: 'reservar', component: AvailabilityPage },
   { path: 'la-liga', loadComponent: () => import('./features/league/league-page').then(module => module.LeaguePage) },
   { path: 'confirmar-reserva', component: AvailabilityPage, canActivate: [authGuard] },
   { path: 'mis-turnos', component: BookingsPage, canActivate: [authGuard] },
+  { path: 'mi-cuenta', component: AccountPage, canActivate: [authGuard] },
   { path: 'historial', component: BookingsPage, canActivate: [authGuard] },
   { path: 'admin', component: AdminDashboardPage, canActivate: [adminGuard] },
   { path: 'admin/estadisticas', component: AdminStatsPage, canActivate: [superAdminGuard] },

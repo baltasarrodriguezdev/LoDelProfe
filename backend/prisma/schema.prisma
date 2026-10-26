@@ -14,6 +14,17 @@ enum UserStatus {
   PENDING_VERIFICATION
   VERIFIED
 }
+enum EmailTokenPurpose {
+  VERIFY
+  RESET_PASSWORD
+}
+enum BookingRequestStatus {
+  PENDING
+  CONFIRMED
+  NEEDS_NEW_SLOT
+  CANCELLED
+  EXPIRED
+}
 enum PhoneVerificationMethod {
   WHATSAPP_MANUAL
   PHONE_CALL
@@ -92,7 +103,12 @@ model User {
   id Int @id @default(autoincrement())
   firstName String
   lastName String
-  phone String @unique
+  phone String? @unique
+  email String? @unique @db.VarChar(255)
+  emailVerifiedAt DateTime?
+  legacyAccount Boolean @default(false)
+  bookingApprovedAt DateTime?
+  bookingApprovalMethod String? @db.VarChar(40)
   passwordHash String
   role Role @default(CLIENT)
   active Boolean @default(true)
@@ -107,11 +123,50 @@ model User {
   releasedAt DateTime?
   passwordResetRequests PasswordResetRequest[]
   bookings Booking[]
+  bookingRequests BookingRequest[]
+  emailTokens EmailToken[]
   recurring RecurringBooking[]
   pushSubscriptions PushSubscription[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@map("users")
+}
+model EmailToken {
+  id String @id @default(cuid())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email String @db.VarChar(255)
+  purpose EmailTokenPurpose
+  tokenHash String @unique @db.Char(64)
+  attempts Int @default(0)
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, purpose, expiresAt])
+  @@map("email_tokens")
+}
+model BookingRequest {
+  id String @id @default(cuid())
+  userId Int
+  user User @relation(fields: [userId], references: [id])
+  courtId Int
+  court Court @relation(fields: [courtId], references: [id])
+  phone String @db.VarChar(30)
+  startTime DateTime
+  durationMinutes Int
+  playersCount Int @default(4)
+  notes String? @db.Text
+  priceQuoted Decimal @db.Decimal(10,2)
+  codeHash String @db.Char(64)
+  codeExpiresAt DateTime
+  status BookingRequestStatus @default(PENDING)
+  bookingId Int? @unique
+  legacyBookingId Int? @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, status])
+  @@index([status, startTime])
+  @@map("booking_requests")
 }
 
 model PushSubscription {
@@ -152,6 +207,7 @@ model Court {
   description String? @db.Text
   active Boolean @default(true)
   bookings Booking[]
+  bookingRequests BookingRequest[]
   recurring RecurringBooking[]
   leagueSeasons LeagueSeason[]
   createdAt DateTime @default(now())

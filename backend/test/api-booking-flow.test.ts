@@ -50,7 +50,7 @@ beforeEach(() => {
   created = [];
   queriedWhere = null;
   transactionOptions = null;
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: true, isBlocked: false });
+  db.user.findUnique = async ({ where }: any) => where.id ? ({ id: where.id, firstName: 'Valentino', lastName: 'Rodríguez', phone: '3576000000', role: 'CLIENT', active: true, phoneVerified: false, bookingApprovedAt: new Date(), emailVerifiedAt: new Date(), isBlocked: false }) : null;
   db.$transaction = async (work: any, options?: any) => { transactionOptions = options; return typeof work === 'function' ? work(transactionClient()) : Promise.all(work); };
   db.booking.findFirst = async () => null;
   db.booking.findMany = async ({ where }: any) => { queriedWhere = where; return []; };
@@ -83,76 +83,52 @@ test('un usuario autenticado crea una reserva asociada a su cuenta', async () =>
 });
 
 
-test('usuario no verificado crea primera reserva pendiente para validar telefono', async () => {
-  const requestedAt = Date.now();
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
+test('usuario sin autorización no puede crear una reserva directa', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, emailVerifiedAt: new Date(), bookingApprovedAt: null, isBlocked: false });
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(22)),
     body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4, status: 'CONFIRMED' })
   });
-  assert.equal(response.status, 201);
-  assert.equal(created[0].status, 'PENDING');
-  assert.equal(created[0].origin, 'WEB');
-  assert.ok(created[0].holdExpiresAt instanceof Date);
-  assert.ok(created[0].holdExpiresAt.getTime() >= requestedAt + 9 * 60_000);
-  assert.ok(created[0].holdExpiresAt.getTime() <= Date.now() + 10 * 60_000);
-  const body = await response.json() as any;
-  assert.equal(body.reservation.status, 'PENDING');
-  assert.equal(body.alreadyPending, false);
-  assert.equal(body.requiresWhatsappConfirmation, undefined);
-  assert.equal(body.whatsappUrl, undefined);
+  assert.equal(response.status, 403);
+  assert.equal(created.length, 0);
 });
 
-test('phoneVerified es la única fuente de verdad aunque status legado diga VERIFIED', async () => {
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Perez', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, status: 'VERIFIED', isBlocked: false });
+test('estado legado VERIFIED no concede permiso para reservar', async () => {
+  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Ana', lastName: 'Perez', phone: '3576524440', role: 'CLIENT', active: true, emailVerifiedAt: new Date(), bookingApprovedAt: null, status: 'VERIFIED', isBlocked: false });
   const response = await fetch(`${baseUrl}/bookings`, {
     method: 'POST', headers: headers(token(23)),
     body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
   });
+  assert.equal(response.status, 403);
+  assert.equal(created.length, 0);
+});
+test('la primera solicitud se guarda separada y no crea una reserva', async () => {
+  (config as any).businessWhatsappPhone = '5493515551234';
+  db.user.findUnique = async ({ where }: any) => where.phone ? null : ({
+    id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: null, role: 'CLIENT',
+    active: true, emailVerifiedAt: new Date(), bookingApprovedAt: null, isBlocked: false
+  });
+  db.user.findFirst = async () => null;
+  db.user.update = async ({ data }: any) => data;
+  db.businessHour.findUnique = async () => ({ active: true, openTime: '15:00', closeTime: '00:00' });
+  db.court.findFirst = async () => ({ id: 1, active: true });
+  db.price.findFirst = async () => ({ price: 20000 });
+  db.bookingRequest.findFirst = async () => null;
+  db.bookingRequest.create = async ({ data }: any) => ({ id: 'first-22', status: 'PENDING', ...data });
+  db.$transaction = async (work: any) => work({
+    $queryRaw: async () => [],
+    user: { update: db.user.update },
+    bookingRequest: { findFirst: db.bookingRequest.findFirst, update: async () => ({}), create: db.bookingRequest.create }
+  });
+  const response = await fetch(`${baseUrl}/bookings/requests`, {
+    method: 'POST', headers: headers(token(22)),
+    body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4, phone: '3576524440' })
+  });
   assert.equal(response.status, 201);
-  assert.equal(created[0].status, 'PENDING');
-});
-test('usuario no verificado con la misma solicitud pendiente recibe la existente', async () => {
-  const pending = {
-    id: 77,
-    courtId: 1,
-    userId: 22,
-    status: 'PENDING',
-    startTime: new Date('2030-01-02T20:30:00-03:00'),
-    durationMinutes: 90,
-    court: { id: 1, name: 'Cancha 1' }
-  };
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
-  db.booking.findFirst = async ({ where }: any) => where.courtId ? pending : null;
-  const response = await fetch(`${baseUrl}/bookings`, {
-    method: 'POST', headers: headers(token(22)),
-    body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
-  });
-  assert.equal(response.status, 200);
   assert.equal(created.length, 0);
   const body = await response.json() as any;
-  assert.equal(body.reservation.id, 77);
-  assert.equal(body.alreadyPending, true);
-});
-
-test('usuario no verificado con otra solicitud pendiente no duplica reservas', async () => {
-  db.user.findUnique = async ({ where }: any) => ({ id: where.id, firstName: 'Fabian', lastName: 'Carlos', phone: '3576524440', role: 'CLIENT', active: true, phoneVerified: false, isBlocked: false });
-  db.booking.findFirst = async ({ where }: any) => where.courtId ? null : ({
-    id: 78,
-    courtId: 1,
-    userId: 22,
-    status: 'PENDING',
-    startTime: new Date('2030-01-02T18:00:00-03:00'),
-    durationMinutes: 90
-  });
-  const response = await fetch(`${baseUrl}/bookings`, {
-    method: 'POST', headers: headers(token(22)),
-    body: JSON.stringify({ courtId: 1, date: futureDate, startTime: '20:30', durationMinutes: 90, playersCount: 4 })
-  });
-  assert.equal(response.status, 409);
-  assert.equal(created.length, 0);
-  const body = await response.json() as any;
-  assert.match(body.message, /solicitud pendiente/i);
+  assert.equal(body.request.id, 'first-22');
+  assert.match(body.whatsappUrl, /^https:\/\/wa\.me\//);
 });
 test('rechaza una duración sin precio activo', async () => {
   const response = await fetch(`${baseUrl}/bookings`, {

@@ -2,7 +2,7 @@ import { RealtimeService } from '../../core/realtime';
 import { NEVER } from 'rxjs';
 import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Api, Auth } from '../../core/api';
@@ -36,6 +36,8 @@ describe('AvailabilityPage zoneless', () => {
         firstName: 'Ana',
         lastName: 'Pérez',
         phone: '3515551234',
+        emailVerifiedAt: '2026-07-01T00:00:00Z',
+        bookingApprovedAt: null as string | null,
         phoneVerified: false,
         status: 'PENDING_VERIFICATION',
         role: 'CLIENT'
@@ -51,7 +53,7 @@ describe('AvailabilityPage zoneless', () => {
         provideZonelessChangeDetection(),
         { provide: Api, useValue: api },
         { provide: Auth, useValue: auth },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        provideRouter([]),
         { provide: MyBookingsStore, useValue: myBookingsStore },
         { provide: AdminAgendaStore, useValue: adminAgendaStore }
       ]
@@ -75,6 +77,7 @@ describe('AvailabilityPage zoneless', () => {
         endTime: '19:30',
         available: true
       };
+      fixture.componentInstance.firstPhone = '3515551234';
       fixture.detectChanges();
     }
     return { fixture, api, polling, auth, myBookingsStore, adminAgendaStore };
@@ -91,45 +94,40 @@ describe('AvailabilityPage zoneless', () => {
     const postResponse = new Subject<any>();
     const popup = { location: { href: '' }, close: vi.fn() };
     vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
-    const { fixture, myBookingsStore, adminAgendaStore } = await setup(postResponse);
+    const { fixture, api } = await setup(postResponse);
 
     fixture.componentInstance.sendVerificationRequest();
     await fixture.whenStable();
     expect(fixture.componentInstance.submitting()).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Enviando...');
 
-    const holdExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
-    postResponse.next({ reservation: { id: 21, holdExpiresAt }, alreadyPending: false });
+    expect(api.post).toHaveBeenCalledWith('/bookings/requests', expect.any(Object));
+    postResponse.next({ request: { id: 'request-21' }, whatsappUrl: 'https://wa.me/5493515551234?text=solicitud' });
     postResponse.complete();
     await fixture.whenStable();
 
     expect(fixture.componentInstance.submitting()).toBe(false);
     expect(fixture.componentInstance.modalState).toBe('verificationPending');
-    expect(fixture.nativeElement.textContent).toContain('Guardamos tu horario');
-    expect(fixture.nativeElement.textContent).toContain('Tiempo restante');
-    expect(fixture.componentInstance.holdRemainingSeconds()).toBeGreaterThan(590);
+    expect(fixture.nativeElement.textContent).toContain('Esperando a la cancha');
+    expect(fixture.nativeElement.textContent).toContain('todavía no está reservado');
     expect(popup.location.href).toContain('https://wa.me/');
-    expect(myBookingsStore.upsertBooking).toHaveBeenCalledOnce();
-    expect(adminAgendaStore.invalidate).toHaveBeenCalledOnce();
   });
 
-  it('permite cancelar la retención y libera el horario', async () => {
+  it('permite cancelar la solicitud sin ocupar el horario', async () => {
     const postResponse = new Subject<any>();
     const popup = { location: { href: '' }, close: vi.fn() };
     vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
-    const { fixture, api, myBookingsStore, adminAgendaStore } = await setup(postResponse);
+    const { fixture, api } = await setup(postResponse);
 
     fixture.componentInstance.sendVerificationRequest();
-    postResponse.next({ reservation: { id: 21, holdExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString() } });
+    postResponse.next({ request: { id: 'request-21' }, whatsappUrl: 'https://wa.me/5493515551234' });
     postResponse.complete();
     await fixture.whenStable();
 
     fixture.componentInstance.cancelPendingHold();
     await fixture.whenStable();
 
-    expect(api.patch).toHaveBeenCalledWith('/bookings/21/cancel', {});
-    expect(myBookingsStore.updateBookingStatus).toHaveBeenCalledWith(21, 'CANCELLED');
-    expect(adminAgendaStore.invalidate).toHaveBeenCalled();
+    expect(api.patch).toHaveBeenCalledWith('/bookings/requests/request-21/cancel', {});
     expect(fixture.componentInstance.modalState).toBe('holdReleased');
     expect(fixture.nativeElement.textContent).toContain('Solicitud cancelada');
   });
@@ -151,7 +149,7 @@ describe('AvailabilityPage zoneless', () => {
   });
   it('polls availability without downloading prices/courts again, and stops when destroyed', async () => {
     const { fixture, api, polling, auth } = await setup(new Subject(), false);
-    auth.user.update(user => ({ ...user, phoneVerified: true }));
+    auth.user.update(user => ({ ...user, bookingApprovedAt: '2026-07-01T00:00:00Z' }));
     (fixture.componentInstance as any).lastAvailabilityCompleted = Date.now() - 60_000;
     api.get.mockClear(); polling.next('poll'); await fixture.whenStable();
     expect(api.get.mock.calls.map(call => call[0])).toEqual(['/availability']);
@@ -161,7 +159,7 @@ describe('AvailabilityPage zoneless', () => {
   });
   it('coalesces nextChangeAt and a polling tick for the same availability resource', async () => {
     const { fixture, api, polling, auth } = await setup(new Subject(), false);
-    auth.user.update(user => ({ ...user, phoneVerified: true }));
+    auth.user.update(user => ({ ...user, bookingApprovedAt: '2026-07-01T00:00:00Z' }));
     vi.useFakeTimers(); api.get.mockClear();
     (fixture.componentInstance as any).scheduleAvailabilityRefresh(new Date(Date.now() + 59_750).toISOString());
     setTimeout(() => polling.next('poll'), 60_000);

@@ -14,7 +14,10 @@ type Client = {
   id: number;
   firstName: string;
   lastName: string;
-  phone: string;
+  phone: string | null;
+  email?: string | null;
+  emailVerifiedAt?: string | null;
+  bookingApprovedAt?: string | null;
   role: string;
   active: boolean;
   phoneVerified: boolean;
@@ -84,10 +87,10 @@ type Client = {
                     <h2>{{ client.firstName }} {{ client.lastName }}</h2>
                     <span [class]="'client-status ' + statusClass(client)">{{ statusLabel(client) }}</span>
                   </div>
-                  <p>{{ client.phone }} · Alta {{ client.createdAt ? (client.createdAt | date:'dd/MM/yyyy') : 'sin fecha' }}</p>
+                  <p>{{ client.email || 'Email pendiente' }} · {{ client.phone || 'Sin teléfono' }} · Alta {{ client.createdAt ? (client.createdAt | date:'dd/MM/yyyy') : 'sin fecha' }}</p>
                 </div>
                 <div class="client-actions">
-                  @if (!client.phoneVerified && client.active && !client.isBlocked) {
+                  @if (!client.bookingApprovedAt && client.active && !client.isBlocked) {
                     <a class="small-action" routerLink="/admin/seguridad">Comprobar identidad</a>
                     <button type="button" class="small-action danger-action" (click)="askCancelPending(client)">Cancelar registro</button>
                   } @else {
@@ -209,8 +212,8 @@ export class AdminClientsPage implements OnInit, OnDestroy {
 
   matchesTab(client: Client, status: ClientStatus) {
     if (status === 'all') return true;
-    if (status === 'pending') return client.active && !client.phoneVerified && !client.isBlocked;
-    if (status === 'confirmed') return client.active && client.phoneVerified && !client.isBlocked;
+    if (status === 'pending') return client.active && !client.bookingApprovedAt && !client.isBlocked;
+    if (status === 'confirmed') return client.active && !!client.bookingApprovedAt && !client.isBlocked;
     if (status === 'inactive') return !client.active;
     if (status === 'blocked') return client.isBlocked;
     return true;
@@ -219,14 +222,14 @@ export class AdminClientsPage implements OnInit, OnDestroy {
   statusLabel(client: Client) {
     if (!client.active) return 'Desactivado';
     if (client.isBlocked) return 'Bloqueado';
-    if (!client.phoneVerified) return 'Pendiente';
+    if (!client.bookingApprovedAt) return 'Pendiente';
     return 'Confirmado';
   }
 
   statusClass(client: Client) {
     if (!client.active) return 'inactive';
     if (client.isBlocked) return 'blocked';
-    if (!client.phoneVerified) return 'pending';
+    if (!client.bookingApprovedAt) return 'pending';
     return 'confirmed';
   }
 
@@ -287,7 +290,7 @@ export class AdminClientsPage implements OnInit, OnDestroy {
     this.api.patch<Client>(`/admin/users/${client.id}/verify`, {}).pipe(
       finalize(() => this.savingClientId.set(null))
     ).subscribe({
-      next: updated => { this.replaceClient({ ...client, ...updated, phoneVerified: true }); this.showNotice('Usuario verificado.'); },
+      next: updated => { this.replaceClient({ ...client, ...updated, phoneVerified: true, bookingApprovedAt: new Date().toISOString() }); this.showNotice('Usuario verificado.'); },
       error: error => this.showNotice(error.error?.message ?? 'No se pudo verificar el usuario.', true)
     });
   }

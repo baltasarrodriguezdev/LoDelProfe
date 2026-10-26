@@ -250,21 +250,26 @@ export const authGuard = async (_: unknown, state: RouterStateSnapshot) => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.sessionStatus() === 'success' && auth.user()
-    ? true
-    : router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
+  if (auth.sessionStatus() === 'success' && auth.user()) {
+    if (auth.user()?.emailVerifiedAt) return true;
+    return router.createUrlTree([auth.user()?.legacyAccount ? '/completar-email' : '/confirmar-email'], { queryParams: { returnUrl: state.url } });
+  }
+  return router.createUrlTree(['/ingresar'], { queryParams: { authRequired: '1', returnUrl: state.url } });
 };
 
 export const adminGuard = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.sessionStatus() === 'success' && auth.isAdmin() ? true : router.createUrlTree(['/']);
+  if (auth.sessionStatus() === 'success' && auth.isAdmin()) return auth.user()?.emailVerifiedAt ? true : router.createUrlTree(['/completar-email']);
+  return router.createUrlTree(['/']);
 };
 
 export const superAdminGuard = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.refreshSession();
-  return auth.sessionStatus() === 'success' && auth.user()?.role === 'SUPERADMIN' ? true : router.createUrlTree(['/admin']);
+  return auth.sessionStatus() === 'success' && auth.user()?.role === 'SUPERADMIN'
+    ? auth.user()?.emailVerifiedAt ? true : router.createUrlTree(['/completar-email'])
+    : router.createUrlTree(['/admin']);
 };
