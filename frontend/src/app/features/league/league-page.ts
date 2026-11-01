@@ -324,8 +324,6 @@ export class LeaguePage implements OnInit {
   }
   matchScheduleLabel(match: LeagueMatch) {
     if (match.stage === 'ROUND_OF_16') return 'Desde el 18/10 hasta el 31/10';
-    if (match.stage === 'SEMIFINAL') return `1/11 · ${match.code === 'S1' ? '19:00' : '20:00'}`;
-    if (match.stage === 'FINAL') return '1/11 · 21:00';
     return `${match.scheduledDate ? this.formatDate(match.scheduledDate) : 'Fecha a confirmar'} · ${match.scheduledTime || 'Hora a confirmar'}`;
   }
   formatDate(value: string) {

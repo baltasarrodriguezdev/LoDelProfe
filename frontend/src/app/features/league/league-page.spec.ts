@@ -72,9 +72,9 @@ describe('LeaguePage', () => {
     expect(page.matchScheduleLabel(match('P4', 'ROUND_OF_16'))).toBe('Desde el 18/10 hasta el 31/10');
     expect(page.matchScheduleLabel(match('C2', 'QUARTERFINAL'))).toBe('Fecha a confirmar · Hora a confirmar');
     expect(page.matchScheduleLabel({ ...match('C2', 'QUARTERFINAL'), scheduledDate: '2026-11-01', scheduledTime: '18:00' })).toBe('dom, 1 nov · 18:00');
-    expect(page.matchScheduleLabel(match('S1', 'SEMIFINAL'))).toBe('1/11 · 19:00');
-    expect(page.matchScheduleLabel(match('S2', 'SEMIFINAL'))).toBe('1/11 · 20:00');
-    expect(page.matchScheduleLabel(match('F1', 'FINAL'))).toBe('1/11 · 21:00');
+    expect(page.matchScheduleLabel({ ...match('S1', 'SEMIFINAL'), scheduledDate: '2026-11-02', scheduledTime: '19:30' })).toBe('lun, 2 nov · 19:30');
+    expect(page.matchScheduleLabel(match('S2', 'SEMIFINAL'))).toBe('Fecha a confirmar · Hora a confirmar');
+    expect(page.matchScheduleLabel({ ...match('F1', 'FINAL'), scheduledDate: '2026-11-02', scheduledTime: '21:30' })).toBe('lun, 2 nov · 21:30');
     expect(page.isWithdrawnPair('Auger - Martinez')).toBe(true);
     expect(page.isWithdrawnPair('Prunesti - Britos')).toBe(true);
     expect(page.bracketPairLabel(match('C2', 'QUARTERFINAL'), 'AWAY')).toBe('Vaca - Arrieta');
