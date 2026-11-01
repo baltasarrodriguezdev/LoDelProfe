@@ -69,6 +69,7 @@ describe('LeaguePage', () => {
     const page = fixture.componentInstance;
     const match = (code: string, stage: string): any => ({ code, stage, homePair: null, awayPair: null });
 
+    expect(page.bracketMatches([{ code: 'C2' }, { code: 'C4' }, { code: 'C1' }, { code: 'C3' }] as any).map((item: any) => item.code)).toEqual(['C1', 'C2', 'C3', 'C4']);
     expect(page.matchScheduleLabel(match('P4', 'ROUND_OF_16'))).toBe('Desde el 18/10 hasta el 31/10');
     expect(page.matchScheduleLabel(match('C2', 'QUARTERFINAL'))).toBe('Fecha a confirmar · Hora a confirmar');
     expect(page.matchScheduleLabel({ ...match('C2', 'QUARTERFINAL'), scheduledDate: '2026-11-01', scheduledTime: '18:00' })).toBe('dom, 1 nov · 18:00');

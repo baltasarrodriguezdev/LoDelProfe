@@ -153,7 +153,7 @@ import type { LeagueMatch, LeaguePayload, LeagueTab } from './league.models';
               <div class="league-bracket">
                 @for (round of leagueData.bracket; track round.stage) {
                   <section class="bracket-round"><header><small>{{ round.matches.length }} {{ round.matches.length === 1 ? 'PARTIDO' : 'PARTIDOS' }}</small><h3>{{ stageLabel(round.stage) }}</h3></header><div>
-                    @for (match of round.matches; track match.id) {
+                    @for (match of bracketMatches(round.matches); track match.id) {
                       <article class="bracket-match"><span>{{ match.code }} · {{ matchScheduleLabel(match) }}</span><div [class.winner]="match.result?.winnerSide === 'HOME'" [class.withdrawn]="isWithdrawnPair(match.homePair?.displayName)"><strong>{{ bracketPairLabel(match, 'HOME') }}</strong><b>{{ match.result?.homeSets ?? '—' }}</b></div><div [class.winner]="match.result?.winnerSide === 'AWAY'" [class.withdrawn]="isWithdrawnPair(match.awayPair?.displayName)"><strong>{{ bracketPairLabel(match, 'AWAY') }}</strong><b>{{ match.result?.awaySets ?? '—' }}</b></div></article>
                     }
                   </div></section>
@@ -321,6 +321,9 @@ export class LeaguePage implements OnInit {
     if (match.code === 'C2' && side === 'AWAY') return 'Vaca - Arrieta';
     if (match.code === 'C3' && side === 'HOME') return 'Rodriguez Teruel - Ponce';
     return (side === 'HOME' ? match.homePlaceholder : match.awayPlaceholder) || 'Pareja a confirmar';
+  }
+  bracketMatches(matches: LeagueMatch[]) {
+    return [...matches].sort((a, b) => Number(a.code.replace(/[^0-9]/g, '')) - Number(b.code.replace(/[^0-9]/g, '')));
   }
   matchScheduleLabel(match: LeagueMatch) {
     if (match.stage === 'ROUND_OF_16') return 'Desde el 18/10 hasta el 31/10';
